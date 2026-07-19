@@ -43,6 +43,23 @@ describe("GGSQL context", () => {
     expect(sourceFromQuery("SELECT * FROM chartize:polls\nVISUALISE")).toBe("chartize:polls");
   });
 
+  it("discovers external CTE sources without treating CTE aliases as browser tables", () => {
+    const joined = `WITH state_population AS (
+  SELECT "STATE", SUM("POPESTIMATE2025") AS "population"
+  FROM chartize:county_population_2025
+  GROUP BY "STATE"
+)
+SELECT b."geometry", p."population"
+FROM chartize:us_states_2025 AS b
+JOIN state_population AS p ON b."STATEFP" = p."STATE"
+VISUALISE
+DRAW spatial`;
+    expect(sourcesFromQuery(joined)).toEqual([
+      "chartize:county_population_2025",
+      "chartize:us_states_2025",
+    ]);
+  });
+
   it("resolves virtual namespaces before execution", () => {
     expect(resolveNamespacedSources("SELECT * FROM chartize:polls VISUALISE", (_, name) => `warehouse_${name}`))
       .toContain('FROM "warehouse_polls"');

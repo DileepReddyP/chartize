@@ -207,7 +207,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   setAiPreferences: (value: AiResponsePreferences) => void;
   setLeftPaneRatio: (value: number) => void;
   setCodePaneRatio: (value: number) => void;
-  startNewVisualization: (source?: string) => void;
+  startNewVisualization: () => void;
   closeAi: () => void;
 }
 
@@ -328,18 +328,18 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set) => ({
   setAiPreferences: (aiPreferences) => set({ aiPreferences: AiResponsePreferencesSchema.parse(aiPreferences) }),
   setLeftPaneRatio: (leftPaneRatio) => set({ leftPaneRatio: LeftPaneRatioSchema.parse(leftPaneRatio) }),
   setCodePaneRatio: (codePaneRatio) => set({ codePaneRatio: CodePaneRatioSchema.parse(codePaneRatio) }),
-  startNewVisualization: (source = "chartize:presidential_approval_average") => {
-    const draft = makeBlankDraft(source);
+  startNewVisualization: () => {
+    const draft = makeBlankDraft();
     set({
-      mode: source.startsWith("chartize:") ? "warehouse" : "local",
+      mode: "warehouse",
       draft,
-      query: serializeDraft(draft),
+      query: "",
       spec: null,
       selectedData: { ...EMPTY_TABLE, limit: 200 },
       fullData: EMPTY_TABLE,
       resultTab: "chart",
       fullSort: null,
-      dockSource: source,
+      dockSource: "",
       running: false,
       fullLoading: false,
       showLoadingMask: false,

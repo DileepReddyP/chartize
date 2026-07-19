@@ -37,12 +37,15 @@ describe("Chartize workspace store", () => {
     expect(WorkspaceSnapshotSchema.safeParse(useChartizeWorkspace.getState()).success).toBe(true);
   });
 
-  it("starts a clean visualization while retaining a usable source", () => {
-    useChartizeWorkspace.getState().startNewVisualization("chartize:county_population_2025");
+  it("starts a genuinely empty visualization workspace", () => {
+    useChartizeWorkspace.getState().startNewVisualization();
     const state = useChartizeWorkspace.getState();
     expect(state.spec).toBeNull();
-    expect(state.query).toContain("FROM chartize:county_population_2025");
-    expect(state.draft.title).toBe("untitled visualization");
+    expect(state.query).toBe("");
+    expect(state.dockSource).toBe("");
+    expect(state.draft.source).toBe("");
+    expect(state.draft.title).toBe("");
+    expect(state.fullData.rows).toEqual([]);
     expect(state.aiHistory).toEqual([]);
     expect(WorkspaceSnapshotSchema.safeParse(state).success).toBe(true);
   });

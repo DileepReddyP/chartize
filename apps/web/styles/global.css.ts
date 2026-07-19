@@ -204,6 +204,7 @@ globalStyle(".ai-settings label b", { color: vars.color.ink, fontSize: "9px", fo
 globalStyle(".ai-settings label small", { color: vars.color.muted, fontSize: "7.5px", lineHeight: 1.35 });
 globalStyle(".ai-research-ready", { display: "flex", alignItems: "center", gap: "5px", color: vars.color.tealDark, fontSize: "7px", fontWeight: 580, textTransform: "lowercase" });
 globalStyle(".ai-research-ready i", { width: "6px", height: "6px", borderRadius: "50%", background: vars.color.teal, boxShadow: `0 0 0 3px rgb(60 187 177 / 12%)` });
+globalStyle(".ai-catalog-loading", { color: vars.color.muted, fontSize: "7px", fontWeight: 560, textTransform: "lowercase" });
 globalStyle(".checkbox-row", { display: "flex", alignItems: "center", gap: "6px", color: vars.color.muted, fontSize: "9px", fontWeight: 650, textTransform: "lowercase" });
 globalStyle(".checkbox-row input", { margin: 0, accentColor: vars.color.tealDark });
 globalStyle(".ai-status", { margin: 0, padding: "8px 10px", border: "1px solid rgb(255 255 255 / 62%)", borderRadius: "3px", background: "rgb(236 233 248 / 62%)", color: vars.color.amethyst, fontSize: "9px", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" });
@@ -517,6 +518,17 @@ globalStyle(".result-toolbar", { minWidth: 0, display: "grid", gridTemplateColum
 globalStyle(".result-toolbar .result-tabs", { borderBottom: 0 });
 globalStyle(".result-toolbar .chart-header-tools", { padding: "3px 8px 3px 0" });
 globalStyle(".chart-result-view", { position: "relative", width: "100%", height: "100%", minWidth: 0, minHeight: 0, display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", overflow: "hidden" });
+globalStyle(".chart-result-view.blank", { gridTemplateRows: "minmax(0, 1fr)" });
+globalStyle(".blank-chart-grid", {
+  width: "100%",
+  height: "100%",
+  minWidth: 0,
+  minHeight: 0,
+  backgroundColor: vars.color.panel,
+  backgroundImage: `linear-gradient(${vars.color.line} 1px, transparent 1px), linear-gradient(90deg, ${vars.color.line} 1px, transparent 1px)`,
+  backgroundPosition: "-1px -1px",
+  backgroundSize: "28px 28px",
+});
 globalStyle(".chart-result-view .chart-header", { minHeight: "80px", display: "block" });
 globalStyle(".chart-result-view .chart-view-shell", { minHeight: 0 });
 globalStyle(".table-stream-sentinel", { width: "100%", height: "1px" });

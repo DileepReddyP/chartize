@@ -187,6 +187,21 @@ export function robustPlanarGeometryFit(values: Array<Record<string, unknown>>) 
       return distanceA - distanceB;
     })
     .slice(0, count);
+
+  // A national dataset can have a few distant but intentional features (for
+  // example Alaska and Hawaii). Excluding them from the projection while their
+  // text marks remain visible makes Vega's responsive layout collapse around
+  // the off-camera labels. Only switch to the dense subset when it removes a
+  // truly extreme amount of empty space; otherwise preserve the complete
+  // analytical extent returned by the query.
+  const fullBounds = collectionBounds(featureCollection(entries));
+  const selectedBounds = collectionBounds(featureCollection(selected));
+  if (!fullBounds || !selectedBounds) return undefined;
+  const fullSpanX = fullBounds.maximumX - fullBounds.minimumX;
+  const fullSpanY = fullBounds.maximumY - fullBounds.minimumY;
+  const selectedSpanX = Math.max(Number.EPSILON, selectedBounds.maximumX - selectedBounds.minimumX);
+  const selectedSpanY = Math.max(Number.EPSILON, selectedBounds.maximumY - selectedBounds.minimumY);
+  if (Math.max(fullSpanX / selectedSpanX, fullSpanY / selectedSpanY) < 2.75) return undefined;
   return featureCollection(selected);
 }
 

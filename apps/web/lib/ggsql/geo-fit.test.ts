@@ -41,6 +41,17 @@ describe("geometry projection fitting", () => {
     expect(fit?.features.some((item) => (item.geometry as TestGeometry).coordinates[0]![0]![0]! > 0)).toBe(false);
   });
 
+  it("keeps a coherent nationwide projected extent in the camera", () => {
+    const contiguous = Array.from({ length: 48 }, (_, index) =>
+      feature(-2_300_000 + index * 95_000, -1_300_000 + (index % 8) * 390_000),
+    );
+    const alaska = feature(-6_200_000, 200_000);
+    const hawaii = feature(-1_850_000, 1_350_000);
+    const district = feature(400_000, 300_000);
+
+    expect(robustPlanarGeometryFit([...contiguous, alaska, hawaii, district])).toBeUndefined();
+  });
+
   it("applies viewport movement without changing the fit geometry", () => {
     const values = [feature(-100, 40), feature(-90, 45)];
     const focus = geometryFeatureCollection(values);

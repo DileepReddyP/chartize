@@ -198,13 +198,43 @@ function terminalSourceRefs(sql: string): QuerySourceRef[] {
     });
 }
 
+function allSourceRefs(sql: string): QuerySourceRef[] {
+  return sqlTokens(sql)
+    .filter((token) => token.value === "FROM" || token.value === "JOIN")
+    .flatMap((token) => {
+      const tail = sql.slice(token.end);
+      const match = /^\s+(?:"((?:[^"]|"")+)"|([a-z_][\w:-]*))/i.exec(tail);
+      if (!match) return [];
+      const literal = match[0].trimStart();
+      const leading = match[0].length - literal.length;
+      const start = token.end + leading;
+      const id = match[1]?.replaceAll('""', '"') ?? match[2] ?? "";
+      return [{ id, keyword: token.value as "FROM" | "JOIN", start, end: start + literal.length, keywordStart: token.start }];
+    });
+}
+
+function cteNames(sql: string) {
+  const topLevel = sqlTokens(sql).filter((token) => token.depth === 0);
+  if (topLevel[0]?.value !== "WITH") return new Set<string>();
+  const finalSelect = topLevel.map((token) => token.value).lastIndexOf("SELECT");
+  const names = new Set<string>();
+  for (let index = 1; index < finalSelect; index += 1) {
+    if (topLevel[index + 1]?.value === "AS") names.add(topLevel[index]!.value.toLocaleLowerCase());
+  }
+  return names;
+}
+
 function terminalFromEnd(sql: string, fromStart: number) {
   const clauses = new Set(["WHERE", "GROUP", "HAVING", "QUALIFY", "WINDOW", "ORDER", "LIMIT", "OFFSET", "UNION", "EXCEPT", "INTERSECT"]);
   return sqlTokens(sql).find((token) => token.depth === 0 && token.start > fromStart && clauses.has(token.value))?.start ?? sql.length;
 }
 
 export function sourcesFromQuery(query: string) {
-  return terminalSourceRefs(splitGgsql(query).sql).map((source) => source.id);
+  const sql = splitGgsql(query).sql;
+  const internal = cteNames(sql);
+  return [...new Set(allSourceRefs(sql)
+    .map((source) => source.id)
+    .filter((source) => !internal.has(source.toLocaleLowerCase())))];
 }
 
 export function sourceAlias(source: string, index = 0) {

@@ -33,6 +33,13 @@ function replaceDefaultBlack(channel: unknown, color: string) {
   return value === "black" || value === "#000000" || value === "#747474" ? { ...channel, value: color } : channel;
 }
 
+function withoutDuplicateTextStroke(encoding: Record<string, unknown>) {
+  if (!encoding.text) return encoding.stroke;
+  const fill = encoding.fill as { value?: unknown } | undefined;
+  const stroke = encoding.stroke as { value?: unknown } | undefined;
+  return fill?.value !== undefined && fill.value === stroke?.value ? { value: null } : encoding.stroke;
+}
+
 function ordinalSuffix(day: number) {
   const lastTwo = day % 100;
   if (lastTwo >= 11 && lastTwo <= 13) return "th";
@@ -110,7 +117,7 @@ function styleSpecNode(node: Record<string, unknown>, threshold?: ChartThreshold
           y: withDomain(encoding.y, domains?.y),
           color: replaceDefaultBlack(encoding.color, chartColors.tealDark),
           fill: replaceDefaultBlack(encoding.fill, chartColors.teal),
-          stroke: thresholdStroke ?? replaceDefaultBlack(encoding.stroke, chartColors.tealDark),
+          stroke: thresholdStroke ?? replaceDefaultBlack(withoutDuplicateTextStroke(encoding), chartColors.tealDark),
         },
       }
     : { ...node };

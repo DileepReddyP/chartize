@@ -12,6 +12,7 @@ interface AiAssistantProps {
   contextNote: string;
   prompt: string;
   busy: boolean;
+  ready: boolean;
   status: string;
   history: AiConversationMessage[];
   includeSamples: boolean;
@@ -84,6 +85,7 @@ export function AiAssistant({
   contextNote,
   prompt,
   busy,
+  ready,
   status,
   history,
   includeSamples,
@@ -166,7 +168,7 @@ export function AiAssistant({
               placeholder={placeholder}
               onChange={(event) => onPrompt(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && prompt.trim() && !busy) {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && prompt.trim() && !busy && ready) {
                   event.preventDefault();
                   onAsk("generate");
                 }
@@ -174,6 +176,7 @@ export function AiAssistant({
             />
             <div className="ai-composer-footer">
               <div className="ai-composer-tools">
+                {!ready && <span className="ai-catalog-loading">loading data catalog…</span>}
                 {includeSamples && preferences.hypothesize && <span className="ai-research-ready"><i aria-hidden="true" />live research</span>}
               </div>
               <div className="ai-send-cluster">
@@ -190,7 +193,7 @@ export function AiAssistant({
                     <label className="ai-data-setting"><input name="include-preview-rows" type="checkbox" checked={includeSamples} onChange={(event) => onIncludeSamples(event.target.checked)} /><span><b>send selected data</b><small>share column names and up to 20 selected or preview rows</small></span></label>
                   </div>
                 </details>
-                <button className="ai-send-button" type="button" disabled={busy || !prompt.trim()} onClick={() => onAsk("generate")}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
+                <button className="ai-send-button" type="button" disabled={busy || !prompt.trim() || !ready} onClick={() => onAsk("generate")}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
               </div>
             </div>
           </div>

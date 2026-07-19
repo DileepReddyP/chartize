@@ -25,7 +25,7 @@ export function serializeDraft(draft: GgsqlDraft): string {
     const layerFields = layer.mark === "spatial"
       ? [layer.geometry, layer.color, layer.fill, layer.opacityField]
       : [
-          layer.x, layer.y, layer.xEnd, layer.yEnd, layer.xMin, layer.xMax, layer.yMin, layer.yMax,
+          layer.x, layer.y, layer.lon, layer.lat, layer.label, layer.xEnd, layer.yEnd, layer.xMin, layer.xMax, layer.yMin, layer.yMax,
           layer.slope, layer.color, layer.fill, layer.size, layer.shape, layer.linetype,
           layer.linewidth, layer.opacityField, layer.weight,
         ];
@@ -88,9 +88,12 @@ export function serializeDraft(draft: GgsqlDraft): string {
         else if (layer.colourLegendValue) mappings.push(`${quoteLiteral(layer.colourLegendValue)} AS colour`);
         if (layer.opacityField) mappings.push(`${quoteIdentifier(layer.opacityField)} AS opacity`);
       } else if (!layer.place) {
-        if (layer.x) mappings.push(`${quoteIdentifier(mapped(layer.x))} AS x`);
-        if (aggregateAlias) mappings.push(`${quoteIdentifier(aggregateAlias)} AS y`);
+        if (layer.lon) mappings.push(`${quoteIdentifier(mapped(layer.lon))} AS lon`);
+        else if (layer.x) mappings.push(`${quoteIdentifier(mapped(layer.x))} AS x`);
+        if (layer.lat) mappings.push(`${quoteIdentifier(mapped(layer.lat))} AS lat`);
+        else if (aggregateAlias) mappings.push(`${quoteIdentifier(aggregateAlias)} AS y`);
         else if (layer.y) mappings.push(`${quoteIdentifier(layer.y)} AS y`);
+        if (layer.label) mappings.push(`${quoteIdentifier(layer.label)} AS label`);
         for (const [field, aesthetic] of [
           [layer.xEnd, "xend"], [layer.yEnd, "yend"], [layer.xMin, "xmin"], [layer.xMax, "xmax"],
           [layer.yMin, "ymin"], [layer.yMax, "ymax"], [layer.slope, "slope"],
@@ -115,6 +118,8 @@ export function serializeDraft(draft: GgsqlDraft): string {
       if (layer.fixedSize > 0) settings.push(`size => ${layer.fixedSize}`);
       if (layer.fixedLinewidth > 0) settings.push(`linewidth => ${layer.fixedLinewidth}`);
       if (layer.fixedLinetype) settings.push(`linetype => ${quoteLiteral(layer.fixedLinetype)}`);
+      if (layer.fixedFontSize > 0) settings.push(`fontsize => ${layer.fixedFontSize}`);
+      if (layer.fixedFontWeight) settings.push(`fontweight => ${quoteLiteral(layer.fixedFontWeight)}`);
       if (layer.mark === "smooth") {
         if (layer.smoothMethod) settings.push(`method => ${quoteLiteral(layer.smoothMethod)}`);
         if (Number.isFinite(layer.smoothAdjust) && layer.smoothAdjust !== 1) settings.push(`adjust => ${layer.smoothAdjust}`);
@@ -138,7 +143,14 @@ export function serializeDraft(draft: GgsqlDraft): string {
     const type = scale.type ? ` ${scale.type.toLocaleUpperCase()}` : "";
     const palette = scale.palette ? ` TO ${scale.palette}` : "";
     const transform = scale.transform ? ` VIA ${scale.transform}` : "";
-    const renaming = scale.labelFormat ? `\n  RENAMING * => ${quoteLiteral(`{:time ${scale.labelFormat}}`)}` : "";
+    const formatter = scale.labelFormat
+      ? scale.labelFormat.startsWith("{")
+        ? scale.labelFormat
+        : ["date", "datetime", "time"].includes(scale.transform ?? "")
+          ? `{:time ${scale.labelFormat}}`
+          : scale.labelFormat
+      : "";
+    const renaming = formatter ? `\n  RENAMING * => ${quoteLiteral(formatter)}` : "";
     return `SCALE${type} ${scale.aesthetic}${palette}${transform}${renaming}`;
   }).join("\n");
   const labels = [`title => ${quoteLiteral(draft.title)}`];
@@ -153,7 +165,7 @@ export function serializeDraft(draft: GgsqlDraft): string {
       : `\nPROJECT TO crs\n  SETTING target => ${quoteLiteral(draft.projection)}`
     : "";
 
-  return `SELECT ${select}\nFROM ${from}${joins ? `\n${joins}` : ""}${where}${groupBy}\nLIMIT ${draft.limit}\n\nVISUALISE\n${visualLayers}${referenceLayers ? `\n${referenceLayers}` : ""}${projection}${scales ? `\n${scales}` : ""}\nLABEL ${labels.join(", ")}`;
+  return `SELECT ${select}\nFROM ${from}${joins ? `\n${joins}` : ""}${where}${groupBy}\nLIMIT ${draft.limit}\n\nVISUALISE\n${visualLayers}${referenceLayers ? `\n${referenceLayers}` : ""}${scales ? `\n${scales}` : ""}\nLABEL ${labels.join(", ")}${projection}`;
 }
 
 export function makeDefaultDraft(source = "ggsql:penguins"): GgsqlDraft {
@@ -171,6 +183,9 @@ export function makeDefaultDraft(source = "ggsql:penguins"): GgsqlDraft {
         mark: "point",
         x: "bill_len",
         y: "bill_dep",
+        lon: "",
+        lat: "",
+        label: "",
         xEnd: "",
         yEnd: "",
         xMin: "",
@@ -196,6 +211,8 @@ export function makeDefaultDraft(source = "ggsql:penguins"): GgsqlDraft {
         fixedSize: 0,
         fixedLinewidth: 0,
         fixedLinetype: "",
+        fixedFontSize: 0,
+        fixedFontWeight: "",
         smoothMethod: "",
         smoothAdjust: 1,
         smoothBandwidth: 0,
@@ -218,7 +235,7 @@ export function makeDefaultDraft(source = "ggsql:penguins"): GgsqlDraft {
   };
 }
 
-export function makeBlankDraft(source = "chartize:presidential_approval_average"): GgsqlDraft {
+export function makeBlankDraft(source = ""): GgsqlDraft {
   const draft = makeDefaultDraft(source);
   draft.layers = [{
     ...draft.layers[0]!,
@@ -229,7 +246,7 @@ export function makeBlankDraft(source = "chartize:presidential_approval_average"
     size: "",
     geometry: "",
   }];
-  draft.title = "untitled visualization";
+  draft.title = "";
   draft.subtitle = "";
   draft.tooltipFields = [];
   draft.scales = [];

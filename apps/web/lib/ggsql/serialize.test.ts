@@ -39,6 +39,12 @@ describe("serializeDraft", () => {
     expect(query).toContain("y => 'Approval'");
   });
 
+  it("preserves explicit numeric scale formatters", () => {
+    const draft = makeDefaultDraft();
+    draft.scales = [{ aesthetic: "y", type: "continuous", palette: "", transform: "linear", labelFormat: "{:num %.1f}%" }];
+    expect(serializeDraft(draft)).toContain("RENAMING * => '{:num %.1f}%'");
+  });
+
   it("serializes intervals, fitted layers, scenarios, and reference rules", () => {
     const draft = makeDefaultDraft("chartize:presidential_approval_average");
     draft.layers = [
@@ -60,12 +66,10 @@ describe("serializeDraft", () => {
     expect(query).toContain("aggregate => 'max'");
   });
 
-  it("creates a genuinely blank starter without losing its source", () => {
-    const draft = makeBlankDraft("chartize:county_population_2025");
-    const query = serializeDraft(draft);
-    expect(draft.title).toBe("untitled visualization");
-    expect(query).toContain("SELECT *");
-    expect(query).toContain("FROM chartize:county_population_2025");
-    expect(query).toContain("DRAW point");
+  it("creates an empty draft for the blank workspace state", () => {
+    const draft = makeBlankDraft();
+    expect(draft.source).toBe("");
+    expect(draft.title).toBe("");
+    expect(draft.layers[0]).toMatchObject({ x: "", y: "", geometry: "" });
   });
 });

@@ -50,7 +50,7 @@ import {
   visualSelectionFields,
   visualPointState,
 } from "@/lib/ggsql/query-context";
-import { makeDefaultDraft, serializeDraft } from "@/lib/ggsql/serialize";
+import { makeBlankDraft, makeDefaultDraft, serializeDraft } from "@/lib/ggsql/serialize";
 import type { VisualizationExample } from "@/lib/ggsql/examples";
 import {
   centeredDomain,
@@ -200,7 +200,8 @@ export function Explorer() {
   useEffect(() => { draftRef.current = draft; }, [draft]);
 
   const activeSources = useMemo(() => sourcesFromQuery(query), [query]);
-  const activeSource = activeSources[0] ?? sourceFromQuery(query, draft.source);
+  const isBlankWorkspace = !query.trim();
+  const activeSource = activeSources[0] ?? (isBlankWorkspace ? "" : sourceFromQuery(query, draft.source));
   const baseSources = useMemo<DwimSource[]>(() => [
     ...warehouseDatasets.map((dataset) => ({ id: `chartize:${dataset.slug}`, title: dataset.title, description: dataset.description, namespace: "chartize" as const, rows: dataset.rowCount, fields: dataset.fields })),
     ...localDatasets.map((dataset) => ({ id: dataset.tableName.startsWith("ggsql:") ? dataset.tableName : `user:${dataset.tableName}`, title: dataset.title, description: dataset.description, namespace: dataset.tableName.startsWith("ggsql:") ? "ggsql" as const : "user" as const, fields: dataset.fields })),
@@ -268,6 +269,19 @@ export function Explorer() {
 
   const runQuery = useCallback(async (queryToRun?: string, requestedMode?: ExecutionMode) => {
     const displayQuery = queryToRun ?? queryRef.current;
+    if (!displayQuery.trim()) {
+      runSequenceRef.current += 1;
+      setRunning(false);
+      setShowLoadingMask(false);
+      setSpec(null);
+      setSelectedData({ ...EMPTY_TABLE, limit: 200 });
+      setError("");
+      setDuration(0);
+      setGridSelection(null);
+      setChartSelection(null);
+      resetChartZoom();
+      return { ok: true as const };
+    }
     const displaySources = sourcesFromQuery(displayQuery);
     const displaySource = displaySources[0] ?? sourceFromQuery(displayQuery, draftRef.current.source);
     const sourceModes = new Set(displaySources.map((source) => modeForSource(source, warehouseDatasets)));
@@ -357,13 +371,13 @@ export function Explorer() {
 
   const startBlankVisualization = useCallback(() => {
     if (autoRunTimerRef.current) clearTimeout(autoRunTimerRef.current);
+    initializedRef.current = true;
     runSequenceRef.current += 1;
-    const source = baseSources.some((candidate) => candidate.id === activeSource)
-      ? activeSource
-      : "chartize:presidential_approval_average";
-    startNewVisualization(source);
+    fullSequenceRef.current += 1;
+    queryRef.current = "";
+    startNewVisualization();
     window.requestAnimationFrame(() => editorRef.current?.focus());
-  }, [activeSource, baseSources, startNewVisualization]);
+  }, [startNewVisualization]);
 
   const loadExample = useCallback((example: VisualizationExample) => {
     if (autoRunTimerRef.current) clearTimeout(autoRunTimerRef.current);
@@ -526,11 +540,12 @@ export function Explorer() {
   }, [aiOpen, chartSelection, editorContext, gridSelection, setChartSelection, setEditorContext, setGridSelection, setResultStatus]);
 
   useEffect(() => {
+    if (catalogLoaded) return;
     void fetchWarehouseCatalog()
       .then(setWarehouseDatasets)
       .catch(() => setWarehouseDatasets([]))
       .finally(() => setCatalogLoaded(true));
-  }, []);
+  }, [catalogLoaded, setCatalogLoaded, setWarehouseDatasets]);
 
   useEffect(() => {
     const dismissTransientMenus = (event: PointerEvent) => {
@@ -808,6 +823,10 @@ export function Explorer() {
 
   const askAi = useCallback(async (task: "generate" | "repair" | "explain") => {
     if (aiBusy) return;
+    if (!catalogLoaded) {
+      setAiMessage("The data catalog is still loading.");
+      return;
+    }
     const request = aiPrompt.trim() || (task === "explain"
       ? aiContext === "code" ? "Explain the current GGSQL, including how its VISUALISE clauses produce this chart." : "Explain the current chart and the GGSQL that produces it."
       : "Repair the current query.");
@@ -820,6 +839,7 @@ export function Explorer() {
     setAiBusy(true);
     setAiMessage("");
     setAiHistory((current) => [...current, { role: "user", text: request }]);
+    setAiPrompt("");
     try {
       const response = await fetch("/api/ai/query", {
         method: "POST",
@@ -830,7 +850,7 @@ export function Explorer() {
           contextNote: aiContextNote,
           request,
           currentQuery: queryRef.current,
-          source: activeSource,
+          source: activeSource || undefined,
           schema: activeFields,
           availableSources: baseSources.map(({ id, title, description, fields }) => ({ id, title, description, fields })),
           view: aiView,
@@ -847,7 +867,6 @@ export function Explorer() {
         (aiPreferences.technical || aiPreferences.challenge) && body.warnings.length ? `Check: ${body.warnings.join(" ")}` : "",
         body.sources.length ? `Sources: ${body.sources.map((source) => `[${source.title}](${source.url})`).join(" · ")}` : "",
       ].filter(Boolean).join("\n\n");
-      setAiPrompt("");
       if (task !== "explain") {
         assertReadOnlyGgsql(body.query);
         resetMapViewport();
@@ -867,7 +886,7 @@ export function Explorer() {
     } finally {
       setAiBusy(false);
     }
-  }, [activeFields, activeSource, aiBusy, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, chartSelectionData.columns, chartSelectionDetails.rows, gridSelection, includeSamples, resetMapViewport, runQuery, selectedData.columns, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setDraft, setQuery]);
+  }, [activeFields, activeSource, aiBusy, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, catalogLoaded, chartSelectionData.columns, chartSelectionDetails.rows, gridSelection, includeSamples, resetMapViewport, runQuery, selectedData.columns, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setDraft, setQuery]);
 
   const saveLocal = useCallback(async () => {
     await saveWorkspace({ id: "current", title: draftRef.current.title, query: queryRef.current, draft: draftRef.current, files: storedFilesRef.current, savedAt: new Date().toISOString() });
@@ -1007,7 +1026,7 @@ export function Explorer() {
                     <div role="alert"><strong>query error</strong><p>{error}</p></div>
                   </details>
                 )}
-                <button className="run-button" type="button" disabled={running || engineState !== "ready"} onClick={() => void runEditorQuery()}><span aria-hidden="true">▶</span>{running ? "running" : "run"}</button>
+                <button className="run-button" type="button" disabled={running || engineState !== "ready" || isBlankWorkspace} onClick={() => void runEditorQuery()}><span aria-hidden="true">▶</span>{running ? "running" : "run"}</button>
               </header>
               <div className="editor-body">
                 <Editor
@@ -1017,7 +1036,29 @@ export function Explorer() {
                   value={query}
                   onMount={handleEditorMount}
                   options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13, lineHeight: 21, lineNumbersMinChars: 3, padding: { top: 15, bottom: 15 }, wordWrap: "on", scrollBeyondLastLine: false, folding: false, renderLineHighlight: "line", selectionHighlight: true }}
-                  onChange={(value) => { setQuery(value ?? ""); setDwimStatus(""); }}
+                  onChange={(value) => {
+                    const nextQuery = value ?? "";
+                    setQuery(nextQuery);
+                    setDwimStatus("");
+                    if (!nextQuery.trim()) {
+                      runSequenceRef.current += 1;
+                      fullSequenceRef.current += 1;
+                      setDraft(makeBlankDraft());
+                      setSpec(null);
+                      setSelectedData({ ...EMPTY_TABLE, limit: 200 });
+                      setFullData(EMPTY_TABLE);
+                      setDockSource("");
+                      setFullSort(null);
+                      setRunning(false);
+                      setFullLoading(false);
+                      setShowLoadingMask(false);
+                      setError("");
+                      setDuration(0);
+                      setGridSelection(null);
+                      setChartSelection(null);
+                      resetChartZoom();
+                    }
+                  }}
                 />
                 {inlineAnchors && <InlineQueryControls anchors={inlineAnchors as InlineControlAnchors} sources={sources} activeSources={activeSources} selectedFields={selectedFieldNames} catalogLoading={!catalogLoaded} onSource={toggleSource} onColumn={toggleColumn} />}
                 {editorContext && (
@@ -1109,28 +1150,34 @@ export function Explorer() {
 
             <div className="result-stage" aria-busy={running}>
               {resultTab === "chart" && (
-                <div className="chart-result-view">
-                  <header className="chart-header">
-                    <div className="chart-title">
-                      <EditableChartLabel kind="title" value={visualState.title || draft.title} onCommit={(value) => editChartLabel("title", value)} />
-                      <EditableChartLabel kind="subtitle" value={visualState.subtitle || draft.subtitle} onCommit={(value) => editChartLabel("subtitle", value)} />
-                    </div>
-                  </header>
-                  <div className="chart-view-shell">
-                    <div className="chart-view"><ChartView ref={chartRef} spec={spec} onError={setError} threshold={activeSource.includes("presidential_approval_average") ? APPROVAL_THRESHOLD : undefined} domains={chartDomains} selection={chartSelection} mapMode={isMap} mapViewport={mapViewport} onMapPan={panMap} onRegionSelect={(selection) => { setSelectionOrigin("result"); setChartSelection(selection); }} /></div>
-                    {isMap
-                      ? <MapExplorationControls viewport={mapViewport} onPan={panMap} onZoom={zoomMap} onReset={resetMapViewport} />
-                      : <GraphExplorationControls
-                          canZoomSelection={Boolean(chartSelection?.x && chartSelection.y)}
-                          canGoBack={chartDomainHistory.length > 0}
-                          canFit={chartDomainHistory.length > 0 || Object.keys(chartDomains).length > 0}
-                          onZoomIn={() => zoomChartCentered(0.72)}
-                          onZoomOut={() => zoomChartCentered(1.4)}
-                          onZoomSelection={zoomToChartSelection}
-                          onGoBack={zoomChartOut}
-                          onFit={resetChartZoom}
-                        />}
-                  </div>
+                <div className={`chart-result-view${isBlankWorkspace ? " blank" : ""}`}>
+                  {isBlankWorkspace ? (
+                    <div className="blank-chart-grid" role="img" aria-label="Blank visualization canvas" />
+                  ) : (
+                    <>
+                      <header className="chart-header">
+                        <div className="chart-title">
+                          <EditableChartLabel kind="title" value={visualState.title || draft.title} onCommit={(value) => editChartLabel("title", value)} />
+                          <EditableChartLabel kind="subtitle" value={visualState.subtitle || draft.subtitle} onCommit={(value) => editChartLabel("subtitle", value)} />
+                        </div>
+                      </header>
+                      <div className="chart-view-shell">
+                        <div className="chart-view"><ChartView ref={chartRef} spec={spec} onError={setError} threshold={activeSource.includes("presidential_approval_average") ? APPROVAL_THRESHOLD : undefined} domains={chartDomains} selection={chartSelection} mapMode={isMap} mapViewport={mapViewport} onMapPan={panMap} onRegionSelect={(selection) => { setSelectionOrigin("result"); setChartSelection(selection); }} /></div>
+                        {isMap
+                          ? <MapExplorationControls viewport={mapViewport} onPan={panMap} onZoom={zoomMap} onReset={resetMapViewport} />
+                          : <GraphExplorationControls
+                              canZoomSelection={Boolean(chartSelection?.x && chartSelection.y)}
+                              canGoBack={chartDomainHistory.length > 0}
+                              canFit={chartDomainHistory.length > 0 || Object.keys(chartDomains).length > 0}
+                              onZoomIn={() => zoomChartCentered(0.72)}
+                              onZoomOut={() => zoomChartCentered(1.4)}
+                              onZoomSelection={zoomToChartSelection}
+                              onGoBack={zoomChartOut}
+                              onFit={resetChartZoom}
+                            />}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
               {resultTab === "selected" && <DataGrid data={selectedData} selectedColumns={selectedSetForGrid} onSelection={(selection) => { setSelectionOrigin("result"); setGridSelection(selection); }} />}
@@ -1151,6 +1198,7 @@ export function Explorer() {
           contextNote={aiContextNote}
           prompt={aiPrompt}
           busy={aiBusy}
+          ready={catalogLoaded}
           status={aiMessage}
           history={aiHistory}
           includeSamples={includeSamples}

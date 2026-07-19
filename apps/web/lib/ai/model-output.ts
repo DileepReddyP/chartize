@@ -29,12 +29,51 @@ export const ModelSuggestionSchema = AiSuggestionSchema.omit({ sources: true, re
 
 export type ModelSuggestion = z.infer<typeof ModelSuggestionSchema>;
 
+const VISUAL_CLAUSE = /^\s*(DRAW|PLACE|SCALE|FACET|LABEL|PROJECT)\b/i;
+const LABEL_ENTRY = /^\s*(title|subtitle|x|y|colour|color|fill|size|shape|linetype|linewidth|opacity)\s*=>/i;
+
+export function normalizeModelGgsql(query: string) {
+  const lines = query.split("\n");
+  let inLabel = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    const clause = VISUAL_CLAUSE.exec(lines[index] ?? "")?.[1]?.toLocaleUpperCase();
+    if (clause) inLabel = clause === "LABEL";
+    if (!inLabel || !LABEL_ENTRY.test(lines[index] ?? "") || /^\s*LABEL\b/i.test(lines[index] ?? "")) continue;
+    let previous = index - 1;
+    while (previous >= 0 && !lines[previous]!.trim()) previous -= 1;
+    if (previous >= 0 && !lines[previous]!.trimEnd().endsWith(",")) lines[previous] = `${lines[previous]!.trimEnd()},`;
+  }
+
+  const visualise = lines.findIndex((line) => /^\s*VISUALI[ZS]E\b/i.test(line));
+  if (visualise >= 0) {
+    const prefix = lines.slice(0, visualise + 1);
+    const body = lines.slice(visualise + 1);
+    const blocks: Array<{ kind: string; lines: string[] }> = [];
+    for (const line of body) {
+      const kind = VISUAL_CLAUSE.exec(line)?.[1]?.toLocaleUpperCase();
+      if (kind) blocks.push({ kind, lines: [line] });
+      else if (blocks.length) blocks.at(-1)!.lines.push(line);
+      else prefix.push(line);
+    }
+    const project = blocks.filter((block) => block.kind === "PROJECT");
+    if (project.length && blocks.some((block) => block.kind === "DRAW" || block.kind === "PLACE")) {
+      lines.splice(0, lines.length, ...prefix, ...blocks.filter((block) => block.kind !== "PROJECT").flatMap((block) => block.lines), ...project.flatMap((block) => block.lines));
+    }
+  }
+
+  return lines.join("\n")
+    .replace(/\bTO\s+'(vik|viridis|tableau10|rdbu)'(?![\w-])/gi, (_match, palette: string) => `TO ${palette}`)
+    .replace(/\b(PROJECT\s+TO\s+[a-z][\w-]*)\s+WITH\s+SETTING\b/gi, "$1\n  SETTING")
+    .trim();
+}
+
 export function normalizeModelSuggestion(
   modelResult: ModelSuggestion,
   metadata: { sources?: Array<{ title: string; url: string }>; researched?: boolean } = {},
 ) {
   return AiSuggestionSchema.parse({
     ...modelResult,
+    query: normalizeModelGgsql(modelResult.query),
     explanation: modelResult.explanation.replaceAll("?utm_source=openai", ""),
     draft: {
       ...modelResult.draft,

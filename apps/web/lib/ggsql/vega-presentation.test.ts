@@ -23,4 +23,19 @@ describe("Chartize Vega presentation", () => {
     const stroke = (spec.encoding as { stroke: { value: { stops: Array<{ color: string }> } } }).stroke;
     expect(stroke.value.stops.map(({ color }) => color)).toEqual(["#ee4266", "#ee4266", "#147d76", "#147d76"]);
   });
+
+  it("removes a duplicate text stroke that makes dense labels illegible", () => {
+    const spec = presentChartSpec({
+      layer: [{
+        encoding: {
+          fill: { value: "#1a1a1a" },
+          stroke: { value: "#1a1a1a" },
+          text: { field: "label" },
+        },
+        layer: [{ mark: { type: "text" } }],
+      }],
+    });
+    const layer = (spec.layer as Array<{ encoding: { stroke: { value: unknown } } }>)[0]!;
+    expect(layer.encoding.stroke.value).toBeNull();
+  });
 });

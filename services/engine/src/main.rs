@@ -390,6 +390,9 @@ fn selected_query_preview(
     let sql = sql.trim().trim_end_matches(';').trim();
     let connection = open_connection(state)?;
     connection.execute_batch("SET memory_limit='2GB'; SET threads=2;")?;
+    if uses_spatial_functions(sql) {
+        connection.execute_batch("LOAD spatial;")?;
+    }
     let columns = {
         let mut statement = connection.prepare(&format!(
             "SELECT * FROM ({sql}) AS chartize_selected LIMIT 0"
@@ -485,6 +488,9 @@ fn execute_query(state: &AppState, query: &str) -> Result<QueryResult, ApiError>
     reader
         .connection()
         .execute_batch("SET memory_limit='2GB'; SET threads=2;")?;
+    if uses_spatial_functions(validated.sql()) {
+        reader.connection().execute_batch("LOAD spatial;")?;
+    }
     let prepared = reader
         .execute(query)
         .map_err(|error| ApiError::BadRequest(error.to_string()))?;
@@ -934,6 +940,10 @@ fn extension(name: &str) -> String {
         .to_ascii_lowercase()
 }
 
+fn uses_spatial_functions(sql: &str) -> bool {
+    sql.to_ascii_uppercase().contains("ST_")
+}
+
 fn safe_filename(name: &str) -> String {
     Path::new(name)
         .file_name()
@@ -1017,6 +1027,13 @@ mod tests {
         assert!(validate_slug("county_population_2025").is_ok());
         assert!(validate_slug("County-Population").is_err());
         assert!(validate_slug("../warehouse").is_err());
+    }
+
+    #[test]
+    fn spatial_sql_detection_is_case_insensitive() {
+        assert!(uses_spatial_functions("SELECT ST_X(point)"));
+        assert!(uses_spatial_functions("select st_pointonsurface(geometry)"));
+        assert!(!uses_spatial_functions("SELECT geometry FROM boundaries"));
     }
 
     #[test]
