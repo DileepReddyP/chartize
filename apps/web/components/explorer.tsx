@@ -221,8 +221,12 @@ export function Explorer() {
     }));
     return [...byName.values()];
   }, [activeSourceDetails]);
-  const selectedFieldNames = useMemo(() => new Set(selectedProjectionLabels(query)), [query]);
-  const visualFields = useMemo(() => visualFieldsFromPreview(activeFields, selectedData), [activeFields, selectedData]);
+  const selectedProjectionNames = useMemo(() => selectedProjectionLabels(query), [query]);
+  const selectedFieldNames = useMemo(() => new Set(selectedProjectionNames), [selectedProjectionNames]);
+  const visualFields = useMemo(
+    () => visualFieldsFromPreview(activeFields, selectedData, selectedProjectionNames),
+    [activeFields, selectedData, selectedProjectionNames],
+  );
   const visualState = useMemo(() => visualPointState(query), [query]);
   const isMap = useMemo(() => /\bDRAW\s+spatial\b/i.test(splitGgsql(query).visual), [query]);
   const chartSelectionData = useMemo(() => selectionTableFromSpec(spec) ?? selectedData, [selectedData, spec]);
@@ -446,7 +450,7 @@ export function Explorer() {
       nullable: true,
       semanticType: (row[nameIndex] ?? row[1]) === "geometry" ? "geometry" : undefined,
     }));
-  }, []);
+  }, [aiView]);
 
   const addFiles = useCallback(async (fileList: FileList) => {
     for (const file of Array.from(fileList)) {
@@ -491,6 +495,35 @@ export function Explorer() {
       if (autoRunTimerRef.current) clearTimeout(autoRunTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || aiOpen) return;
+      const consume = () => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      };
+      const openMenus = [...document.querySelectorAll<HTMLDetailsElement>("details[data-dismiss-on-outside][open]")];
+      if (openMenus.length) {
+        openMenus.at(-1)?.removeAttribute("open");
+        consume();
+        return;
+      }
+      if (editorContext) {
+        setEditorContext(null);
+        consume();
+        return;
+      }
+      if (gridSelection || chartSelection) {
+        setGridSelection(null);
+        setChartSelection(null);
+        setResultStatus("");
+        consume();
+      }
+    };
+    document.addEventListener("keydown", dismissOnEscape, true);
+    return () => document.removeEventListener("keydown", dismissOnEscape, true);
+  }, [aiOpen, chartSelection, editorContext, gridSelection, setChartSelection, setEditorContext, setGridSelection, setResultStatus]);
 
   useEffect(() => {
     void fetchWarehouseCatalog()
@@ -617,7 +650,10 @@ export function Explorer() {
       if (!offsets) { setInlineAnchors(null); return; }
       const locateOffset = (offset: number) => {
         const visible = editor.getScrolledVisiblePosition(model.getPositionAt(offset));
-        return visible ? { left: visible.left + 8, top: visible.top + visible.height / 2 } : null;
+        const bounds = editor.getDomNode()?.getBoundingClientRect();
+        return visible && bounds
+          ? { left: bounds.left + visible.left + 8, top: bounds.top + visible.top + visible.height / 2 }
+          : null;
       };
       const select = locateOffset(offsets.select);
       const from = locateOffset(offsets.from);
@@ -771,11 +807,16 @@ export function Explorer() {
   }, [baseSources, dockSource, toggleColumn]);
 
   const askAi = useCallback(async (task: "generate" | "repair" | "explain") => {
+    if (aiBusy) return;
     const request = aiPrompt.trim() || (task === "explain"
       ? aiContext === "code" ? "Explain the current GGSQL, including how its VISUALISE clauses produce this chart." : "Explain the current chart and the GGSQL that produces it."
       : "Repair the current query.");
     const history = aiHistory.slice(-20);
-    const contextualRows = chartSelectionDetails.rows.length ? chartSelectionDetails.rows : selectedData.rows;
+    const contextualData = gridSelection
+      ? { columns: gridSelection.columns, rows: gridSelection.rows }
+      : chartSelectionDetails.rows.length
+        ? { columns: chartSelectionData.columns, rows: chartSelectionDetails.rows }
+        : { columns: selectedData.columns, rows: selectedData.rows };
     setAiBusy(true);
     setAiMessage("");
     setAiHistory((current) => [...current, { role: "user", text: request }]);
@@ -794,16 +835,17 @@ export function Explorer() {
           availableSources: baseSources.map(({ id, title, description, fields }) => ({ id, title, description, fields })),
           view: aiView,
           preferences: aiPreferences,
-          sampleRows: includeSamples ? contextualRows.slice(0, 20) : undefined,
+          sampleData: includeSamples ? { columns: contextualData.columns, rows: contextualData.rows.slice(0, 20) } : undefined,
           history,
         }),
       });
       const body = await response.json() as AiSuggestion | { error: string };
       if (!response.ok || "error" in body) throw new Error("error" in body ? body.error : "AI request failed.");
-      const qualifications = [...body.assumptions, ...body.warnings];
       const reply = [
-        body.explanation,
-        qualifications.length ? `Worth keeping in mind: ${qualifications.join(" ")}` : "",
+        body.explanation.trim(),
+        aiPreferences.technical && body.assumptions.length ? `Assumptions: ${body.assumptions.join(" ")}` : "",
+        (aiPreferences.technical || aiPreferences.challenge) && body.warnings.length ? `Check: ${body.warnings.join(" ")}` : "",
+        body.sources.length ? `Sources: ${body.sources.map((source) => `[${source.title}](${source.url})`).join(" · ")}` : "",
       ].filter(Boolean).join("\n\n");
       setAiPrompt("");
       if (task !== "explain") {
@@ -825,7 +867,7 @@ export function Explorer() {
     } finally {
       setAiBusy(false);
     }
-  }, [activeFields, activeSource, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, chartSelectionDetails.rows, includeSamples, resetMapViewport, runQuery, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setDraft, setQuery]);
+  }, [activeFields, activeSource, aiBusy, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, chartSelectionData.columns, chartSelectionDetails.rows, gridSelection, includeSamples, resetMapViewport, runQuery, selectedData.columns, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setDraft, setQuery]);
 
   const saveLocal = useCallback(async () => {
     await saveWorkspace({ id: "current", title: draftRef.current.title, query: queryRef.current, draft: draftRef.current, files: storedFilesRef.current, savedAt: new Date().toISOString() });
@@ -910,13 +952,23 @@ export function Explorer() {
     const selectedGrid = selectionOrigin === origin ? gridSelection : null;
     const selectedChart = origin === "result" ? chartSelection : null;
     if (!selectedGrid && !selectedChart) return null;
+    const selectedMap = Boolean(selectedChart && isMap);
     const context = selectedGrid
       ? `${aiViewNote} Data selection: ${selectedGrid.summary}. Columns: ${selectedGrid.columns.join(", ")}. Row values are attached only when the user enables the sample-row control.`
-      : `${aiViewNote} Chart selection: ${chartSelectionDetails.summary}. X range: ${JSON.stringify(selectedChart?.x)}. Y range: ${JSON.stringify(selectedChart?.y)}.`;
+      : selectedMap
+        ? `${aiViewNote} Map selection: a rectangular map area is selected. Use the map subject, legend, current query, and attached data to interpret the places inside it.`
+        : `${aiViewNote} Chart selection: ${chartSelectionDetails.summary}. X range: ${JSON.stringify(selectedChart?.x)}. Y range: ${JSON.stringify(selectedChart?.y)}.`;
+    const selectionTitle = selectedGrid ? "data selection" : selectedMap ? "map selection" : "chart selection";
+    const selectionSummary = selectedGrid?.summary ?? (selectedMap ? "selected map area" : chartSelectionDetails.summary);
+    const selectionPrompt = selectedGrid
+      ? "Ask about these selected cells…"
+      : selectedMap
+        ? "Ask about the places in this selected area…"
+        : "Ask what changed in this selected range…";
     return (
       <aside className="result-context" aria-label="Selection actions">
-        <header><div><h2>{selectedGrid ? "data selection" : "chart selection"}</h2><p>{selectedGrid?.summary ?? chartSelectionDetails.summary}</p></div><button type="button" aria-label="Close selection actions" onClick={() => { setGridSelection(null); setChartSelection(null); setResultStatus(""); }}>×</button></header>
-        <button className="result-context-ai ai-promoter" type="button" onClick={(event) => promoteAi(context, "left", "chart", event.currentTarget)}><span aria-hidden="true">✦</span><span>Ask Chartize about this selection…</span><b>ask</b></button>
+        <header><div><h2>{selectionTitle}</h2><p>{selectionSummary}</p></div><button type="button" aria-label="Close selection actions" onClick={() => { setGridSelection(null); setChartSelection(null); setResultStatus(""); }}>×</button></header>
+        <label className="result-context-ai ai-promoter"><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={(event) => promoteAi(context, "left", "chart", event.currentTarget)} /><b>ask</b></label>
         {resultStatus && <p className="result-context-status">{resultStatus}</p>}
         <div className="result-context-actions">
           {selectedChart?.x && selectedChart?.y && <button type="button" onClick={zoomToChartSelection}>zoom to selection</button>}
@@ -950,7 +1002,7 @@ export function Explorer() {
                   <VisualizationExamplePicker onSelect={loadExample} />
                 </nav>
                 {error && (
-                  <details className="code-error">
+                  <details className="code-error" data-dismiss-on-outside>
                     <summary title="Show query error" aria-label="Show query error"><span aria-hidden="true">!</span></summary>
                     <div role="alert"><strong>query error</strong><p>{error}</p></div>
                   </details>
@@ -1043,11 +1095,11 @@ export function Explorer() {
                 <div className="preview-actions" aria-label="Result actions">
                   <span className={`chart-status ${running ? "running" : ""}`}>{running ? "running" : `${duration} ms`}</span>
                   <button className="icon-button save-action" type="button" title="Save in this browser" aria-label="Save in this browser" onClick={() => void saveLocal()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5zM8 3v6h8V3M8 14h8v7H8z" /></svg></button>
-                  <details className="preview-menu">
+                  <details className="preview-menu" data-dismiss-on-outside>
                     <summary className="icon-button download-action" title="Download" aria-label="Download"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 20h14" /></svg></summary>
                     <div><span>download</span><button onClick={() => void exportChart("png")}>chart as png</button><button onClick={() => void exportChart("svg")}>chart as svg</button><button onClick={() => void exportShareCard()}>share card</button></div>
                   </details>
-                  <details className="preview-menu">
+                  <details className="preview-menu" data-dismiss-on-outside>
                     <summary className="icon-button tools-action" title="Tools" aria-label="Tools"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg></summary>
                     <div><span>view tools</span><button onClick={() => void restoreLocal()}>restore browser workspace</button><button onClick={() => void shareView()}>copy share url</button><button onClick={resetChartZoom}>fit full chart</button></div>
                   </details>

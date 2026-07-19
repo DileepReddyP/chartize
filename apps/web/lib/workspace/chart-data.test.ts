@@ -34,6 +34,26 @@ describe("chart workspace data", () => {
     expect(fields.find((field) => field.name === "label_date")).toMatchObject({ dataType: "DATE", semanticType: "temporal" });
   });
 
+  it("offers only SQL projection fields to the visual builder", () => {
+    const fields = visualFieldsFromPreview(
+      [
+        { name: "end_date", dataType: "DATE", nullable: false, semanticType: "temporal" },
+        { name: "approve", dataType: "DOUBLE", nullable: false, semanticType: "measure" },
+        { name: "disapprove", dataType: "DOUBLE", nullable: false, semanticType: "measure" },
+      ],
+      {
+        columns: ["end_date", "approve", "net"],
+        rows: [["2025-01-01", "47", "-3"]],
+        totalRows: 1,
+        offset: 0,
+        limit: 100,
+      },
+      ["end_date", "net"],
+    );
+    expect(fields.map((field) => field.name)).toEqual(["end_date", "net"]);
+    expect(fields[1]).toMatchObject({ dataType: "DOUBLE", semanticType: "measure" });
+  });
+
   it("counts data points inside a reversed brush range", () => {
     const result = describeChartSelection(
       { x: [3, 1], y: [30, 10] },

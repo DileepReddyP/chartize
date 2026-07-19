@@ -20,7 +20,7 @@ const ModelScaleSchema = z.object({
   labelFormat: z.string().nullable(),
 });
 
-export const ModelSuggestionSchema = AiSuggestionSchema.extend({
+export const ModelSuggestionSchema = AiSuggestionSchema.omit({ sources: true, researched: true }).extend({
   draft: GgsqlDraftSchema.extend({
     layers: z.array(ModelLayerSchema).min(1),
     scales: z.array(ModelScaleSchema),
@@ -29,9 +29,13 @@ export const ModelSuggestionSchema = AiSuggestionSchema.extend({
 
 export type ModelSuggestion = z.infer<typeof ModelSuggestionSchema>;
 
-export function normalizeModelSuggestion(modelResult: ModelSuggestion) {
+export function normalizeModelSuggestion(
+  modelResult: ModelSuggestion,
+  metadata: { sources?: Array<{ title: string; url: string }>; researched?: boolean } = {},
+) {
   return AiSuggestionSchema.parse({
     ...modelResult,
+    explanation: modelResult.explanation.replaceAll("?utm_source=openai", ""),
     draft: {
       ...modelResult.draft,
       layers: modelResult.draft.layers.map((layer) => ({
@@ -44,6 +48,8 @@ export function normalizeModelSuggestion(modelResult: ModelSuggestion) {
         labelFormat: scale.labelFormat ?? undefined,
       })),
     },
+    sources: metadata.sources ?? [],
+    researched: metadata.researched ?? false,
   });
 }
 

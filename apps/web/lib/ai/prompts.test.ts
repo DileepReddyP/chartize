@@ -16,7 +16,8 @@ describe("Chartize AI prompt contract", () => {
 
   it("allows useful historical hypotheses without turning caveats into the answer", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("general historical or public knowledge");
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("plausible explanations from general knowledge");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("offer the strongest concrete explanation first");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("actually search before answering");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("do not sound like a compliance notice");
   });
 

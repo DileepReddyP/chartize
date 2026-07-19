@@ -18,6 +18,7 @@ const vars = createGlobalTheme(":root", {
 });
 
 const systemFont = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const conversationFont = '"Avenir Next", Avenir, "Segoe UI Variable", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif';
 
 globalStyle("*", { boxSizing: "border-box" });
 globalStyle("html, body", { width: "100%", height: "100%", margin: 0, overflow: "hidden" });
@@ -41,9 +42,9 @@ globalStyle(".topbar", {
 globalStyle(".brand", { display: "flex", alignItems: "center", gap: "8px", textDecoration: "none", fontSize: "17px", fontWeight: 650, letterSpacing: "-.04em", textTransform: "lowercase" });
 globalStyle(".brand-mark", { width: "15px", height: "15px", background: vars.color.teal, borderRadius: "50%" });
 globalStyle(".topbar nav", { justifySelf: "end", display: "flex", alignItems: "center", gap: "18px" });
-globalStyle(".topbar nav a", { color: vars.color.muted, textDecoration: "none", fontSize: "11px", fontWeight: 700, textTransform: "lowercase" });
+globalStyle(".topbar nav a", { color: vars.color.muted, textDecoration: "none", fontSize: "11px", fontWeight: 600, textTransform: "lowercase" });
 globalStyle(".topbar nav a:hover", { color: vars.color.tealDark });
-globalStyle(".toolbar-ai-button", { position: "relative", zIndex: 0, minHeight: "27px", display: "flex", alignItems: "center", gap: "5px", padding: "4px 9px", overflow: "hidden", border: 0, borderRadius: "4px", background: "transparent", color: vars.color.amethyst, cursor: "pointer", isolation: "isolate", fontSize: "10px", fontWeight: 650, textTransform: "lowercase", "@media": { "screen and (max-width: 680px)": { padding: "4px 6px", fontSize: "9px" } } });
+globalStyle(".toolbar-ai-button", { position: "relative", zIndex: 0, minHeight: "27px", display: "flex", alignItems: "center", gap: "5px", padding: "4px 9px", overflow: "hidden", border: 0, borderRadius: "4px", background: "transparent", color: vars.color.amethyst, cursor: "pointer", isolation: "isolate", fontSize: "10px", fontWeight: 590, textTransform: "lowercase", "@media": { "screen and (max-width: 680px)": { padding: "4px 6px", fontSize: "9px" } } });
 globalStyle(".toolbar-ai-button span", { color: vars.color.tealDark });
 globalStyle(".toolbar-ai-button.activating::before", { animation: "ai-border-orbit .42s cubic-bezier(.2,.75,.2,1) 1 both" });
 globalStyle(".toolbar-ai-button.active", { background: vars.color.tealDark, color: vars.color.panel, boxShadow: `inset 0 0 0 1px ${vars.color.tealDark}` });
@@ -66,7 +67,7 @@ globalKeyframes("ai-border-orbit", {
 globalStyle(".toolbar-ai-button::before", { content: "", position: "absolute", left: "50%", top: "50%", zIndex: -2, width: "220%", aspectRatio: "1", background: `conic-gradient(from 0turn, transparent 0 62%, rgb(60 187 177 / 22%) 70%, ${vars.color.teal} 82%, ${vars.color.tealDark} 90%, transparent 100%)`, animation: "ai-border-orbit 2.2s linear infinite", pointerEvents: "none" });
 globalStyle(".toolbar-ai-button::after", { content: "", position: "absolute", inset: "1px", zIndex: -1, borderRadius: "inherit", background: vars.color.panel, pointerEvents: "none" });
 globalStyle(".toolbar-ai-button:hover::after", { background: vars.color.tealPale });
-globalStyle(".run-button", { minWidth: "80px", minHeight: "31px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", border: 0, borderRadius: "2px", background: vars.color.teal, color: vars.color.ink, cursor: "pointer", fontSize: "10px", fontWeight: 800, textTransform: "lowercase" });
+globalStyle(".run-button", { minWidth: "80px", minHeight: "31px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", border: 0, borderRadius: "2px", background: vars.color.teal, color: vars.color.ink, cursor: "pointer", fontSize: "10px", fontWeight: 620, textTransform: "lowercase" });
 globalStyle(".run-button:hover", { background: vars.color.tealDark, color: vars.color.panel });
 globalStyle(".run-button > span", { fontSize: "8px" });
 globalStyle(".code-error", { flex: "0 0 auto" });
@@ -96,7 +97,7 @@ globalStyle(".preview-menu", { position: "relative" });
 globalStyle(".preview-menu summary::-webkit-details-marker", { display: "none" });
 globalStyle(".preview-menu > div", { position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 12, width: "195px", display: "grid", padding: "5px", background: vars.color.panel, border: `1px solid ${vars.color.strongLine}`, borderRadius: "2px", boxShadow: "0 10px 30px rgb(10 15 13 / 14%)" });
 globalStyle(".preview-menu > div > span", { padding: "5px 9px 3px", color: vars.color.muted, fontSize: "8px", fontWeight: 750, letterSpacing: ".04em", textTransform: "lowercase" });
-globalStyle(".preview-menu > div button", { padding: "8px 9px", border: 0, borderRadius: "2px", background: "transparent", color: vars.color.ink, textAlign: "left", cursor: "pointer", fontSize: "10px", fontWeight: 650, textTransform: "lowercase" });
+globalStyle(".preview-menu > div button", { padding: "8px 9px", border: 0, borderRadius: "2px", background: "transparent", color: vars.color.ink, textAlign: "left", cursor: "pointer", fontSize: "10px", fontWeight: 580, textTransform: "lowercase" });
 globalStyle(".preview-menu > div button:hover", { background: vars.color.tealPale });
 globalStyle(".chart-title", { minWidth: 0, overflow: "visible", padding: "2px 3px 3px" });
 globalStyle(".chart-title h1", { margin: 0, fontSize: "clamp(25px, 3vw, 46px)", fontWeight: 300, lineHeight: 1.04, letterSpacing: "-.06em", overflowWrap: "anywhere", textTransform: "lowercase" });
@@ -120,7 +121,7 @@ globalStyle(".status-dot.ready", { background: vars.color.tealDark });
 globalStyle(".status-dot.error", { background: vars.color.watermelon });
 globalStyle(".status-toast", { position: "absolute", left: "12px", bottom: "36px", zIndex: 8, maxWidth: "420px", padding: "8px 10px", border: 0, borderRadius: "2px", background: vars.color.tealPale, color: vars.color.tealDark, cursor: "pointer", textAlign: "left", fontSize: "9px" });
 
-globalStyle(".primary-button, .ghost-button", { minHeight: "31px", padding: "6px 10px", border: `1px solid ${vars.color.line}`, borderRadius: "2px", background: vars.color.panel, color: vars.color.ink, cursor: "pointer", fontSize: "10px", fontWeight: 750, textTransform: "lowercase" });
+globalStyle(".primary-button, .ghost-button", { minHeight: "31px", padding: "6px 10px", border: `1px solid ${vars.color.line}`, borderRadius: "2px", background: vars.color.panel, color: vars.color.ink, cursor: "pointer", fontSize: "10px", fontWeight: 590, textTransform: "lowercase" });
 globalStyle(".primary-button", { borderColor: vars.color.tealDark, background: vars.color.teal, color: vars.color.ink });
 globalStyle(".primary-button:hover", { background: vars.color.tealDark, color: vars.color.panel });
 
@@ -132,10 +133,10 @@ globalKeyframes("ai-surface-in", {
   from: { opacity: 0, transform: "translateY(10px) scale(.992)" },
   to: { opacity: 1, transform: "translateY(0) scale(1)" },
 });
-globalStyle(".ai-overlay", { position: "fixed", top: 0, bottom: 0, zIndex: 100, minWidth: 0, minHeight: 0, overflow: "hidden", isolation: "isolate" });
+globalStyle(".ai-overlay", { position: "fixed", top: 0, bottom: 0, zIndex: 100, minWidth: 0, minHeight: 0, overflow: "visible", isolation: "isolate" });
 globalStyle(".ai-overlay.context-code", { right: 0, left: "max(390px, 34vw)" });
 globalStyle(".ai-overlay.context-chart, .ai-overlay.context-general", { left: 0, width: "max(390px, 34vw)" });
-globalStyle(".ai-overlay::before", { content: "", position: "absolute", inset: 0, zIndex: -1, background: "rgb(244 247 246 / 68%)", backdropFilter: "blur(22px) saturate(1.14)", WebkitBackdropFilter: "blur(22px) saturate(1.14)", animation: "ai-blur-in 360ms cubic-bezier(.2,.75,.2,1) both" });
+globalStyle(".ai-overlay::before", { content: "", position: "absolute", inset: "-18px", zIndex: -1, background: "linear-gradient(90deg, rgb(244 247 246 / 78%) 0%, rgb(244 247 246 / 70%) 84%, rgb(244 247 246 / 28%) 100%)", backdropFilter: "blur(28px) saturate(1.16)", WebkitBackdropFilter: "blur(28px) saturate(1.16)", animation: "ai-blur-in 360ms cubic-bezier(.2,.75,.2,1) both", pointerEvents: "none" });
 globalStyle(".ai-overlay.context-code::before", { background: "rgb(244 247 246 / 70%)", maskImage: "none", WebkitMaskImage: "none" });
 globalStyle(".ai-overlay.context-chart::before, .ai-overlay.context-general::before", { background: "rgb(244 247 246 / 70%)", maskImage: "none", WebkitMaskImage: "none" });
 globalStyle(".ai-surface", { width: "100%", height: "100%", minHeight: 0, display: "grid", gridTemplateRows: "auto minmax(100px, 1fr) auto", overflow: "hidden", padding: "40px 14px 12px", background: "transparent", border: 0, animation: "ai-surface-in 300ms cubic-bezier(.2,.75,.2,1) both" });
@@ -148,17 +149,23 @@ globalStyle(".ai-surface-header small", { color: vars.color.muted, fontSize: "7p
 globalStyle(".ai-spark", { display: "grid", placeItems: "center", alignSelf: "stretch", background: vars.color.ink, color: vars.color.panel, fontFamily: "ui-monospace, monospace", fontSize: "7px", fontWeight: 700, textTransform: "uppercase" });
 globalStyle(".ai-surface-header > button", { width: "38px", height: "38px", display: "grid", placeItems: "center", flex: "0 0 auto", padding: "0 0 3px", border: "1px solid rgb(255 255 255 / 66%)", borderRadius: "50%", background: "rgb(196 203 202 / 38%)", color: vars.color.muted, cursor: "pointer", fontSize: "27px", fontWeight: 300, lineHeight: 1, boxShadow: "inset 3px 3px 8px rgb(89 102 98 / 18%), inset -3px -3px 8px rgb(255 255 255 / 72%)" });
 globalStyle(".ai-surface-header > button:hover", { transform: "scale(1.06)", color: vars.color.ink, background: "rgb(196 203 202 / 52%)" });
-globalStyle(".ai-conversation", { minHeight: 0, overflow: "auto", overscrollBehavior: "contain", padding: "0 1px" });
+globalStyle(".ai-conversation", { minHeight: 0, overflow: "auto", overscrollBehavior: "contain", padding: "7px 0 10px", fontFamily: conversationFont });
 globalStyle(".conversation-preview-label", { margin: "1px 3px 11px", color: vars.color.muted, fontSize: "8px", fontWeight: 700, letterSpacing: ".04em", textTransform: "lowercase" });
-globalStyle(".ai-conversation article", { width: "100%", maxWidth: "100%", display: "grid", gridTemplateColumns: "68px minmax(0, 1fr)", gap: "10px", margin: 0, padding: "11px 8px 12px 0", border: 0, borderBottom: `1px solid ${vars.color.line}`, borderRadius: 0, background: "transparent", boxShadow: "none", backdropFilter: "none", WebkitBackdropFilter: "none", fontSize: "11px", lineHeight: 1.48 });
-globalStyle(".ai-conversation article.user", { marginLeft: 0, border: 0, borderBottom: `1px solid ${vars.color.line}`, borderRadius: 0, background: "transparent", boxShadow: `inset 3px 0 ${vars.color.amethyst}` });
-globalStyle(".ai-conversation article.assistant", { boxShadow: `inset 3px 0 ${vars.color.teal}` });
-globalStyle(".ai-conversation article b", { display: "block", margin: 0, paddingLeft: "10px", color: vars.color.muted, fontSize: "7px", letterSpacing: ".04em", textTransform: "lowercase" });
-globalStyle(".ai-message-body", { maxWidth: "58ch", minWidth: 0, display: "grid", gap: "8px" });
-globalStyle(".ai-message-body p", { margin: 0, whiteSpace: "pre-line", fontSize: "11px", lineHeight: 1.55 });
-globalStyle(".ai-message-body strong", { display: "inline", margin: 0, padding: 0, color: vars.color.ink, fontSize: "inherit", fontWeight: 750, letterSpacing: 0, textTransform: "none" });
+globalStyle(".ai-conversation article", { width: "100%", maxWidth: "100%", display: "grid", gridTemplateColumns: "28px minmax(0, 1fr)", gridTemplateRows: "auto auto", columnGap: "10px", rowGap: "4px", margin: "0 0 8px", padding: "11px 13px 13px 10px", border: 0, borderLeft: `3px solid ${vars.color.line}`, borderRadius: 0, background: "rgb(255 255 255 / 56%)", boxShadow: "none", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", fontSize: "11px", lineHeight: 1.48 });
+globalStyle(".ai-conversation article.user", { borderLeftColor: vars.color.amethyst, background: "linear-gradient(90deg, rgb(236 233 248 / 78%), rgb(255 255 255 / 46%))" });
+globalStyle(".ai-conversation article.assistant", { borderLeftColor: vars.color.teal, background: "linear-gradient(90deg, rgb(221 245 242 / 78%), rgb(255 255 255 / 48%))" });
+globalStyle(".ai-role-icon", { gridColumn: 1, gridRow: "1 / span 2", width: "28px", height: "28px", display: "grid", placeItems: "center", alignSelf: "start", color: vars.color.panel });
+globalStyle(".ai-role-icon.user", { background: vars.color.amethyst });
+globalStyle(".ai-role-icon.assistant", { background: vars.color.tealDark });
+globalStyle(".ai-role-icon svg", { width: "15px", height: "15px", fill: "none", stroke: "currentColor", strokeWidth: 1.55, strokeLinecap: "round", strokeLinejoin: "round" });
+globalStyle(".ai-role-icon.assistant svg", { width: "16px", height: "16px", fill: "currentColor", stroke: "none" });
+globalStyle(".ai-conversation article > b", { gridColumn: 2, display: "block", margin: 0, color: vars.color.muted, fontSize: "8px", fontWeight: 650, letterSpacing: ".015em", textTransform: "lowercase" });
+globalStyle(".ai-message-body", { gridColumn: 2, maxWidth: "64ch", minWidth: 0, display: "grid", gap: "9px" });
+globalStyle(".ai-message-body p", { margin: 0, whiteSpace: "pre-line", fontSize: "11.25px", fontWeight: 400, lineHeight: 1.58, letterSpacing: "-.004em" });
+globalStyle(".ai-message-body strong", { display: "inline", margin: 0, padding: 0, color: vars.color.ink, fontSize: "inherit", fontWeight: 620, letterSpacing: 0, textTransform: "none" });
 globalStyle(".ai-message-body code", { padding: "1px 3px", background: "rgb(60 187 177 / 13%)", color: vars.color.tealDark, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: ".9em" });
-globalStyle(".ai-thinking", { color: vars.color.amethyst, fontSize: "9px" });
+globalStyle(".ai-message-body a", { color: vars.color.tealDark, fontWeight: 590, textDecorationColor: vars.color.teal, textUnderlineOffset: "2px" });
+globalStyle(".ai-thinking", { margin: "8px 13px", color: vars.color.amethyst, fontSize: "9px", fontWeight: 580 });
 globalStyle(".ai-compose-area", { display: "grid", gap: "7px", paddingTop: "9px" });
 globalStyle(".ai-composer", { overflow: "visible", border: `1px solid ${vars.color.strongLine}`, borderRadius: "2px", background: "rgb(231 237 235 / 48%)", boxShadow: "inset 5px 5px 16px rgb(42 30 92 / 10%), inset -5px -5px 15px rgb(255 255 255 / 82%), 0 10px 32px rgb(10 15 13 / 7%)", backdropFilter: "blur(20px) saturate(1.18)", WebkitBackdropFilter: "blur(20px) saturate(1.18)", viewTransitionName: "chartize-ai-entry" });
 globalStyle(".ai-composer:focus-within", { borderColor: vars.color.tealDark, boxShadow: "inset 4px 4px 15px rgb(42 30 92 / 12%), inset -5px -5px 15px rgb(255 255 255 / 88%), 0 0 0 1px rgb(60 187 177 / 28%), 0 12px 34px rgb(10 15 13 / 8%)" });
@@ -172,7 +179,7 @@ globalStyle(".ai-composer-footer", { display: "flex", flexWrap: "wrap", alignIte
 globalStyle(".ai-composer-tools", { minWidth: 0, display: "flex", flex: "1 1 250px", flexWrap: "wrap", alignItems: "center", gap: "5px" });
 globalStyle(".ai-send-cluster", { display: "flex", flex: "0 0 auto", alignItems: "center", gap: "6px", marginLeft: "auto" });
 globalStyle(".ai-send-cluster > span", { color: vars.color.muted, fontSize: "8px" });
-globalStyle(".ai-send-button", { minHeight: "29px", display: "flex", alignItems: "center", gap: "5px", padding: "5px 10px", border: 0, borderRadius: "1px", background: vars.color.amethyst, color: vars.color.panel, cursor: "pointer", fontSize: "9px", fontWeight: 700, textTransform: "lowercase", boxShadow: "none" });
+globalStyle(".ai-send-button", { minHeight: "29px", display: "flex", alignItems: "center", gap: "5px", padding: "5px 10px", border: 0, borderRadius: "1px", background: vars.color.amethyst, color: vars.color.panel, cursor: "pointer", fontSize: "9px", fontWeight: 590, textTransform: "lowercase", boxShadow: "none" });
 globalStyle(".ai-send-button svg", { width: "13px", height: "13px", fill: "none", stroke: vars.color.teal, strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" });
 globalStyle(".ai-actions", { display: "flex", flexWrap: "wrap", gap: "5px" });
 globalStyle(".ai-actions > button", { minHeight: "25px", padding: "4px 7px", border: 0, borderBottom: `1px solid ${vars.color.amethyst}`, borderRadius: 0, background: "transparent", color: vars.color.amethyst, cursor: "pointer", fontSize: "7.5px", fontWeight: 700, textTransform: "lowercase" });
@@ -182,6 +189,7 @@ globalStyle(".ai-settings > summary::-webkit-details-marker", { display: "none" 
 globalStyle(".ai-settings > summary:hover, .ai-settings[open] > summary", { background: "rgb(255 255 255 / 54%)", color: vars.color.tealDark });
 globalStyle(".ai-settings > summary svg", { width: "15px", height: "15px", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round" });
 globalStyle(".ai-settings > div", { position: "absolute", zIndex: 8, bottom: "calc(100% + 8px)", left: 0, width: "min(340px, 72vw)", overflow: "hidden", border: `1px solid ${vars.color.strongLine}`, borderTop: `4px solid ${vars.color.teal}`, borderRadius: "2px", background: "rgb(244 247 246 / 94%)", boxShadow: "0 16px 44px rgb(10 15 13 / 17%)", backdropFilter: "blur(24px) saturate(1.16)", WebkitBackdropFilter: "blur(24px) saturate(1.16)" });
+globalStyle(".ai-send-cluster .ai-settings > div", { left: "auto", right: 0 });
 globalStyle(".ai-settings > div > header", { minHeight: "36px", display: "grid", gridTemplateColumns: "34px minmax(0, 1fr)", alignItems: "stretch", padding: 0, borderBottom: `1px solid ${vars.color.line}` });
 globalStyle(".ai-settings > div > header > i", { display: "grid", placeItems: "center", background: vars.color.ink, color: vars.color.panel, fontFamily: "ui-monospace, monospace", fontSize: "7px", fontStyle: "normal" });
 globalStyle(".ai-settings > div > header > span", { minWidth: 0, display: "flex", alignItems: "baseline", gap: "7px", padding: "8px 9px" });
@@ -194,6 +202,8 @@ globalStyle(".ai-settings input", { margin: "2px 0 0", accentColor: vars.color.t
 globalStyle(".ai-settings label span", { minWidth: 0, display: "grid", gap: "2px" });
 globalStyle(".ai-settings label b", { color: vars.color.ink, fontSize: "9px", fontWeight: 700, textTransform: "lowercase" });
 globalStyle(".ai-settings label small", { color: vars.color.muted, fontSize: "7.5px", lineHeight: 1.35 });
+globalStyle(".ai-research-ready", { display: "flex", alignItems: "center", gap: "5px", color: vars.color.tealDark, fontSize: "7px", fontWeight: 580, textTransform: "lowercase" });
+globalStyle(".ai-research-ready i", { width: "6px", height: "6px", borderRadius: "50%", background: vars.color.teal, boxShadow: `0 0 0 3px rgb(60 187 177 / 12%)` });
 globalStyle(".checkbox-row", { display: "flex", alignItems: "center", gap: "6px", color: vars.color.muted, fontSize: "9px", fontWeight: 650, textTransform: "lowercase" });
 globalStyle(".checkbox-row input", { margin: 0, accentColor: vars.color.tealDark });
 globalStyle(".ai-status", { margin: 0, padding: "8px 10px", border: "1px solid rgb(255 255 255 / 62%)", borderRadius: "3px", background: "rgb(236 233 248 / 62%)", color: vars.color.amethyst, fontSize: "9px", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" });
@@ -393,9 +403,10 @@ globalStyle(".source-dock-add > div > header b", { alignSelf: "center", padding:
 globalStyle(".source-dock-add > div > header span", { alignSelf: "center", paddingRight: "9px", color: vars.color.tealDark, fontFamily: "ui-monospace, monospace", fontSize: "7px" });
 globalStyle(".source-dock-body", { position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden" });
 
-globalStyle(".dwim-command.ai-promoter, .result-context-ai", { width: "auto", minHeight: "34px", display: "grid", gridTemplateColumns: "20px minmax(0, 1fr) auto", alignItems: "center", gap: "7px", margin: "7px 9px", padding: "5px 7px", border: 0, borderLeft: `3px solid ${vars.color.teal}`, borderRadius: 0, background: vars.color.canvas, color: vars.color.muted, cursor: "text", textAlign: "left", boxShadow: "none" });
+globalStyle(".dwim-command.ai-promoter, .result-context-ai", { width: "auto", minHeight: "38px", display: "grid", gridTemplateColumns: "20px minmax(0, 1fr) auto", alignItems: "center", gap: "7px", margin: "7px 9px", padding: "5px 7px", border: `1px solid ${vars.color.line}`, borderLeft: `3px solid ${vars.color.teal}`, borderRadius: "2px", background: "rgb(231 237 235 / 52%)", color: vars.color.muted, cursor: "text", textAlign: "left", boxShadow: "inset 3px 3px 10px rgb(42 30 92 / 8%), inset -3px -3px 10px rgb(255 255 255 / 84%)" });
 globalStyle(".dwim-command.ai-promoter > span:first-child, .result-context-ai > span:first-child", { color: vars.color.tealDark, fontSize: "12px" });
-globalStyle(".dwim-command.ai-promoter > span:nth-child(2), .result-context-ai > span:nth-child(2)", { color: vars.color.muted, fontSize: "8px" });
+globalStyle(".dwim-command.ai-promoter input, .result-context-ai input", { width: "100%", minWidth: 0, padding: "4px 2px", border: 0, outline: 0, background: "transparent", color: vars.color.ink, cursor: "text", fontSize: "8px", fontWeight: 520 });
+globalStyle(".dwim-command.ai-promoter input::placeholder, .result-context-ai input::placeholder", { color: vars.color.muted, opacity: 1 });
 globalStyle(".dwim-command.ai-promoter > b, .result-context-ai > b", { color: vars.color.tealDark, fontSize: "8px", textTransform: "lowercase" });
 globalStyle(".dwim-body.sql-controls", { display: "block", overflow: "auto" });
 globalStyle(".dwim-body.sql-controls > section", { overflow: "visible", padding: 0 });
@@ -417,6 +428,14 @@ globalStyle(".visual-primary-marks, .visual-secondary-marks", { display: "grid",
 globalStyle(".visual-primary-marks button, .visual-secondary-marks button", { minWidth: 0, minHeight: "36px", display: "flex", alignItems: "flex-end", justifyContent: "flex-start", padding: "5px 6px", border: 0, borderRight: `1px solid ${vars.color.line}`, borderBottom: `1px solid ${vars.color.line}`, borderRadius: 0, background: vars.color.panel, color: vars.color.muted, cursor: "pointer", fontSize: "8px", fontWeight: 560, textTransform: "lowercase" });
 globalStyle(".visual-primary-marks button:hover, .visual-secondary-marks button:hover", { background: vars.color.tealPale, color: vars.color.ink });
 globalStyle(".visual-primary-marks button.active, .visual-secondary-marks button.active", { background: vars.color.tealDark, color: vars.color.panel, boxShadow: `inset 0 -3px ${vars.color.teal}` });
+globalStyle(".visual-requirement", { minHeight: "42px", display: "grid", gridTemplateColumns: "31px minmax(0, 1fr) auto", alignItems: "stretch", borderTop: `1px solid ${vars.color.line}`, background: vars.color.canvas });
+globalStyle(".visual-requirement > span", { display: "grid", placeItems: "center", color: vars.color.panel, background: vars.color.tealDark, fontFamily: "ui-monospace, monospace", fontSize: "9px" });
+globalStyle(".visual-requirement.attention > span", { background: vars.color.watermelon });
+globalStyle(".visual-requirement > div", { minWidth: 0, display: "grid", alignContent: "center", gap: "2px", padding: "6px 8px" });
+globalStyle(".visual-requirement b", { color: vars.color.ink, fontSize: "8px", fontWeight: 590, textTransform: "lowercase" });
+globalStyle(".visual-requirement p", { margin: 0, color: vars.color.muted, fontSize: "7px", lineHeight: 1.35 });
+globalStyle(".visual-requirement > button", { alignSelf: "stretch", minWidth: "86px", padding: "5px 7px", border: 0, borderLeft: `1px solid ${vars.color.line}`, background: vars.color.panel, color: vars.color.tealDark, cursor: "pointer", fontSize: "7px", fontWeight: 590, textTransform: "lowercase" });
+globalStyle(".visual-requirement > button:hover", { background: vars.color.tealPale });
 globalStyle(".visual-secondary-marks", { gridTemplateColumns: "repeat(4, minmax(0, 1fr))" });
 globalStyle(".visual-primary-grid, .visual-disclosure-body", { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", borderTop: `1px solid ${vars.color.line}`, borderLeft: `1px solid ${vars.color.line}` });
 globalStyle(".visual-title-grid", { gridTemplateColumns: "minmax(0, 1fr)" });
@@ -424,6 +443,14 @@ globalStyle(".visual-channel-grid", { gridTemplateColumns: "repeat(2, minmax(0, 
 globalStyle(".visual-controls .dwim-field", { minWidth: 0, display: "grid", gap: "4px", padding: "6px", borderRight: `1px solid ${vars.color.line}`, borderBottom: `1px solid ${vars.color.line}`, color: vars.color.muted, fontSize: "7px", fontWeight: 680, textTransform: "lowercase" });
 globalStyle(".visual-controls .dwim-field select, .visual-controls .dwim-field input", { minWidth: 0, width: "100%", height: "27px", padding: "3px 1px", border: 0, borderBottom: `1px solid ${vars.color.strongLine}`, borderRadius: 0, outline: 0, background: "transparent", color: vars.color.ink, fontSize: "8px", fontWeight: 590 });
 globalStyle(".visual-controls .dwim-field select:focus, .visual-controls .dwim-field input:focus", { borderBottomColor: vars.color.tealDark, boxShadow: `0 1px ${vars.color.tealDark}` });
+globalStyle(".visual-controls .dwim-color-field", { alignContent: "start" });
+globalStyle(".native-color-control", { minWidth: 0, display: "grid", gridTemplateColumns: "33px minmax(0, 1fr) 20px", alignItems: "center", gap: "5px" });
+globalStyle(".visual-controls .dwim-color-field .native-color-control input[type='color']", { width: "33px", height: "25px", padding: 0, overflow: "hidden", border: `1px solid ${vars.color.strongLine}`, borderRadius: "1px", background: "transparent", boxShadow: "none", cursor: "pointer" });
+globalStyle(".native-color-control input[type='color']::-webkit-color-swatch-wrapper", { padding: "2px" });
+globalStyle(".native-color-control input[type='color']::-webkit-color-swatch", { border: 0, borderRadius: 0 });
+globalStyle(".native-color-control output", { minWidth: 0, overflow: "hidden", color: vars.color.ink, fontFamily: "ui-monospace, monospace", fontSize: "7px", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+globalStyle(".dwim-color-field.automatic .native-color-control output", { color: vars.color.muted, fontFamily: systemFont });
+globalStyle(".native-color-control button", { width: "20px", height: "20px", padding: 0, border: 0, borderRadius: 0, background: "transparent", color: vars.color.muted, cursor: "pointer", fontSize: "14px", fontWeight: 400 });
 globalStyle(".visual-inline-disclosure, .visual-disclosure", { minWidth: 0 });
 globalStyle(".visual-inline-disclosure > summary, .visual-disclosure > summary", { minHeight: "29px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto 15px", alignItems: "center", gap: "8px", padding: "5px 8px", border: 0, background: vars.color.canvas, color: vars.color.muted, cursor: "pointer", listStyle: "none", fontSize: "7px", textTransform: "lowercase" });
 globalStyle(".visual-inline-disclosure > summary::-webkit-details-marker, .visual-disclosure > summary::-webkit-details-marker", { display: "none" });
@@ -472,7 +499,7 @@ globalStyle(".section-sql .dwim-column-menu", { top: "auto", right: "auto", bott
 globalStyle(".monaco-editor .monaco-direct-token", { margin: "0 1px", padding: "1px 2px", borderBottom: `1px solid ${vars.color.tealDark}`, borderRadius: "2px 2px 0 0", background: "rgb(221 245 242 / 75%)", cursor: "pointer" });
 globalStyle(".monaco-editor .monaco-direct-token.source", { borderBottomColor: vars.color.amethyst, background: "rgb(236 233 248 / 78%)" });
 globalStyle(".monaco-editor .monaco-direct-caret", { color: vars.color.tealDark, fontSize: "9px", cursor: "pointer" });
-globalStyle(".inline-query-layer", { position: "absolute", inset: 0, zIndex: 8, overflow: "visible", pointerEvents: "none" });
+globalStyle(".inline-query-layer", { position: "fixed", inset: 0, zIndex: 80, overflow: "visible", pointerEvents: "none" });
 globalStyle(".inline-query-control", { position: "absolute", left: "var(--inline-left)", top: "var(--inline-top)", transform: "translateY(-50%)", pointerEvents: "auto" });
 globalStyle(".inline-query-control .dwim-column-picker", { width: "18px", height: "18px" });
 globalStyle(".inline-query-control .dwim-column-picker > summary, .inline-source-control > summary", { width: "18px", height: "18px", borderRadius: "50%", fontSize: "13px", boxShadow: "0 2px 7px rgb(10 15 13 / 15%)" });
@@ -536,5 +563,5 @@ globalStyle(".map-interaction .chart-embed", { willChange: "transform" });
 /* The active cursor/selection is visible inside the single AI transcript. */
 globalStyle(".ai-active-context", { minHeight: "44px", display: "grid", gridTemplateColumns: "31px minmax(0, 1fr)", alignItems: "stretch", gap: 0, margin: 0, padding: 0, borderBottom: `1px solid ${vars.color.strongLine}`, color: vars.color.muted, fontSize: "8px", lineHeight: 1.45 });
 globalStyle(".ai-context-index", { display: "grid", placeItems: "center", background: vars.color.ink, color: vars.color.panel, fontFamily: "ui-monospace, monospace", fontSize: "7px" });
-globalStyle(".ai-active-context > div", { minWidth: 0, display: "grid", gridTemplateColumns: "78px minmax(0, 1fr)", alignItems: "center", gap: "8px", padding: "8px 9px" });
-globalStyle(".ai-active-context b", { color: vars.color.tealDark, fontSize: "7px", letterSpacing: ".04em", textTransform: "lowercase" });
+globalStyle(".ai-active-context > div", { minWidth: 0, display: "grid", alignContent: "center", gap: "2px", padding: "7px 10px 8px" });
+globalStyle(".ai-active-context b", { color: vars.color.tealDark, fontSize: "7px", fontWeight: 650, letterSpacing: ".04em", textTransform: "lowercase" });

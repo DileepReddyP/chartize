@@ -15,7 +15,9 @@ describe("Chartize AI model output", () => {
       warnings: [],
     });
 
-    expect(normalizeModelSuggestion(modelResult).draft.layers[0]?.smoothAdjust).toBe(1);
+    const normalized = normalizeModelSuggestion(modelResult);
+    expect(normalized.draft.layers[0]?.smoothAdjust).toBe(1);
+    expect(normalized).toMatchObject({ sources: [], researched: false });
   });
 
   it("does not expose raw Zod issue arrays in the UI", () => {

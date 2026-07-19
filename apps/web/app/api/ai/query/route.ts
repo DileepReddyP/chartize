@@ -36,7 +36,10 @@ const RequestSchema = z.object({
     challenge: z.boolean(),
     technical: z.boolean(),
   }).default({ hypothesize: true, concise: true, challenge: false, technical: false }),
-  sampleRows: z.array(z.array(z.string())).max(20).optional(),
+  sampleData: z.object({
+    columns: z.array(z.string().max(300)).max(100),
+    rows: z.array(z.array(z.string().max(3000)).max(100)).max(20),
+  }).optional(),
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(6000) })).max(24).default([]),
 });
 
@@ -48,9 +51,10 @@ export async function POST(request: Request) {
       ? body.availableSources
       : [{ id: source, title: source, description: "Current source", fields: body.schema }];
     const allowedSources = availableSources.map((candidate) => candidate.id);
-    const sampleNotice = body.sampleRows
-      ? `The user explicitly consented to include these first ${body.sampleRows.length} sample rows:\n${JSON.stringify(body.sampleRows)}`
+    const sampleNotice = body.sampleData
+      ? `The user explicitly consented to include this labeled data sample (${body.sampleData.rows.length} rows). Columns and row values are aligned by position:\n${JSON.stringify(body.sampleData)}`
       : "No row values were shared. Work only from field metadata.";
+    const researchEnabled = body.preferences.hypothesize && Boolean(body.sampleData?.rows.length);
     const workspaceTurn = [
       `User request: ${body.request}`,
       `Active workspace context: ${body.contextNote || "No narrower cursor or selection context."}`,
@@ -66,13 +70,14 @@ export async function POST(request: Request) {
       { role: "user" as const, content: workspaceTurn },
     ];
 
-    const modelResult = await structuredResponse({
+    const modelResponse = await structuredResponse({
       name: "ggsql_suggestion",
       schema: ModelSuggestionSchema,
-      instructions: `${CHARTIZE_AI_INSTRUCTIONS}\n\n${chartizeTurnInstructions(body.context, body.task)}\n${chartizePreferenceInstructions(body.preferences)}\nKeep the active source unless the user asks to discover or use different data. The draft source must be one of these exact IDs: ${JSON.stringify(allowedSources)}.`,
+      instructions: `${CHARTIZE_AI_INSTRUCTIONS}\n\n${chartizeTurnInstructions(body.context, body.task)}\n${chartizePreferenceInstructions(body.preferences)}\n${researchEnabled ? "LIVE RESEARCH: Web search is required for this turn. Research the subject and exact selected period before answering factual or causal questions. Name concrete dated developments supported by sources; distinguish them from what the chart itself proves. Do not pad the answer with generic possibilities." : "LIVE RESEARCH: unavailable for this turn. Do not imply that you searched the web."}\nKeep the active source unless the user asks to discover or use different data. The draft source must be one of these exact IDs: ${JSON.stringify(allowedSources)}.`,
       input,
+      webSearch: researchEnabled,
     });
-    const result = normalizeModelSuggestion(modelResult);
+    const result = normalizeModelSuggestion(modelResponse.output, modelResponse);
     if (!allowedSources.includes(result.draft.source)) {
       throw new Error(`The model selected an unavailable source: ${result.draft.source}`);
     }

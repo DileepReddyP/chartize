@@ -45,14 +45,23 @@ function inferredField(name: string, values: string[]): FieldMetadata {
   };
 }
 
-export function visualFieldsFromPreview(sourceFields: FieldMetadata[], preview: TablePreview): FieldMetadata[] {
+export function visualFieldsFromPreview(
+  sourceFields: FieldMetadata[],
+  preview: TablePreview,
+  projectedFields?: string[],
+): FieldMetadata[] {
   const byName = new Map(sourceFields.map((field) => [field.name, field]));
   preview.columns.forEach((name, columnIndex) => {
     if (byName.has(name)) return;
     const values = preview.rows.slice(0, 40).map((row) => row[columnIndex] ?? "");
     byName.set(name, inferredField(name, values));
   });
-  return [...byName.values()];
+  if (!projectedFields) return [...byName.values()];
+  const names = projectedFields.includes("*") ? preview.columns : projectedFields;
+  return names.flatMap((name) => {
+    const field = byName.get(name);
+    return field ? [field] : [];
+  });
 }
 
 export function selectionTableFromSpec(spec: Record<string, unknown> | null): TablePreview | null {

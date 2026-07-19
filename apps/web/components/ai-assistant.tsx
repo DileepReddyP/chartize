@@ -27,27 +27,25 @@ interface AiAssistantProps {
 const contextCopy: Record<AiContext, {
   mode: string;
   placeholder: string;
-  explain: string;
 }> = {
   code: {
     mode: "code at cursor",
     placeholder: "Ask about this GGSQL or describe a code change…",
-    explain: "explain current code",
   },
   chart: {
     mode: "chart selection",
-    placeholder: "What should this chart communicate better?",
-    explain: "explain current view",
+    placeholder: "What do you want to understand about this selection?",
   },
   general: {
     mode: "workspace",
     placeholder: "What question do you want to answer with data?",
-    explain: "explain current view",
   },
 };
 
 function inlineMessage(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+  return text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+    const link = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/.exec(part);
+    if (link) return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>;
     if (part.startsWith("**") && part.endsWith("**")) {
       return <strong key={index}>{part.slice(2, -2)}</strong>;
     }
@@ -65,6 +63,18 @@ function MessageBody({ text }: { text: string }) {
         <p key={index}>{inlineMessage(paragraph)}</p>
       ))}
     </div>
+  );
+}
+
+function RoleIcon({ role }: { role: AiConversationMessage["role"] }) {
+  return (
+    <span className={`ai-role-icon ${role}`} aria-hidden="true">
+      {role === "user" ? (
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.25" /><path d="M5.75 19.5c.55-4 2.65-6 6.25-6s5.7 2 6.25 6" /></svg>
+      ) : (
+        <svg viewBox="0 0 24 24"><path d="M12 2.75c.55 5.65 3.6 8.7 9.25 9.25-5.65.55-8.7 3.6-9.25 9.25C11.45 15.6 8.4 12.55 2.75 12 8.4 11.45 11.45 8.4 12 2.75Z" /></svg>
+      )}
+    </span>
   );
 }
 
@@ -86,6 +96,11 @@ export function AiAssistant({
   onAsk,
 }: AiAssistantProps) {
   const copy = contextCopy[context];
+  const placeholder = context === "chart" && /selected|selection|range|point/i.test(contextNote)
+    ? /map|region|county|state|feature/i.test(contextNote)
+      ? "Ask about the selected places or compare them…"
+      : "Ask what changed in this selected range, or why…"
+    : copy.placeholder;
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -94,7 +109,14 @@ export function AiAssistant({
       inputRef.current?.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
     });
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      const openMenu = document.querySelector<HTMLDetailsElement>(".ai-overlay details[data-dismiss-on-outside][open]");
+      if (openMenu) {
+        openMenu.removeAttribute("open");
+        event.preventDefault();
+        return;
+      }
+      onClose();
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => {
@@ -124,6 +146,7 @@ export function AiAssistant({
           </div>
           {history.map((message, index) => (
             <article key={`${message.role}-${index}`} className={message.role}>
+              <RoleIcon role={message.role} />
               <b>{message.role === "user" ? "you" : "chartize ai"}</b>
               <MessageBody text={message.text} />
             </article>
@@ -140,20 +163,23 @@ export function AiAssistant({
               name={`chartize-ai-${context}`}
               autoFocus
               value={prompt}
-              placeholder={copy.placeholder}
+              placeholder={placeholder}
               onChange={(event) => onPrompt(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && prompt.trim()) onAsk("generate");
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && prompt.trim() && !busy) {
+                  event.preventDefault();
+                  onAsk("generate");
+                }
               }}
             />
             <div className="ai-composer-footer">
               <div className="ai-composer-tools">
-                <div className="ai-actions">
-                  <button type="button" disabled={busy} onClick={() => onAsk("explain")}>{copy.explain}</button>
-                </div>
+                {includeSamples && preferences.hypothesize && <span className="ai-research-ready"><i aria-hidden="true" />live research</span>}
+              </div>
+              <div className="ai-send-cluster">
                 <details className="ai-settings" data-dismiss-on-outside>
                   <summary title="Response settings" aria-label="Response settings">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9 7 7m10 10 2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.7 3.1 10.3 2h3.4l.6 1.1 1.5.6 1.2-.4 2.4 2.4-.4 1.2.6 1.5 1.1.6v3.4l-1.1.6-.6 1.5.4 1.2-2.4 2.4-1.2-.4-1.5.6-.6 1.1h-3.4l-.6-1.1-1.5-.6-1.2.4-2.4-2.4.4-1.2-.6-1.5-1.1-.6V9l1.1-.6.6-1.5-.4-1.2L7 3.3l1.2.4 1.5-.6Z" /><circle cx="12" cy="11.7" r="3" /></svg>
                   </summary>
                   <div>
                     <header><i>03</i><span><b>response profile</b><small>tune this conversation</small></span></header>
@@ -161,11 +187,9 @@ export function AiAssistant({
                     <label><input name="ai-concise" type="checkbox" checked={preferences.concise} onChange={(event) => onPreferences({ ...preferences, concise: event.target.checked })} /><span><b>keep it concise</b><small>lead with the answer and trim repeated caveats</small></span></label>
                     <label><input name="ai-challenge" type="checkbox" checked={preferences.challenge} onChange={(event) => onPreferences({ ...preferences, challenge: event.target.checked })} /><span><b>challenge my framing</b><small>surface weak assumptions and alternative readings</small></span></label>
                     <label><input name="ai-technical" type="checkbox" checked={preferences.technical} onChange={(event) => onPreferences({ ...preferences, technical: event.target.checked })} /><span><b>show technical detail</b><small>include methodology and GGSQL mechanics</small></span></label>
-                    <label className="ai-data-setting"><input name="include-preview-rows" type="checkbox" checked={includeSamples} onChange={(event) => onIncludeSamples(event.target.checked)} /><span><b>include 20 rows</b><small>share selected or preview values with the model</small></span></label>
+                    <label className="ai-data-setting"><input name="include-preview-rows" type="checkbox" checked={includeSamples} onChange={(event) => onIncludeSamples(event.target.checked)} /><span><b>send selected data</b><small>share column names and up to 20 selected or preview rows</small></span></label>
                   </div>
                 </details>
-              </div>
-              <div className="ai-send-cluster">
                 <button className="ai-send-button" type="button" disabled={busy || !prompt.trim()} onClick={() => onAsk("generate")}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
               </div>
             </div>

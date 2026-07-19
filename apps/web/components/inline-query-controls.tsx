@@ -2,6 +2,7 @@
 
 import type { FieldMetadata } from "@chartize/contracts";
 import type { CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { ColumnPicker, SourceTiles, type DwimSource } from "./dwim-panel";
 
 export interface InlineControlAnchors {
@@ -24,7 +25,8 @@ function position(value: { left: number; top: number }) {
 }
 
 export function InlineQueryControls({ anchors, sources, activeSources, selectedFields, catalogLoading, onSource, onColumn }: InlineQueryControlsProps) {
-  return (
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="inline-query-layer" aria-label="Direct SQL controls">
       <div className="inline-query-control inline-select-control" style={position(anchors.select)}>
         <ColumnPicker compact sources={sources} activeSources={activeSources} selectedFields={selectedFields} onColumn={onColumn} />
@@ -36,6 +38,7 @@ export function InlineQueryControls({ anchors, sources, activeSources, selectedF
           <SourceTiles compact sources={sources} activeSources={activeSources} onSource={onSource} loading={catalogLoading} />
         </div>
       </details>
-    </div>
+    </div>,
+    document.body,
   );
 }

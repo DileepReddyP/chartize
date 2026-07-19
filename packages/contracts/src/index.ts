@@ -188,12 +188,19 @@ export const QueryResultSchema = z.object({
   durationMs: z.number().nonnegative(),
 });
 
+export const AiCitationSchema = z.object({
+  title: z.string(),
+  url: z.url(),
+});
+
 export const AiSuggestionSchema = z.object({
   query: z.string(),
   draft: GgsqlDraftSchema,
   explanation: z.string(),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
+  sources: z.array(AiCitationSchema),
+  researched: z.boolean(),
 });
 
 export type FieldMetadata = z.infer<typeof FieldMetadataSchema>;
@@ -208,3 +215,4 @@ export type QueryRequest = z.infer<typeof QueryRequestSchema>;
 export type QueryResult = z.infer<typeof QueryResultSchema>;
 export type TablePreview = z.infer<typeof TablePreviewSchema>;
 export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
+export type AiCitation = z.infer<typeof AiCitationSchema>;
