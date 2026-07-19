@@ -49,4 +49,9 @@ LABEL title => 'Population change'
     expect(normalized).not.toContain("WITH SETTING");
     expect(normalized.startsWith("SELECT geometry")).toBe(true);
   });
+
+  it("unquotes any named GGSQL palette instead of relying on a palette allowlist", () => {
+    expect(normalizeModelGgsql("SELECT change FROM chartize:states\n\nVISUALISE\nDRAW spatial\n  MAPPING change AS fill\nSCALE CONTINUOUS fill TO 'RdYlGn'"))
+      .toContain("SCALE CONTINUOUS fill TO RdYlGn");
+  });
 });

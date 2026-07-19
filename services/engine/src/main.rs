@@ -113,6 +113,14 @@ struct QueryRequest {
     ggsql: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct QueryValidation {
+    valid: bool,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct QueryResult {
@@ -189,6 +197,7 @@ async fn main() {
         .route("/api/catalog", get(catalog))
         .route("/api/datasets/{slug}", get(dataset))
         .route("/api/datasets/{slug}/preview", get(dataset_preview))
+        .route("/api/validate", post(validate_query))
         .route("/api/query", post(query))
         .route("/api/admin/imports", post(import_dataset))
         .route("/api/admin/datasets/{slug}/rollback", post(rollback))
@@ -462,6 +471,53 @@ async fn query(
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
         .map(Json)
+}
+
+async fn validate_query(Json(body): Json<QueryRequest>) -> Result<Json<QueryValidation>, ApiError> {
+    if body.ggsql.len() > 100_000 {
+        return Err(ApiError::BadRequest(
+            "Query exceeds the 100 KB limit.".into(),
+        ));
+    }
+    Ok(Json(inspect_query(&body.ggsql)))
+}
+
+fn inspect_query(query: &str) -> QueryValidation {
+    let validated = match validate(query) {
+        Ok(validated) => validated,
+        Err(error) => {
+            return QueryValidation {
+                valid: false,
+                errors: vec![error.to_string()],
+                warnings: Vec::new(),
+            };
+        }
+    };
+    let mut errors = validated
+        .errors()
+        .iter()
+        .map(|error| error.message.clone())
+        .collect::<Vec<_>>();
+    let warnings = validated
+        .warnings()
+        .iter()
+        .map(|warning| warning.message.clone())
+        .collect::<Vec<_>>();
+
+    if errors.is_empty() && !validated.has_visual() {
+        errors.push("A warehouse request must include a VISUALISE block.".into());
+    }
+    if errors.is_empty()
+        && let Err(error) = enforce_read_only(validated.sql())
+    {
+        errors.push(error.to_string());
+    }
+
+    QueryValidation {
+        valid: errors.is_empty(),
+        errors,
+        warnings,
+    }
 }
 
 fn execute_query(state: &AppState, query: &str) -> Result<QueryResult, ApiError> {
@@ -1020,6 +1076,24 @@ mod tests {
         assert!(enforce_read_only("DELETE FROM county_population").is_err());
         assert!(enforce_read_only("SELECT * FROM read_parquet('/etc/passwd')").is_err());
         assert!(enforce_read_only("SELECT 1; DROP TABLE warehouse_versions").is_err());
+    }
+
+    #[test]
+    fn syntax_validation_accepts_executable_ggsql_without_running_it() {
+        let result = inspect_query(
+            "SELECT value, category FROM chartize:example\n\nVISUALISE\nDRAW bar\n  MAPPING category AS x, value AS y",
+        );
+        assert!(result.valid, "{:?}", result.errors);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn syntax_validation_rejects_expressions_inside_mappings() {
+        let result = inspect_query(
+            "SELECT value FROM chartize:example\n\nVISUALISE\nDRAW point\n  MAPPING CAST(value AS DOUBLE) AS x, value AS y",
+        );
+        assert!(!result.valid);
+        assert!(!result.errors.is_empty());
     }
 
     #[test]

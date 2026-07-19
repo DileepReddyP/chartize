@@ -43,6 +43,12 @@ const RequestSchema = z.object({
   history: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(6000) })).max(24).default([]),
 });
 
+const QueryValidationSchema = z.object({
+  valid: z.boolean(),
+  errors: z.array(z.string()),
+  warnings: z.array(z.string()),
+});
+
 export async function POST(request: Request) {
   try {
     const body = RequestSchema.parse(await request.json());
@@ -71,14 +77,34 @@ export async function POST(request: Request) {
       { role: "user" as const, content: workspaceTurn },
     ];
 
+    const instructions = `${CHARTIZE_AI_INSTRUCTIONS}\n\n${chartizeTurnInstructions(body.context, body.task)}\n${chartizePreferenceInstructions(body.preferences)}\n${researchEnabled ? "LIVE RESEARCH: Web search is required for this turn. Research the subject and exact selected period before answering factual or causal questions. Name concrete dated developments supported by sources; distinguish them from what the chart itself proves. Do not pad the answer with generic possibilities." : "LIVE RESEARCH: unavailable for this turn. Do not imply that you searched the web."}\n${hasCurrentQuery ? "Keep the active source unless the user asks to discover or use different data." : "BLANK WORKSPACE: There is no active query or source. Select every source needed from the catalog and return a complete executable visualization in one turn. Do not inherit the previous workspace's subject, source, title, or fields."}\nThe draft source must be one of these exact IDs: ${JSON.stringify(allowedSources)}.`;
     const modelResponse = await structuredResponse({
       name: "ggsql_suggestion",
       schema: ModelSuggestionSchema,
-      instructions: `${CHARTIZE_AI_INSTRUCTIONS}\n\n${chartizeTurnInstructions(body.context, body.task)}\n${chartizePreferenceInstructions(body.preferences)}\n${researchEnabled ? "LIVE RESEARCH: Web search is required for this turn. Research the subject and exact selected period before answering factual or causal questions. Name concrete dated developments supported by sources; distinguish them from what the chart itself proves. Do not pad the answer with generic possibilities." : "LIVE RESEARCH: unavailable for this turn. Do not imply that you searched the web."}\n${hasCurrentQuery ? "Keep the active source unless the user asks to discover or use different data." : "BLANK WORKSPACE: There is no active query or source. Select every source needed from the catalog and return a complete executable visualization in one turn. Do not inherit the previous workspace's subject, source, title, or fields."}\nThe draft source must be one of these exact IDs: ${JSON.stringify(allowedSources)}.`,
+      instructions,
       input,
       webSearch: researchEnabled,
     });
-    const result = normalizeModelSuggestion(modelResponse.output, modelResponse);
+    let result = normalizeModelSuggestion(modelResponse.output, modelResponse);
+    let validation = await validateGeneratedQuery(result.query);
+    if (!validation.valid) {
+      const repairResponse = await structuredResponse({
+        name: "ggsql_repair",
+        schema: ModelSuggestionSchema,
+        instructions: `${instructions}\n\nVALIDATOR REPAIR: The engine rejected the candidate GGSQL. Treat its diagnostics as authoritative and return one corrected, complete structured response. Preserve the user's analytical intent, available source IDs, explanation, and visual-builder draft except where they must change to match the corrected query. Make the smallest syntax correction. Compute every expression in SELECT, alias it, and use only aliases or supported literal constants in MAPPING. Do not discuss the repair process in the user-facing explanation.`,
+        input: [
+          ...input,
+          { role: "assistant" as const, content: `Candidate structured response:\n${JSON.stringify(modelResponse.output)}` },
+          { role: "user" as const, content: `The GGSQL validator returned these errors:\n${validation.errors.join("\n")}\n\nReturn the corrected response now.` },
+        ],
+        webSearch: false,
+      });
+      result = normalizeModelSuggestion(repairResponse.output, modelResponse);
+      validation = await validateGeneratedQuery(result.query);
+    }
+    if (!validation.valid) {
+      throw new Error(`Chartize AI could not produce executable GGSQL after a repair pass: ${validation.errors.join("; ")}`);
+    }
     if (!allowedSources.includes(result.draft.source)) {
       throw new Error(`The model selected an unavailable source: ${result.draft.source}`);
     }
@@ -89,6 +115,20 @@ export async function POST(request: Request) {
       { status: error instanceof z.ZodError ? 400 : 503 },
     );
   }
+}
+
+async function validateGeneratedQuery(ggsql: string) {
+  const engine = (process.env.ENGINE_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+  const response = await fetch(`${engine}/api/validate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ggsql }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error("The GGSQL validator is unavailable.");
+  }
+  return QueryValidationSchema.parse(await response.json());
 }
 
 function inferSource(query: string) {

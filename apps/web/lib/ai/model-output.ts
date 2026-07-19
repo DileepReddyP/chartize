@@ -62,7 +62,9 @@ export function normalizeModelGgsql(query: string) {
   }
 
   return lines.join("\n")
-    .replace(/\bTO\s+'(vik|viridis|tableau10|rdbu)'(?![\w-])/gi, (_match, palette: string) => `TO ${palette}`)
+    // GGSQL accepts named palettes as identifiers, not string literals. Keep
+    // this grammar-shaped instead of maintaining an incomplete palette list.
+    .replace(/\bTO\s+'([a-z][\w-]*)'(?![\w-])/gi, (_match, palette: string) => `TO ${palette}`)
     .replace(/\b(PROJECT\s+TO\s+[a-z][\w-]*)\s+WITH\s+SETTING\b/gi, "$1\n  SETTING")
     .trim();
 }
