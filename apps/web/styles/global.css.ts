@@ -83,7 +83,7 @@ globalStyle(".pane-empty span", { display: "block" });
 
 globalStyle(".preview-stage", { position: "relative", minWidth: 0, minHeight: 0, overflow: "hidden", padding: "10px", background: vars.color.canvas });
 globalStyle(".chart-card", { position: "relative", width: "100%", height: "100%", minHeight: 0, display: "grid", gridTemplateRows: "auto minmax(0, 1fr) auto", overflow: "hidden", background: vars.color.panel, border: `1px solid ${vars.color.line}`, borderRadius: "2px" });
-globalStyle(".chart-header", { minHeight: "82px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "start", gap: "13px", padding: "11px 13px", borderBottom: `1px solid ${vars.color.line}` });
+globalStyle(".chart-header", { minHeight: "82px", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "start", gap: "13px", overflow: "visible", padding: "13px 17px 16px", borderBottom: `1px solid ${vars.color.line}` });
 globalStyle(".chart-header-tools", { display: "flex", alignItems: "center", justifyContent: "flex-end", paddingTop: "3px" });
 globalStyle(".preview-actions", { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "3px" });
 globalStyle(".icon-button", { width: "29px", height: "29px", display: "grid", placeItems: "center", padding: 0, border: 0, borderRadius: 0, background: "transparent", color: vars.color.muted, cursor: "pointer", listStyle: "none", transition: "transform 120ms ease, filter 120ms ease" });
@@ -98,10 +98,10 @@ globalStyle(".preview-menu > div", { position: "absolute", top: "calc(100% + 5px
 globalStyle(".preview-menu > div > span", { padding: "5px 9px 3px", color: vars.color.muted, fontSize: "8px", fontWeight: 750, letterSpacing: ".04em", textTransform: "lowercase" });
 globalStyle(".preview-menu > div button", { padding: "8px 9px", border: 0, borderRadius: "2px", background: "transparent", color: vars.color.ink, textAlign: "left", cursor: "pointer", fontSize: "10px", fontWeight: 650, textTransform: "lowercase" });
 globalStyle(".preview-menu > div button:hover", { background: vars.color.tealPale });
-globalStyle(".chart-title", { minWidth: 0 });
-globalStyle(".chart-title h1", { margin: 0, fontSize: "clamp(25px, 3vw, 46px)", fontWeight: 300, lineHeight: ".98", letterSpacing: "-.06em", textTransform: "lowercase" });
+globalStyle(".chart-title", { minWidth: 0, overflow: "visible", padding: "2px 3px 3px" });
+globalStyle(".chart-title h1", { margin: 0, fontSize: "clamp(25px, 3vw, 46px)", fontWeight: 300, lineHeight: 1.04, letterSpacing: "-.06em", overflowWrap: "anywhere", textTransform: "lowercase" });
 globalStyle(".chart-title p", { maxWidth: "760px", margin: "6px 0 0", color: vars.color.muted, fontSize: "10px", lineHeight: 1.4 });
-globalStyle(".chart-label-text", { maxWidth: "100%", display: "block", overflow: "hidden", padding: 0, border: 0, borderRadius: 0, background: "transparent", color: "inherit", font: "inherit", fontWeight: "inherit", lineHeight: "inherit", letterSpacing: "inherit", textAlign: "left", textOverflow: "ellipsis", textTransform: "inherit", whiteSpace: "normal", cursor: "text" });
+globalStyle(".chart-label-text", { width: "100%", maxWidth: "100%", display: "block", overflow: "visible", padding: "2px 4px 3px", border: 0, borderRadius: 0, background: "transparent", color: "inherit", font: "inherit", fontWeight: "inherit", lineHeight: "inherit", letterSpacing: "inherit", textAlign: "left", textTransform: "inherit", whiteSpace: "normal", cursor: "text" });
 globalStyle(".chart-label-input", { width: "min(100%, 980px)", padding: "1px 4px", border: 0, borderBottom: `2px solid ${vars.color.teal}`, borderRadius: 0, outline: 0, background: vars.color.tealPale, color: "inherit", font: "inherit", fontWeight: "inherit", lineHeight: "inherit", letterSpacing: "inherit", textTransform: "inherit" });
 globalStyle(".chart-title p.empty", { opacity: .4 });
 globalStyle(".chart-status", { flex: "0 0 auto", marginRight: "5px", padding: "4px 7px", borderRadius: "2px", background: vars.color.canvas, color: vars.color.muted, fontFamily: "ui-monospace, monospace", fontSize: "8px" });
