@@ -1,0 +1,58 @@
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: services/engine/Dockerfile
+    restart: unless-stopped
+    environment:
+      WAREHOUSE_ROOT: /data
+      ENGINE_BIND: 0.0.0.0:8787
+      MAX_IMPORT_BYTES: ${MAX_IMPORT_BYTES:-524288000}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env}
+      RUST_LOG: chartize_engine=info,tower_http=info
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/chartize-engine", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      engine:
+        condition: service_started
+    environment:
+      ENGINE_URL: http://engine:8787
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      AI_TEXT_MODEL: ${AI_TEXT_MODEL:-gpt-5.6}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-04-01-preview}
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

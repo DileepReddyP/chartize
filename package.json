@@ -1,0 +1,19 @@
+{
+  "name": "chartize",
+  "private": true,
+  "packageManager": "pnpm@10.29.2",
+  "scripts": {
+    "dev": "concurrently -n web,engine -c cyan,magenta \"pnpm --filter @chartize/web dev\" \"cargo run --manifest-path services/engine/Cargo.toml\"",
+    "dev:web": "pnpm --filter @chartize/web dev",
+    "dev:engine": "cargo run --manifest-path services/engine/Cargo.toml",
+    "build": "pnpm -r --if-present build && cargo build --manifest-path services/engine/Cargo.toml",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test && cargo test --manifest-path services/engine/Cargo.toml",
+    "fetch:spatialite": "node scripts/fetch-spatialite.mjs",
+    "data:seed": "node scripts/seed-data.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "concurrently": "9.2.1"
+  }
+}

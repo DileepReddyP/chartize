@@ -1,0 +1,10 @@
+.git
+.next
+node_modules
+**/node_modules
+**/target
+data
+.env
+*.log
+.DS_Store
+
