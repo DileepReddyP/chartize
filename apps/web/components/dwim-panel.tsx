@@ -275,7 +275,7 @@ export function DwimPanel(props: DwimPanelProps) {
 
           <section className="visual-primary-section">
             <InspectorSectionHeading index="03" title="channels" value={props.visual.mark === "spatial" ? "geometry → fill" : `${props.visual.x || "x"} → ${props.visual.y || props.visual.yMin || "y"}`} />
-            <div className="visual-primary-grid">
+            <div className="visual-primary-grid visual-channel-grid">
               {props.visual.mark === "spatial" ? (
                 <>
                   <FieldSelect label="geometry" value={props.visual.geometry} fields={props.visualFields} onChange={(geometry) => props.onVisual({ geometry })} />
@@ -284,10 +284,12 @@ export function DwimPanel(props: DwimPanelProps) {
                 </>
               ) : (
                 <>
-                  <FieldSelect label="x" value={props.visual.x} fields={props.visualFields} onChange={(x) => props.onVisual({ x })} />
+                  <FieldSelect label="x channel" value={props.visual.x} fields={props.visualFields} onChange={(x) => props.onVisual({ x })} />
+                  <TextControl label="x label" value={props.visual.labelX} placeholder="automatic" onChange={(labelX) => props.onVisual({ labelX })} />
                   {props.visual.mark === "ribbon"
                     ? <><FieldSelect label="y min" value={props.visual.yMin} fields={props.visualFields} onChange={(yMin) => props.onVisual({ yMin })} /><FieldSelect label="y max" value={props.visual.yMax} fields={props.visualFields} onChange={(yMax) => props.onVisual({ yMax })} /></>
-                    : <FieldSelect label="y" value={props.visual.y} fields={props.visualFields} onChange={(y) => props.onVisual({ y })} />}
+                    : <FieldSelect label="y channel" value={props.visual.y} fields={props.visualFields} onChange={(y) => props.onVisual({ y })} />}
+                  <TextControl label="y label" value={props.visual.labelY} placeholder="automatic" onChange={(labelY) => props.onVisual({ labelY })} />
                   {props.visual.mark === "segment" && <><FieldSelect label="x end" value={props.visual.xEnd} fields={props.visualFields} onChange={(xEnd) => props.onVisual({ xEnd })} /><FieldSelect label="y end" value={props.visual.yEnd} fields={props.visualFields} onChange={(yEnd) => props.onVisual({ yEnd })} /></>}
                   {props.visual.mark === "range" && <><FieldSelect label="x min" value={props.visual.xMin} fields={props.visualFields} onChange={(xMin) => props.onVisual({ xMin })} /><FieldSelect label="x max" value={props.visual.xMax} fields={props.visualFields} onChange={(xMax) => props.onVisual({ xMax })} /><FieldSelect label="y min" value={props.visual.yMin} fields={props.visualFields} onChange={(yMin) => props.onVisual({ yMin })} /><FieldSelect label="y max" value={props.visual.yMax} fields={props.visualFields} onChange={(yMax) => props.onVisual({ yMax })} /></>}
                   {props.visual.mark === "rule" && <FieldSelect label="slope" value={props.visual.slope} fields={props.visualFields} onChange={(slope) => props.onVisual({ slope })} />}
@@ -350,10 +352,8 @@ export function DwimPanel(props: DwimPanelProps) {
           )}
 
           <details className="visual-disclosure">
-            <summary><span><i>05</i>axes + legends</span><b>{[props.visual.labelX, props.visual.labelY].filter(Boolean).join(" · ") || "automatic"}</b></summary>
+            <summary><span><i>05</i>legends</span><b>{[props.visual.labelColor, props.visual.labelFill, props.visual.labelSize].filter(Boolean).join(" · ") || "automatic"}</b></summary>
             <div className="visual-disclosure-body labels-grid">
-              <TextControl label="x axis" value={props.visual.labelX} placeholder="automatic" onChange={(labelX) => props.onVisual({ labelX })} />
-              <TextControl label="y axis" value={props.visual.labelY} placeholder="automatic" onChange={(labelY) => props.onVisual({ labelY })} />
               <TextControl label="colour legend" value={props.visual.labelColor} placeholder="automatic" onChange={(labelColor) => props.onVisual({ labelColor })} />
               <TextControl label="fill legend" value={props.visual.labelFill} placeholder="automatic" onChange={(labelFill) => props.onVisual({ labelFill })} />
               <TextControl label="size legend" value={props.visual.labelSize} placeholder="automatic" onChange={(labelSize) => props.onVisual({ labelSize })} />

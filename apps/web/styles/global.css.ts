@@ -419,7 +419,8 @@ globalStyle(".visual-primary-marks button:hover, .visual-secondary-marks button:
 globalStyle(".visual-primary-marks button.active, .visual-secondary-marks button.active", { background: vars.color.tealDark, color: vars.color.panel, boxShadow: `inset 0 -3px ${vars.color.teal}` });
 globalStyle(".visual-secondary-marks", { gridTemplateColumns: "repeat(4, minmax(0, 1fr))" });
 globalStyle(".visual-primary-grid, .visual-disclosure-body", { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", borderTop: `1px solid ${vars.color.line}`, borderLeft: `1px solid ${vars.color.line}` });
-globalStyle(".visual-title-grid", { gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, .85fr)" });
+globalStyle(".visual-title-grid", { gridTemplateColumns: "minmax(0, 1fr)" });
+globalStyle(".visual-channel-grid", { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" });
 globalStyle(".visual-controls .dwim-field", { minWidth: 0, display: "grid", gap: "4px", padding: "6px", borderRight: `1px solid ${vars.color.line}`, borderBottom: `1px solid ${vars.color.line}`, color: vars.color.muted, fontSize: "7px", fontWeight: 680, textTransform: "lowercase" });
 globalStyle(".visual-controls .dwim-field select, .visual-controls .dwim-field input", { minWidth: 0, width: "100%", height: "27px", padding: "3px 1px", border: 0, borderBottom: `1px solid ${vars.color.strongLine}`, borderRadius: 0, outline: 0, background: "transparent", color: vars.color.ink, fontSize: "8px", fontWeight: 590 });
 globalStyle(".visual-controls .dwim-field select:focus, .visual-controls .dwim-field input:focus", { borderBottomColor: vars.color.tealDark, boxShadow: `0 1px ${vars.color.tealDark}` });
