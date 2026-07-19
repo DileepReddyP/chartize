@@ -32,6 +32,29 @@ export function previewFromSpec(spec: Record<string, unknown>): TablePreview {
   };
 }
 
+function inferredField(name: string, values: string[]): FieldMetadata {
+  const present = values.filter((value) => value.trim() !== "");
+  const numeric = present.length > 0 && present.every((value) => Number.isFinite(Number(value)));
+  const temporal = present.length > 0 && present.every((value) => /^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/.test(value));
+  const boolean = present.length > 0 && present.every((value) => /^(?:true|false)$/i.test(value));
+  return {
+    name,
+    dataType: temporal ? "DATE" : numeric ? "DOUBLE" : boolean ? "BOOLEAN" : "VARCHAR",
+    nullable: true,
+    semanticType: /geometry/i.test(name) ? "geometry" : temporal ? "temporal" : numeric ? "measure" : undefined,
+  };
+}
+
+export function visualFieldsFromPreview(sourceFields: FieldMetadata[], preview: TablePreview): FieldMetadata[] {
+  const byName = new Map(sourceFields.map((field) => [field.name, field]));
+  preview.columns.forEach((name, columnIndex) => {
+    if (byName.has(name)) return;
+    const values = preview.rows.slice(0, 40).map((row) => row[columnIndex] ?? "");
+    byName.set(name, inferredField(name, values));
+  });
+  return [...byName.values()];
+}
+
 export function selectionTableFromSpec(spec: Record<string, unknown> | null): TablePreview | null {
   if (!spec) return null;
   const data = spec.data as { values?: Array<Record<string, unknown>> } | undefined;

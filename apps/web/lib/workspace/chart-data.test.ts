@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centeredDomain, describeChartSelection, presentationFromSpec, previewFromSpec } from "./chart-data";
+import { centeredDomain, describeChartSelection, presentationFromSpec, previewFromSpec, visualFieldsFromPreview } from "./chart-data";
 
 describe("chart workspace data", () => {
   it("zooms numeric and temporal domains around their center", () => {
@@ -17,6 +17,21 @@ describe("chart workspace data", () => {
     };
     expect(presentationFromSpec(spec)).toEqual({ title: "approval", subtitle: "daily average" });
     expect(previewFromSpec(spec).columns).toEqual(["date", "value"]);
+  });
+
+  it("adds computed query aliases to the visual builder fields", () => {
+    const fields = visualFieldsFromPreview(
+      [{ name: "geometry", dataType: "GEOMETRY", nullable: false, semanticType: "geometry" }],
+      {
+        columns: ["geometry", "population_change", "label_date"],
+        rows: [["[geometry]", "4.25", "2025-07-01"]],
+        totalRows: 1,
+        offset: 0,
+        limit: 100,
+      },
+    );
+    expect(fields.find((field) => field.name === "population_change")).toMatchObject({ dataType: "DOUBLE", semanticType: "measure" });
+    expect(fields.find((field) => field.name === "label_date")).toMatchObject({ dataType: "DATE", semanticType: "temporal" });
   });
 
   it("counts data points inside a reversed brush range", () => {

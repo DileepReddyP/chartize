@@ -16,4 +16,13 @@ describe("visualization examples", () => {
     const tags = new Set(VISUALIZATION_EXAMPLES.flatMap((example) => example.tags));
     expect([...tags]).toEqual(expect.arrayContaining(["map", "ribbon", "regression", "scenario"]));
   });
+
+  it("centers contiguous-U.S. Albers examples on the data", () => {
+    const usMaps = VISUALIZATION_EXAMPLES.filter((example) => example.source === "chartize:us_counties_2025");
+    expect(usMaps.length).toBeGreaterThan(0);
+    for (const example of usMaps) {
+      expect(example.query).toContain("PROJECT TO albers");
+      expect(example.query).toContain("SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)");
+    }
+  });
 });

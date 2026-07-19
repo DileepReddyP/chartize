@@ -125,6 +125,8 @@ const marks = [
   "point", "line", "path", "segment", "rule", "area", "ribbon", "polygon", "text",
   "bar", "histogram", "density", "violin", "boxplot", "range", "smooth", "spatial", "tile",
 ];
+const primaryMarks = ["line", "bar", "point", "area", "ribbon", "spatial"];
+const secondaryMarks = marks.filter((mark) => !primaryMarks.includes(mark));
 const positions = ["identity", "stack", "dodge", "jitter"];
 const scaleTypes = ["", "continuous", "discrete", "binned", "ordinal", "identity"];
 const transforms = ["", "date", "log10", "sqrt", "reverse"];
@@ -185,6 +187,15 @@ function TextControl({ label, value, placeholder, type = "text", min, max, step,
   );
 }
 
+function InspectorSectionHeading({ index, title, value }: { index: string; title: string; value?: string }) {
+  return (
+    <header className="dwim-section-heading">
+      <b><span>{index}</span>{title}</b>
+      {value && <small>{value}</small>}
+    </header>
+  );
+}
+
 export function DwimPanel(props: DwimPanelProps) {
   const copy = props.section === "selection"
     ? { title: "selected code", placeholder: "Change or explain this selection…" }
@@ -192,6 +203,10 @@ export function DwimPanel(props: DwimPanelProps) {
       ? { title: "visualise at point", placeholder: "Describe the visual change you mean…" }
       : { title: "sql at point", placeholder: "Describe the data operation you mean…" };
   const style = { "--dwim-left": `${props.position.left}px`, "--dwim-top": `${props.position.top}px` } as CSSProperties;
+  const primaryAesthetic = ["spatial", "bar", "area", "polygon", "tile"].includes(props.visual.mark)
+    ? "fill"
+    : ["ribbon", "range", "segment", "rule"].includes(props.visual.mark) ? "" : "colour";
+  const fillForwardMark = ["spatial", "bar", "area", "ribbon", "polygon", "tile"].includes(props.visual.mark);
 
   return (
     <aside className={`dwim-panel section-${props.section}`} style={style} aria-label={`${copy.title} actions`}>
@@ -207,8 +222,9 @@ export function DwimPanel(props: DwimPanelProps) {
 
       {props.section === "selection" && (
         <div className="dwim-selection">
+          <InspectorSectionHeading index="01" title="selection" value={`${props.selectedText.length} characters`} />
           <pre>{props.selectedText}</pre>
-          <div>
+          <div className="dwim-selection-actions">
             <button type="button" onClick={() => void navigator.clipboard.writeText(props.selectedText)}>copy selection</button>
             <button type="button" onClick={props.onRunSelection}>run full query</button>
           </div>
@@ -218,76 +234,113 @@ export function DwimPanel(props: DwimPanelProps) {
       {props.section === "sql" && (
         <div className="dwim-body sql-controls">
           <section className="dwim-source-section">
-            <div className="dwim-section-label"><b>sources</b></div>
+            <InspectorSectionHeading index="01" title="sources" value={`${props.activeSources.length} selected`} />
             <SourceTiles sources={props.sources} activeSources={props.activeSources} onSource={props.onSource} loading={props.catalogLoading} />
             <label className="dwim-upload">
               <input name="user-datasets" type="file" multiple accept=".csv,.tsv,.json,.ndjson,.parquet,.geoparquet,.geojson,.zip" onChange={(event) => event.target.files && props.onFiles(event.target.files)} />
-              <span>＋ add user dataset</span>
+              <span>＋ add user dataset</span><small>csv · parquet · geojson</small>
             </label>
           </section>
           <section className="dwim-column-section">
-            <div className="dwim-section-label"><b>select</b></div>
-            <ColumnPicker sources={props.sources} activeSources={props.activeSources} selectedFields={props.selectedFields} onColumn={props.onColumn} onRemoveColumn={props.onRemoveColumn} />
+            <InspectorSectionHeading index="02" title="columns" value={`${props.selectedFields.size} selected`} />
+            <div className="dwim-column-section-body">
+              <ColumnPicker sources={props.sources} activeSources={props.activeSources} selectedFields={props.selectedFields} onColumn={props.onColumn} onRemoveColumn={props.onRemoveColumn} />
+            </div>
           </section>
         </div>
       )}
 
       {props.section === "visual" && (
         <div className="dwim-body visual-controls">
-          <section className="dwim-visual-section">
-            <div className="dwim-section-label"><b>mark</b></div>
-            <div className="dwim-marks">
-              {marks.map((mark) => <button key={mark} type="button" className={props.visual.mark === mark ? "active" : ""} onClick={() => props.onVisual({ mark })}>{mark}</button>)}
+          <section className="visual-primary-section visual-title-section">
+            <InspectorSectionHeading index="01" title="title + subtitle" value={props.visual.title || "automatic"} />
+            <div className="visual-primary-grid visual-title-grid">
+              <TextControl label="title" value={props.visual.title} placeholder="chart title" onChange={(title) => props.onVisual({ title })} />
+              <TextControl label="subtitle" value={props.visual.subtitle} placeholder="chart subtitle" onChange={(subtitle) => props.onVisual({ subtitle })} />
             </div>
           </section>
-          <section className="dwim-visual-section">
-            <div className="dwim-section-label"><b>mapping</b></div>
-            <div className="dwim-visual-grid">
+
+          <section className="visual-primary-section visual-mark-section">
+            <InspectorSectionHeading index="02" title="mark" value={props.visual.mark} />
+            <div className="visual-primary-marks">
+              {primaryMarks.map((mark) => <button key={mark} type="button" className={props.visual.mark === mark ? "active" : ""} onClick={() => props.onVisual({ mark })}>{mark}</button>)}
+            </div>
+            <details className="visual-inline-disclosure">
+              <summary><span>more marks</span><b>{secondaryMarks.includes(props.visual.mark) ? props.visual.mark : `${secondaryMarks.length} available`}</b></summary>
+              <div className="visual-secondary-marks">
+                {secondaryMarks.map((mark) => <button key={mark} type="button" className={props.visual.mark === mark ? "active" : ""} onClick={() => props.onVisual({ mark })}>{mark}</button>)}
+              </div>
+            </details>
+          </section>
+
+          <section className="visual-primary-section">
+            <InspectorSectionHeading index="03" title="channels" value={props.visual.mark === "spatial" ? "geometry → fill" : `${props.visual.x || "x"} → ${props.visual.y || props.visual.yMin || "y"}`} />
+            <div className="visual-primary-grid">
               {props.visual.mark === "spatial" ? (
                 <>
                   <FieldSelect label="geometry" value={props.visual.geometry} fields={props.visualFields} onChange={(geometry) => props.onVisual({ geometry })} />
                   <FieldSelect label="fill" value={props.visual.fill} fields={props.visualFields} onChange={(fill) => props.onVisual({ fill })} />
                   <FieldSelect label="colour" value={props.visual.color} fields={props.visualFields} onChange={(color) => props.onVisual({ color })} />
-                  <FieldSelect label="opacity" value={props.visual.opacityField} fields={props.visualFields} onChange={(opacityField) => props.onVisual({ opacityField })} />
                 </>
               ) : (
                 <>
                   <FieldSelect label="x" value={props.visual.x} fields={props.visualFields} onChange={(x) => props.onVisual({ x })} />
-                  <FieldSelect label="y" value={props.visual.y} fields={props.visualFields} onChange={(y) => props.onVisual({ y })} />
+                  {props.visual.mark === "ribbon"
+                    ? <><FieldSelect label="y min" value={props.visual.yMin} fields={props.visualFields} onChange={(yMin) => props.onVisual({ yMin })} /><FieldSelect label="y max" value={props.visual.yMax} fields={props.visualFields} onChange={(yMax) => props.onVisual({ yMax })} /></>
+                    : <FieldSelect label="y" value={props.visual.y} fields={props.visualFields} onChange={(y) => props.onVisual({ y })} />}
                   {props.visual.mark === "segment" && <><FieldSelect label="x end" value={props.visual.xEnd} fields={props.visualFields} onChange={(xEnd) => props.onVisual({ xEnd })} /><FieldSelect label="y end" value={props.visual.yEnd} fields={props.visualFields} onChange={(yEnd) => props.onVisual({ yEnd })} /></>}
-                  {(props.visual.mark === "range" || props.visual.mark === "ribbon") && <><FieldSelect label="y min" value={props.visual.yMin} fields={props.visualFields} onChange={(yMin) => props.onVisual({ yMin })} /><FieldSelect label="y max" value={props.visual.yMax} fields={props.visualFields} onChange={(yMax) => props.onVisual({ yMax })} /></>}
-                  {props.visual.mark === "range" && <><FieldSelect label="x min" value={props.visual.xMin} fields={props.visualFields} onChange={(xMin) => props.onVisual({ xMin })} /><FieldSelect label="x max" value={props.visual.xMax} fields={props.visualFields} onChange={(xMax) => props.onVisual({ xMax })} /></>}
+                  {props.visual.mark === "range" && <><FieldSelect label="x min" value={props.visual.xMin} fields={props.visualFields} onChange={(xMin) => props.onVisual({ xMin })} /><FieldSelect label="x max" value={props.visual.xMax} fields={props.visualFields} onChange={(xMax) => props.onVisual({ xMax })} /><FieldSelect label="y min" value={props.visual.yMin} fields={props.visualFields} onChange={(yMin) => props.onVisual({ yMin })} /><FieldSelect label="y max" value={props.visual.yMax} fields={props.visualFields} onChange={(yMax) => props.onVisual({ yMax })} /></>}
                   {props.visual.mark === "rule" && <FieldSelect label="slope" value={props.visual.slope} fields={props.visualFields} onChange={(slope) => props.onVisual({ slope })} />}
-                  {props.visual.mark === "smooth" && <FieldSelect label="weight" value={props.visual.weight} fields={props.visualFields} onChange={(weight) => props.onVisual({ weight })} />}
-                  <FieldSelect label="colour" value={props.visual.color} fields={props.visualFields} onChange={(color) => props.onVisual({ color })} />
-                  <FieldSelect label="fill" value={props.visual.fill} fields={props.visualFields} onChange={(fill) => props.onVisual({ fill })} />
-                  <FieldSelect label="size" value={props.visual.size} fields={props.visualFields} onChange={(size) => props.onVisual({ size })} />
-                  <FieldSelect label="shape" value={props.visual.shape} fields={props.visualFields} onChange={(shape) => props.onVisual({ shape })} />
-                  <FieldSelect label="linetype" value={props.visual.linetype} fields={props.visualFields} onChange={(linetype) => props.onVisual({ linetype })} />
-                  <FieldSelect label="linewidth" value={props.visual.linewidth} fields={props.visualFields} onChange={(linewidth) => props.onVisual({ linewidth })} />
-                  <FieldSelect label="opacity" value={props.visual.opacityField} fields={props.visualFields} onChange={(opacityField) => props.onVisual({ opacityField })} />
+                  {primaryAesthetic === "colour" && <FieldSelect label="colour" value={props.visual.color} fields={props.visualFields} onChange={(color) => props.onVisual({ color })} />}
+                  {primaryAesthetic === "fill" && <FieldSelect label="fill" value={props.visual.fill} fields={props.visualFields} onChange={(fill) => props.onVisual({ fill })} />}
                 </>
               )}
             </div>
+            <details className="visual-inline-disclosure">
+              <summary><span>more encodings</span><b>optional</b></summary>
+              <div className="visual-primary-grid visual-optional-grid">
+                {primaryAesthetic !== "colour" && <FieldSelect label="colour" value={props.visual.color} fields={props.visualFields} onChange={(color) => props.onVisual({ color })} />}
+                {primaryAesthetic !== "fill" && <FieldSelect label="fill" value={props.visual.fill} fields={props.visualFields} onChange={(fill) => props.onVisual({ fill })} />}
+                <FieldSelect label="size" value={props.visual.size} fields={props.visualFields} onChange={(size) => props.onVisual({ size })} />
+                <FieldSelect label="shape" value={props.visual.shape} fields={props.visualFields} onChange={(shape) => props.onVisual({ shape })} />
+                <FieldSelect label="linetype" value={props.visual.linetype} fields={props.visualFields} onChange={(linetype) => props.onVisual({ linetype })} />
+                <FieldSelect label="linewidth" value={props.visual.linewidth} fields={props.visualFields} onChange={(linewidth) => props.onVisual({ linewidth })} />
+                <FieldSelect label="opacity" value={props.visual.opacityField} fields={props.visualFields} onChange={(opacityField) => props.onVisual({ opacityField })} />
+                {props.visual.mark === "smooth" && <FieldSelect label="weight" value={props.visual.weight} fields={props.visualFields} onChange={(weight) => props.onVisual({ weight })} />}
+              </div>
+            </details>
           </section>
-          <section className="dwim-visual-section">
-            <div className="dwim-section-label"><b>appearance</b></div>
-            <div className="dwim-visual-grid">
-              <ChoiceSelect label="position" value={props.visual.position} options={positions} onChange={(position) => props.onVisual({ position })} />
+
+          <section className="visual-primary-section">
+            <InspectorSectionHeading index="04" title="style" value={fillForwardMark ? "fill" : "stroke"} />
+            <div className="visual-primary-grid">
+              {fillForwardMark
+                ? <TextControl label="fixed fill" value={props.visual.fixedFill} placeholder="#3cbbb1" onChange={(fixedFill) => props.onVisual({ fixedFill })} />
+                : <TextControl label="fixed colour" value={props.visual.fixedColour} placeholder="#3cbbb1" onChange={(fixedColour) => props.onVisual({ fixedColour })} />}
               <TextControl label="opacity" type="number" min={0} max={1} step={0.05} value={props.visual.opacity} onChange={(opacity) => props.onVisual({ opacity })} />
-              <TextControl label="fixed colour" value={props.visual.fixedColour} placeholder="#3cbbb1" onChange={(fixedColour) => props.onVisual({ fixedColour })} />
-              <TextControl label="fixed fill" value={props.visual.fixedFill} placeholder="#3cbbb1" onChange={(fixedFill) => props.onVisual({ fixedFill })} />
-              <TextControl label="series label" value={props.visual.colourLegendValue} placeholder="legend label" onChange={(colourLegendValue) => props.onVisual({ colourLegendValue })} />
-              <TextControl label="fill label" value={props.visual.fillLegendValue} placeholder="legend label" onChange={(fillLegendValue) => props.onVisual({ fillLegendValue })} />
-              <TextControl label="fixed size" type="number" min={0} value={props.visual.fixedSize} onChange={(fixedSize) => props.onVisual({ fixedSize })} />
-              <TextControl label="line width" type="number" min={0} step={0.25} value={props.visual.fixedLinewidth} onChange={(fixedLinewidth) => props.onVisual({ fixedLinewidth })} />
-              <ChoiceSelect label="line type" value={props.visual.fixedLinetype} options={lineTypes} onChange={(fixedLinetype) => props.onVisual({ fixedLinetype })} />
+              {fillForwardMark
+                ? <ChoiceSelect label="position" value={props.visual.position} options={positions} onChange={(position) => props.onVisual({ position })} />
+                : <TextControl label="line width" type="number" min={0} step={0.25} value={props.visual.fixedLinewidth} onChange={(fixedLinewidth) => props.onVisual({ fixedLinewidth })} />}
             </div>
+            <details className="visual-inline-disclosure">
+              <summary><span>more styling</span><b>appearance</b></summary>
+              <div className="visual-primary-grid visual-optional-grid">
+                <ChoiceSelect label="position" value={props.visual.position} options={positions} onChange={(position) => props.onVisual({ position })} />
+                <TextControl label="fixed colour" value={props.visual.fixedColour} placeholder="#3cbbb1" onChange={(fixedColour) => props.onVisual({ fixedColour })} />
+                <TextControl label="fixed fill" value={props.visual.fixedFill} placeholder="#3cbbb1" onChange={(fixedFill) => props.onVisual({ fixedFill })} />
+                <TextControl label="fixed size" type="number" min={0} value={props.visual.fixedSize} onChange={(fixedSize) => props.onVisual({ fixedSize })} />
+                <TextControl label="line width" type="number" min={0} step={0.25} value={props.visual.fixedLinewidth} onChange={(fixedLinewidth) => props.onVisual({ fixedLinewidth })} />
+                <ChoiceSelect label="line type" value={props.visual.fixedLinetype} options={lineTypes} onChange={(fixedLinetype) => props.onVisual({ fixedLinetype })} />
+                <TextControl label="series label" value={props.visual.colourLegendValue} placeholder="legend label" onChange={(colourLegendValue) => props.onVisual({ colourLegendValue })} />
+                <TextControl label="fill label" value={props.visual.fillLegendValue} placeholder="legend label" onChange={(fillLegendValue) => props.onVisual({ fillLegendValue })} />
+              </div>
+            </details>
           </section>
+
           {props.visual.mark === "smooth" && (
-            <section className="dwim-visual-section">
-              <div className="dwim-section-label"><b>model</b></div>
-              <div className="dwim-visual-grid">
+            <section className="visual-primary-section visual-model-section">
+              <InspectorSectionHeading index="M" title="model" value={props.visual.smoothMethod || "automatic"} />
+              <div className="visual-primary-grid">
                 <ChoiceSelect label="method" value={props.visual.smoothMethod} options={smoothMethods} onChange={(smoothMethod) => props.onVisual({ smoothMethod })} />
                 <TextControl label="adjust" type="number" min={0.01} step={0.05} value={props.visual.smoothAdjust} placeholder="1" onChange={(smoothAdjust) => props.onVisual({ smoothAdjust })} />
                 <TextControl label="bandwidth" type="number" min={0.01} step={0.05} value={props.visual.smoothBandwidth} placeholder="automatic" onChange={(smoothBandwidth) => props.onVisual({ smoothBandwidth })} />
@@ -295,11 +348,10 @@ export function DwimPanel(props: DwimPanelProps) {
               </div>
             </section>
           )}
-          <section className="dwim-visual-section">
-            <div className="dwim-section-label"><b>labels</b></div>
-            <div className="dwim-visual-grid labels-grid">
-              <TextControl label="title" value={props.visual.title} placeholder="chart title" onChange={(title) => props.onVisual({ title })} />
-              <TextControl label="subtitle" value={props.visual.subtitle} placeholder="chart subtitle" onChange={(subtitle) => props.onVisual({ subtitle })} />
+
+          <details className="visual-disclosure">
+            <summary><span><i>05</i>axes + legends</span><b>{[props.visual.labelX, props.visual.labelY].filter(Boolean).join(" · ") || "automatic"}</b></summary>
+            <div className="visual-disclosure-body labels-grid">
               <TextControl label="x axis" value={props.visual.labelX} placeholder="automatic" onChange={(labelX) => props.onVisual({ labelX })} />
               <TextControl label="y axis" value={props.visual.labelY} placeholder="automatic" onChange={(labelY) => props.onVisual({ labelY })} />
               <TextControl label="colour legend" value={props.visual.labelColor} placeholder="automatic" onChange={(labelColor) => props.onVisual({ labelColor })} />
@@ -310,18 +362,20 @@ export function DwimPanel(props: DwimPanelProps) {
               <TextControl label="linewidth legend" value={props.visual.labelLinewidth} placeholder="automatic" onChange={(labelLinewidth) => props.onVisual({ labelLinewidth })} />
               <TextControl label="opacity legend" value={props.visual.labelOpacity} placeholder="automatic" onChange={(labelOpacity) => props.onVisual({ labelOpacity })} />
             </div>
-          </section>
-          <section className="dwim-visual-section">
-            <div className="dwim-section-label"><b>scales</b></div>
+          </details>
+
+          <details className="visual-disclosure">
+            <summary><span><i>06</i>scales + format</span><b>{[props.visual.scaleXTransform, props.visual.scaleYTransform, props.visual.scaleColorPalette].filter(Boolean).join(" · ") || "automatic"}</b></summary>
             <div className="dwim-scale-groups">
               <div><b>x</b><ChoiceSelect label="type" value={props.visual.scaleXType} options={scaleTypes} onChange={(scaleXType) => props.onVisual({ scaleXType })} /><ChoiceSelect label="transform" value={props.visual.scaleXTransform} options={transforms} onChange={(scaleXTransform) => props.onVisual({ scaleXTransform })} /><TextControl label="label format" value={props.visual.scaleXFormat} placeholder="%B %-d, %Y" onChange={(scaleXFormat) => props.onVisual({ scaleXFormat })} /></div>
               <div><b>y</b><ChoiceSelect label="type" value={props.visual.scaleYType} options={scaleTypes} onChange={(scaleYType) => props.onVisual({ scaleYType })} /><ChoiceSelect label="transform" value={props.visual.scaleYTransform} options={transforms} onChange={(scaleYTransform) => props.onVisual({ scaleYTransform })} /><TextControl label="label format" value={props.visual.scaleYFormat} placeholder=".1f" onChange={(scaleYFormat) => props.onVisual({ scaleYFormat })} /></div>
               <div><b>colour</b><ChoiceSelect label="type" value={props.visual.scaleColorType} options={scaleTypes} onChange={(scaleColorType) => props.onVisual({ scaleColorType })} /><ChoiceSelect label="palette" value={props.visual.scaleColorPalette} options={palettes} onChange={(scaleColorPalette) => props.onVisual({ scaleColorPalette })} /></div>
             </div>
-          </section>
-          <section className="dwim-visual-section">
-            <div className="dwim-section-label"><b>facet + project</b></div>
-            <div className="dwim-visual-grid">
+          </details>
+
+          <details className="visual-disclosure">
+            <summary><span><i>07</i>layout + projection</span><b>{props.visual.project || props.visual.facet || "none"}</b></summary>
+            <div className="visual-disclosure-body">
               <FieldSelect label="facet" value={props.visual.facet} fields={props.visualFields} onChange={(facet) => props.onVisual({ facet })} />
               <FieldSelect label="facet by" value={props.visual.facetBy} fields={props.visualFields} onChange={(facetBy) => props.onVisual({ facetBy })} />
               <ChoiceSelect label="free scales" value={props.visual.facetFree} options={["", "x", "y"]} onChange={(facetFree) => props.onVisual({ facetFree })} />
@@ -329,7 +383,7 @@ export function DwimPanel(props: DwimPanelProps) {
               <ChoiceSelect label="coordinates" value={props.visual.project} options={projections} onChange={(project) => props.onVisual({ project })} />
               {props.visual.project === "crs" && <TextControl label="CRS target" value={props.visual.projectTarget} placeholder="EPSG:4326 or proj string" onChange={(projectTarget) => props.onVisual({ projectTarget })} />}
             </div>
-          </section>
+          </details>
         </div>
       )}
     </aside>

@@ -47,6 +47,7 @@ import {
   sourcesFromQuery,
   splitGgsql,
   updateFirstVisual,
+  visualSelectionFields,
   visualPointState,
 } from "@/lib/ggsql/query-context";
 import { makeDefaultDraft, serializeDraft } from "@/lib/ggsql/serialize";
@@ -58,6 +59,7 @@ import {
   presentationFromSpec,
   previewFromSpec,
   selectionTableFromSpec,
+  visualFieldsFromPreview,
 } from "@/lib/workspace/chart-data";
 import { fetchWarehouseCatalog, fetchWarehousePreview } from "@/lib/workspace/warehouse-client";
 import {
@@ -170,14 +172,14 @@ export function Explorer() {
     showLoadingMask, error, duration, editorContext, dwimStatus, inlineAnchors,
     gridSelection, selectionOrigin, chartSelection, chartDomains, chartDomainHistory, mapViewport, resultStatus,
     aiOpen, aiPlacement, aiContext, aiContextNote, aiPrompt, aiBusy, aiMessage,
-    aiHistory, includeSamples, leftPaneRatio, codePaneRatio,
+    aiHistory, includeSamples, aiPreferences, leftPaneRatio, codePaneRatio,
     setEngineState, setCatalogLoaded, setMode, setLocalDatasets, setWarehouseDatasets,
     setDraft, setQuery, setSpec, setSelectedData, setFullData, setResultTab, setFullSort,
     setDockSource, setRunning, setFullLoading, setShowLoadingMask, setError, setDuration,
     setEditorContext, setDwimStatus, setInlineAnchors, setGridSelection, setSelectionOrigin,
     setChartSelection, zoomChart, zoomChartOut, resetChartZoom, zoomMap, panMap, resetMapViewport, setResultStatus, setFocusArea, setAiOpen,
     setAiPlacement, setAiContext, setAiContextNote, setAiPrompt, setAiBusy, setAiMessage, setAiHistory,
-    setIncludeSamples, setLeftPaneRatio, setCodePaneRatio, startNewVisualization,
+    setIncludeSamples, setAiPreferences, setLeftPaneRatio, setCodePaneRatio, startNewVisualization,
   } = workspace;
   const clientRef = useRef<LocalEngineClient | null>(null);
   const chartRef = useRef<ChartViewHandle>(null);
@@ -220,18 +222,33 @@ export function Explorer() {
     return [...byName.values()];
   }, [activeSourceDetails]);
   const selectedFieldNames = useMemo(() => new Set(selectedProjectionLabels(query)), [query]);
+  const visualFields = useMemo(() => visualFieldsFromPreview(activeFields, selectedData), [activeFields, selectedData]);
   const visualState = useMemo(() => visualPointState(query), [query]);
   const isMap = useMemo(() => /\bDRAW\s+spatial\b/i.test(splitGgsql(query).visual), [query]);
   const chartSelectionData = useMemo(() => selectionTableFromSpec(spec) ?? selectedData, [selectedData, spec]);
+  const selectionFields = useMemo(() => visualSelectionFields(query), [query]);
   const chartSelectionDetails = useMemo(() => describeChartSelection(
     chartSelection,
     chartSelectionData,
-    visualState.x,
-    visualState.y,
+    selectionFields.x,
+    selectionFields.y,
     activeFields,
     visualState.labelX,
     visualState.labelY,
-  ), [activeFields, chartSelection, chartSelectionData, visualState.labelX, visualState.labelY, visualState.x, visualState.y]);
+  ), [activeFields, chartSelection, chartSelectionData, selectionFields.x, selectionFields.y, visualState.labelX, visualState.labelY]);
+  const aiView = useMemo(() => ({
+    title: visualState.title || draft.title,
+    subtitle: visualState.subtitle || draft.subtitle,
+    sources: activeSourceDetails.map(({ id, title, description }) => ({ id, title, description })),
+  }), [activeSourceDetails, draft.subtitle, draft.title, visualState.subtitle, visualState.title]);
+  const aiViewNote = useMemo(() => {
+    const title = aiView.title ? `Chart: “${aiView.title}”.` : "Untitled chart.";
+    const subtitle = aiView.subtitle ? ` Subtitle: “${aiView.subtitle}”.` : "";
+    const datasets = aiView.sources.length
+      ? ` Active ${aiView.sources.length === 1 ? "dataset" : "datasets"}: ${aiView.sources.map((source) => `${source.title} (${source.id})`).join(", ")}.`
+      : "";
+    return `${title}${subtitle}${datasets}`;
+  }, [aiView]);
 
   useEffect(() => {
     const busy = running;
@@ -561,11 +578,11 @@ export function Explorer() {
   }, [setAiContext, setAiContextNote, setAiOpen, setAiPlacement, setEditorContext]);
 
   useEffect(() => {
-    const openAssistant = () => promoteAi("chart and current query", "left", "general");
+    const openAssistant = () => promoteAi(`${aiViewNote} Current query and source catalog are attached.`, "left", "general");
     window.addEventListener("chartize:open-ai", openAssistant);
     if (new URLSearchParams(window.location.search).get("ai") === "general") openAssistant();
     return () => window.removeEventListener("chartize:open-ai", openAssistant);
-  }, [promoteAi]);
+  }, [aiViewNote, promoteAi]);
 
   const closeAssistant = useCallback(() => {
     setAiOpen(false);
@@ -775,16 +792,18 @@ export function Explorer() {
           source: activeSource,
           schema: activeFields,
           availableSources: baseSources.map(({ id, title, description, fields }) => ({ id, title, description, fields })),
+          view: aiView,
+          preferences: aiPreferences,
           sampleRows: includeSamples ? contextualRows.slice(0, 20) : undefined,
           history,
         }),
       });
       const body = await response.json() as AiSuggestion | { error: string };
       if (!response.ok || "error" in body) throw new Error("error" in body ? body.error : "AI request failed.");
+      const qualifications = [...body.assumptions, ...body.warnings];
       const reply = [
         body.explanation,
-        body.assumptions.length ? `Assumptions: ${body.assumptions.join("; ")}` : "",
-        body.warnings.length ? `Warnings: ${body.warnings.join("; ")}` : "",
+        qualifications.length ? `Worth keeping in mind: ${qualifications.join(" ")}` : "",
       ].filter(Boolean).join("\n\n");
       setAiPrompt("");
       if (task !== "explain") {
@@ -806,7 +825,7 @@ export function Explorer() {
     } finally {
       setAiBusy(false);
     }
-  }, [activeFields, activeSource, aiContext, aiContextNote, aiHistory, aiPrompt, baseSources, chartSelectionDetails.rows, includeSamples, resetMapViewport, runQuery, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setDraft, setQuery]);
+  }, [activeFields, activeSource, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, chartSelectionDetails.rows, includeSamples, resetMapViewport, runQuery, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setDraft, setQuery]);
 
   const saveLocal = useCallback(async () => {
     await saveWorkspace({ id: "current", title: draftRef.current.title, query: queryRef.current, draft: draftRef.current, files: storedFilesRef.current, savedAt: new Date().toISOString() });
@@ -892,8 +911,8 @@ export function Explorer() {
     const selectedChart = origin === "result" ? chartSelection : null;
     if (!selectedGrid && !selectedChart) return null;
     const context = selectedGrid
-      ? `Data selection: ${selectedGrid.summary}. Columns: ${selectedGrid.columns.join(", ")}. Values: ${JSON.stringify(selectedGrid.rows.slice(0, 20))}.`
-      : `Chart selection: ${chartSelectionDetails.summary}. X range: ${JSON.stringify(selectedChart?.x)}. Y range: ${JSON.stringify(selectedChart?.y)}.`;
+      ? `${aiViewNote} Data selection: ${selectedGrid.summary}. Columns: ${selectedGrid.columns.join(", ")}. Row values are attached only when the user enables the sample-row control.`
+      : `${aiViewNote} Chart selection: ${chartSelectionDetails.summary}. X range: ${JSON.stringify(selectedChart?.x)}. Y range: ${JSON.stringify(selectedChart?.y)}.`;
     return (
       <aside className="result-context" aria-label="Selection actions">
         <header><div><h2>{selectedGrid ? "data selection" : "chart selection"}</h2><p>{selectedGrid?.summary ?? chartSelectionDetails.summary}</p></div><button type="button" aria-label="Close selection actions" onClick={() => { setGridSelection(null); setChartSelection(null); setResultStatus(""); }}>×</button></header>
@@ -956,7 +975,7 @@ export function Explorer() {
                     position={{ left: editorContext.left, top: editorContext.top }}
                     sources={sources}
                     activeSources={activeSources}
-                    visualFields={activeFields}
+                    visualFields={visualFields}
                     selectedFields={selectedFieldNames}
                     visual={visualState}
                     status={dwimStatus}
@@ -967,7 +986,7 @@ export function Explorer() {
                     onVisual={updateVisual}
                     onFiles={(files) => void addFiles(files)}
                     onRunSelection={() => void runEditorQuery()}
-                    onPromoteAi={(origin) => promoteAi(editorContext.section === "selection" ? `Selected GGSQL: ${editorContext.selectedText}` : `${editorContext.section === "sql" ? "SQL" : "VISUALISE"} at character ${editorContext.offset}`, "right", "code", origin)}
+                    onPromoteAi={(origin) => promoteAi(`${aiViewNote} ${editorContext.section === "selection" ? `Selected GGSQL: ${editorContext.selectedText}` : `${editorContext.section === "sql" ? "SQL" : "VISUALISE"} at character ${editorContext.offset}`}`, "right", "code", origin)}
                     onClose={() => setEditorContext(null)}
                   />
                 )}
@@ -1083,10 +1102,12 @@ export function Explorer() {
           status={aiMessage}
           history={aiHistory}
           includeSamples={includeSamples}
+          preferences={aiPreferences}
           leftPaneRatio={leftPaneRatio}
           onClose={closeAssistant}
           onPrompt={setAiPrompt}
           onIncludeSamples={setIncludeSamples}
+          onPreferences={setAiPreferences}
           onAsk={(task) => void askAi(task)}
         />
       )}

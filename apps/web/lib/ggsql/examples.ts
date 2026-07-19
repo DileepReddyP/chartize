@@ -137,7 +137,8 @@ DRAW spatial
   MAPPING "geometry" AS geometry, "population" AS fill
 SCALE CONTINUOUS fill TO viridis VIA log10
 LABEL title => 'county population, 2025', subtitle => 'population estimates joined to cartographic county boundaries', fill => '2025 population'
-PROJECT TO albers`,
+PROJECT TO albers
+  SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
   },
   {
     id: "county-change-map",
@@ -160,6 +161,7 @@ DRAW spatial
   MAPPING "geometry" AS geometry, "population_change" AS fill
 SCALE CONTINUOUS fill TO vik
 LABEL title => 'county population change, 2020–2025', subtitle => 'estimated percent change; diverging color separates growth from decline', fill => 'Change (%)'
-PROJECT TO albers`,
+PROJECT TO albers
+  SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
   },
 ];

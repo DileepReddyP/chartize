@@ -58,6 +58,12 @@ const MapViewportSchema = z.object({
   panY: z.number().min(-4).max(4),
 });
 const AiMessageSchema = z.object({ role: z.enum(["user", "assistant"]), text: z.string() });
+export const AiResponsePreferencesSchema = z.object({
+  hypothesize: z.boolean(),
+  concise: z.boolean(),
+  challenge: z.boolean(),
+  technical: z.boolean(),
+});
 const LeftPaneRatioSchema = z.number().min(0.3).max(0.7);
 const CodePaneRatioSchema = z.number().min(0.32).max(0.72);
 
@@ -69,6 +75,7 @@ export type ChartSelectionState = z.infer<typeof ChartSelectionSchema>;
 export type ChartDomainsState = z.infer<typeof ChartDomainsSchema>;
 export type MapViewportState = z.infer<typeof MapViewportSchema>;
 export type AiConversationMessage = z.infer<typeof AiMessageSchema>;
+export type AiResponsePreferences = z.infer<typeof AiResponsePreferencesSchema>;
 
 export const WorkspaceSnapshotSchema = z.object({
   engineState: z.enum(["loading", "ready", "error"]),
@@ -110,6 +117,7 @@ export const WorkspaceSnapshotSchema = z.object({
   aiMessage: z.string(),
   aiHistory: z.array(AiMessageSchema),
   includeSamples: z.boolean(),
+  aiPreferences: AiResponsePreferencesSchema,
   leftPaneRatio: LeftPaneRatioSchema,
   codePaneRatio: CodePaneRatioSchema,
 });
@@ -196,6 +204,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   setAiMessage: (value: string) => void;
   setAiHistory: (value: Updater<AiConversationMessage[]>) => void;
   setIncludeSamples: (value: boolean) => void;
+  setAiPreferences: (value: AiResponsePreferences) => void;
   setLeftPaneRatio: (value: number) => void;
   setCodePaneRatio: (value: number) => void;
   startNewVisualization: (source?: string) => void;
@@ -244,6 +253,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   aiMessage: "",
   aiHistory: [],
   includeSamples: false,
+  aiPreferences: { hypothesize: true, concise: true, challenge: false, technical: false },
   leftPaneRatio: 0.44,
   codePaneRatio: 0.56,
 });
@@ -315,6 +325,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set) => ({
   setAiMessage: (aiMessage) => set({ aiMessage }),
   setAiHistory: (next) => set((state) => ({ aiHistory: resolve(next, state.aiHistory) })),
   setIncludeSamples: (includeSamples) => set({ includeSamples }),
+  setAiPreferences: (aiPreferences) => set({ aiPreferences: AiResponsePreferencesSchema.parse(aiPreferences) }),
   setLeftPaneRatio: (leftPaneRatio) => set({ leftPaneRatio: LeftPaneRatioSchema.parse(leftPaneRatio) }),
   setCodePaneRatio: (codePaneRatio) => set({ codePaneRatio: CodePaneRatioSchema.parse(codePaneRatio) }),
   startNewVisualization: (source = "chartize:presidential_approval_average") => {

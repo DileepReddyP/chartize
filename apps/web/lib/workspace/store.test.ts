@@ -7,6 +7,7 @@ describe("Chartize workspace store", () => {
     expect(parsed.leftPaneRatio).toBe(0.44);
     expect(parsed.codePaneRatio).toBe(0.56);
     expect(parsed.draft.axisLabels).toMatchObject({ x: "Poll Date", y: "Approval" });
+    expect(parsed.aiPreferences).toEqual({ hypothesize: true, concise: true, challenge: false, technical: false });
   });
 
   it("rejects panel sizes outside the Zod constraints", () => {

@@ -15,6 +15,7 @@ import {
   sourcesFromQuery,
   updateFirstVisual,
   visualPointState,
+  visualSelectionFields,
 } from "./query-context";
 
 const query = `WITH source AS (SELECT * FROM chartize:polls)
@@ -79,6 +80,11 @@ describe("GGSQL context", () => {
     expect(updated).toContain("DRAW point");
     expect(updated).toContain('"party" AS colour');
     expect(updated).toContain("WITH source AS");
+  });
+
+  it("finds brush axes across layered ribbon and line marks", () => {
+    const layered = `${query.replace("DRAW line", "DRAW ribbon").replace('"approve" AS y', '"lower" AS ymin, "upper" AS ymax')}\nDRAW line\n  MAPPING "date" AS x, "approve" AS y`;
+    expect(visualSelectionFields(layered)).toEqual({ x: "date", y: "approve" });
   });
 
   it("round-trips labels, scales, facets, projection, and draw settings", () => {

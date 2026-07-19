@@ -542,6 +542,18 @@ export function visualPointState(query: string): VisualPointState {
   };
 }
 
+/** Chooses usable axes across layered DRAW blocks for brush summaries. */
+export function visualSelectionFields(query: string) {
+  const draws = visualBlocks(splitGgsql(query).visual)
+    .filter((block) => /^DRAW\b/i.test(block.text))
+    .map((block) => block.text);
+  const first = (aesthetic: string) => draws.map((draw) => mappedField(draw, aesthetic)).find(Boolean) ?? "";
+  return {
+    x: first("x") || first("xmin") || first("xmax"),
+    y: first("y") || first("ymin") || first("ymax"),
+  };
+}
+
 const drawKeys: Array<keyof VisualPointState> = [
   "mark", "x", "y", "xEnd", "yEnd", "xMin", "xMax", "yMin", "yMax", "slope",
   "color", "fill", "size", "shape", "linetype", "linewidth", "opacityField", "weight", "geometry",
