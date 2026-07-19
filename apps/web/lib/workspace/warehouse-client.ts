@@ -1,0 +1,66 @@
+import {
+  DatasetManifestSchema,
+  TablePreviewSchema,
+  type DatasetManifest,
+  type TablePreview,
+} from "@chartize/contracts";
+
+interface WarehousePreviewRequest {
+  slug: string;
+  version: string;
+  offset: number;
+  sort?: { column: string; direction: "asc" | "desc" } | null;
+}
+
+let catalogRequest: Promise<DatasetManifest[]> | undefined;
+const previewRequests = new Map<string, Promise<TablePreview>>();
+
+function retain<T>(cache: Map<string, Promise<T>>, key: string, request: Promise<T>, maximum: number) {
+  cache.delete(key);
+  cache.set(key, request);
+  while (cache.size > maximum) cache.delete(cache.keys().next().value!);
+  void request.catch(() => {
+    if (cache.get(key) === request) cache.delete(key);
+  });
+  return request;
+}
+
+export function fetchWarehouseCatalog() {
+  if (!catalogRequest) {
+    const request = fetch("/engine/api/catalog")
+      .then(async (response) => response.ok ? response.json() : [])
+      .then((catalog: unknown) => DatasetManifestSchema.array().parse(catalog));
+    catalogRequest = request;
+    void request.catch(() => {
+      if (catalogRequest === request) catalogRequest = undefined;
+    });
+  }
+  return catalogRequest;
+}
+
+export function fetchWarehousePreview({ slug, version, offset, sort }: WarehousePreviewRequest) {
+  const key = `${version}:${slug}:${offset}:${sort?.column ?? ""}:${sort?.direction ?? ""}`;
+  const cached = previewRequests.get(key);
+  if (cached) {
+    previewRequests.delete(key);
+    previewRequests.set(key, cached);
+    return cached;
+  }
+
+  const parameters = new URLSearchParams({ limit: "100", offset: String(offset) });
+  if (sort) {
+    parameters.set("sort", sort.column);
+    parameters.set("direction", sort.direction);
+  }
+  const request = fetch(`/engine/api/datasets/${encodeURIComponent(slug)}/preview?${parameters}`)
+    .then(async (response) => {
+      const body = await response.json() as unknown;
+      if (!response.ok) {
+        throw new Error(typeof body === "object" && body && "error" in body
+          ? String(body.error)
+          : "Table preview failed.");
+      }
+      return TablePreviewSchema.parse(body);
+    });
+  return retain(previewRequests, key, request, 32);
+}

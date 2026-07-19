@@ -1,0 +1,39 @@
+{
+  "name": "@chartize/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@chartize/contracts": "workspace:*",
+    "@monaco-editor/react": "4.7.0",
+    "@next/env": "16.2.10",
+    "@vanilla-extract/css": "1.21.1",
+    "ggsql-wasm": "0.4.1",
+    "hyparquet-writer": "0.16.1",
+    "next": "16.2.10",
+    "openai": "6.47.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "shpjs": "6.2.0",
+    "vega": "6.2.0",
+    "vega-embed": "7.1.0",
+    "vega-lite": "6.4.3",
+    "zod": "4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@types/geojson": "7946.0.16",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "@vanilla-extract/next-plugin": "2.5.2",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
