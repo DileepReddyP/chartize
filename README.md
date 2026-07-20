@@ -17,9 +17,9 @@ The explorer is the product surface. Monaco GGSQL stays primary while sources, f
 
 React and Zustand do not know that IndexedDB or the data service exists. They send typed commands to one browser worker. When GGSQL first references `chartize:<slug>`, that worker resolves the catalog version, checks Dexie, downloads the exact Parquet artifact only when missing, stores it, and registers a copy in the active workspace's engine context. Subsequent workspaces and sessions reuse the canonical bytes locally. A workspace may freely create, update, rename, or derive local tables without changing that baseline or another workspace.
 
-The Rust service has a deliberately small public surface: catalog metadata, exact dataset-version downloads, and steward-only ingestion and rollback. It never accepts arbitrary SQL from the browser or from Chartize AI.
+Next.js exposes a deliberately small data surface on the same origin: catalog metadata, exact dataset-version downloads, and steward-only ingestion and rollback. It never accepts arbitrary SQL from the browser or from Chartize AI.
 
-Chartize AI is a workspace-scoped Terra conversation. It receives the active query, chart description, catalog schemas, and user-enabled selection context. If it needs exact values, it emits a bounded data request; the worker runs it in the same workspace engine and continues the model turn. Generated GGSQL is tried locally, and an engine diagnostic can trigger up to two bounded repair passes.
+Chartize AI is a workspace-scoped Terra conversation. It receives the active query, chart description, catalog schemas, user-enabled selection context, and unresolved browser diagnostics. If it needs exact values, it emits a bounded data request; the worker runs it in the same workspace engine and continues the model turn. Generated GGSQL is tried locally, and an engine diagnostic—including the exact failed candidate—can trigger up to two bounded repair passes. A compact local digest of the official GGSQL 0.4.1 documentation and drawing recipes is available to the agent, so ordinary syntax generation does not require a web search.
 
 ![Chartize AI explaining a county population-change map with browser-grounded statistics](./docs/images/chartize-ai-county-context.webp)
 
@@ -29,14 +29,14 @@ Chartize AI is a workspace-scoped Terra conversation. It receives the active que
 - Zod-validated Zustand workspace documents and actions
 - `ggsql-wasm` plus an in-browser SQL engine in a Web Worker
 - Dexie/IndexedDB, owned only by the worker, for canonical Parquet bytes, local uploads, catalog metadata, and saved workspace documents
-- Rust and Axum for catalog, typed Parquet delivery, imports, profiling, and rollback
-- DuckDB only inside the steward service for ingestion/catalog metadata; normalized datasets are Parquet
+- Explicit Next.js Node routes for catalog, exact Parquet delivery, steward imports, and rollback
+- DuckDB Node Neo for server-side ingestion/catalog metadata; normalized published datasets are Parquet
 - OpenAI Responses API with `gpt-5.6-terra`
 - Docker Compose with Caddy, or host Nginx with Basic Auth, on one VPS
 
 ## Run locally
 
-Requirements: Node 24+, pnpm 10+, Rust 1.95+.
+Requirements: Node 24+ and pnpm 10+.
 
 ```bash
 cp .env.example apps/web/.env.local
@@ -45,7 +45,7 @@ pnpm fetch:spatialite
 ADMIN_TOKEN=local-dev-token pnpm dev
 ```
 
-Open `http://localhost:3000/explore`. The data service listens on `127.0.0.1:8787`; use `local-dev-token` on `/admin`.
+Open `http://localhost:3000/explore`. The catalog and artifact routes are served by the same Next.js process; use `local-dev-token` on `/admin`.
 
 In a second terminal, publish the starter datasets:
 
@@ -82,7 +82,7 @@ Back up `data/` as one unit. Imports retain the original, normalize a canonical 
 ## Security boundary
 
 - Public browser code can request only a catalog entry or an exact `{slug, version}` Parquet artifact.
-- `/api/query`, `/api/validate`, and `/api/ai/query-data` do not exist on the Rust service.
+- No server route accepts SQL or GGSQL. The public data routes are fixed catalog and exact-version artifact reads.
 - SQL and GGSQL execute in the browser worker; local derived tables and mutations cannot modify VPS data.
 - Only the worker can access Dexie or request catalog/data artifacts. React and Zustand cannot issue data-service requests.
 - The browser worker has a 100 MB per-file import guard; steward import limits are configured separately.
@@ -95,9 +95,8 @@ Back up `data/` as one unit. Imports retain the original, normalize a canonical 
 pnpm --filter @chartize/web typecheck
 pnpm --filter @chartize/web test
 pnpm --filter @chartize/web build
-cargo test --manifest-path services/engine/Cargo.toml
 ```
 
-The browser acceptance pass covers cold and warm `chartize:` loads, workspace mutation isolation, and a local CSV upload that Chartize AI cleans into a derived table before source deletion resets that workspace. The CSV path performs no catalog or dataset-artifact request.
+The browser acceptance pass covers cold and warm `chartize:` loads, workspace mutation isolation, and a local CSV upload that Chartize AI cleans into a derived table before source deletion resets that workspace. The CSV path performs no catalog or dataset-artifact request. The bundled example suite is also exercised in Chrome: every example must load, render, accept an inline title edit, and rerun without a UI or console error.
 
 The post-pivot boundary review is in [`docs/CODE_AUDIT.md`](./docs/CODE_AUDIT.md).

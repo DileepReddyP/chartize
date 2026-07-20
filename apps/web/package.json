@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@chartize/contracts": "workspace:*",
+    "@duckdb/node-api": "1.5.4-r.1",
     "@monaco-editor/react": "4.7.0",
     "@next/env": "16.2.10",
     "@vanilla-extract/css": "1.21.1",
     "dexie": "^4.4.4",
+    "fflate": "0.8.2",
     "ggsql-wasm": "0.4.1",
     "hyparquet-writer": "0.16.1",
     "next": "16.2.10",

@@ -1,4 +1,0 @@
-[env]
-# tree-sitter-ggsql ships a generated parser; avoid requiring a global Node CLI
-# in local builds and the production image.
-GGSQL_SKIP_GENERATE = "1"

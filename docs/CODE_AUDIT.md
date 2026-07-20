@@ -13,7 +13,7 @@ This audit follows the product pivots that produced the current cursor-led works
 - `lib/local/workspace-engine.ts` gives every workspace its own mutable `GgsqlContext`. All workspaces may reuse the same canonical bytes, but mutations and derived tables remain isolated.
 - `components/chart-view.tsx` owns Vega embedding, exports, range gestures, map pan/zoom, and mark selection. It reports selections to Zustand rather than keeping competing workspace state.
 - `app/api/ai/query` is a structured model relay. The worker may send it bounded context and satisfy a model data request locally, but the relay cannot query VPS data directly.
-- `services/engine` owns catalog metadata, exact Parquet-version downloads, steward imports, profiling, and rollback. It has no public arbitrary-SQL route.
+- `lib/server/data-service.ts` and the explicit `app/engine/api/*` Next.js routes own catalog metadata, exact Parquet-version downloads, steward imports, profiling, and rollback. They expose no arbitrary-SQL route.
 
 ## Hazards removed
 
@@ -35,6 +35,8 @@ This audit follows the product pivots that produced the current cursor-led works
 - Local CSV: a six-row file was uploaded through the UI, cleaned by Chartize AI into an idempotent derived table, and visualized. Raw casing and nulls remained visible in the source table.
 - Local deletion: removing that CSV reset its dependent workspace and blanked the chart/table. The entire upload, AI cleanup, and deletion path made no data-service request.
 - AI repair: unsupported SQL emitted during the cleanup was diagnosed by the real browser engine and repaired into the supported SQLite-like dialect.
+- Example suite: all 12 retained examples loaded and rendered in Chrome, accepted an inline title edit, and reran without a visible or console diagnostic. This includes the Census/CDC and BEA/CDC joins that previously failed.
+- Literal annotations: the official `PLACE rule` plus `PLACE text` form rendered one dated crossover marker without repeating a label for every observation.
 
 ## Remaining seams
 
@@ -43,4 +45,4 @@ This audit follows the product pivots that produced the current cursor-led works
 - Pointer arbitration, portal layering, worker/Dexie network behavior, and AI repair are verified in real Chrome. A component-browser harness would make those regressions faster to isolate.
 - Imports are synchronous and appropriate for a five-day preview. A larger deployment would benefit from persistent jobs and resumable acquisition.
 
-The deployment remains intentionally small: one browser application, one private catalog/data service, one metadata database, versioned Parquet artifacts, and one workspace-scoped AI conversation.
+The deployment remains intentionally small: one Next.js process, one metadata database, versioned Parquet artifacts, and one workspace-scoped AI conversation. The data routes share the web process, while SQL execution and browser persistence remain isolated in the worker.

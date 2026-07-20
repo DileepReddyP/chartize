@@ -16,7 +16,7 @@ describe("GgsqlDraftSchema", () => {
 });
 
 describe("cross-runtime dataset contract", () => {
-  it("parses the manifest fixture shared with the Rust service", async () => {
+  it("parses the manifest fixture shared across the browser and Next data routes", async () => {
     const fixture: unknown = JSON.parse(await readFile(new URL("../fixtures/dataset-manifest.json", import.meta.url), "utf8"));
     const manifest = DatasetManifestSchema.parse(fixture);
     expect(manifest.tableName).toBe("presidential_approval_average");

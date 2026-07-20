@@ -26,11 +26,14 @@ describe("local-first browser boundary", () => {
     expect(mainThread).not.toMatch(/\/engine\/api|\/api\/ai/);
   });
 
-  it("keeps the public engine proxy read-only and route-limited", async () => {
-    const proxy = await source("app/engine/[...path]/route.ts");
-    expect(proxy).toContain("export const GET = proxy");
-    expect(proxy).not.toContain("export const POST");
-    expect(proxy).toContain('path[1] === "catalog"');
-    expect(proxy).toContain('path[3] === "parquet"');
+  it("keeps public data routes read-only and route-specific", async () => {
+    const [catalog, artifact] = await Promise.all([
+      source("app/engine/api/catalog/route.ts"),
+      source("app/engine/api/datasets/[slug]/parquet/route.ts"),
+    ]);
+    expect(catalog).toContain("export async function GET");
+    expect(artifact).toContain("export async function GET");
+    expect(`${catalog}\n${artifact}`).not.toContain("export async function POST");
+    expect(artifact).toContain("activeDatasetArtifact");
   });
 });

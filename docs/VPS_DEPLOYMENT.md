@@ -1,6 +1,6 @@
 # VPS preview deployment
 
-This path keeps Nginx and TLS on the host, publishes only Next.js on `127.0.0.1:3000`, and leaves the Rust catalog/data service private inside Docker. The `data/` directory holds catalog metadata, original source artifacts, and versioned Parquet tables.
+This path keeps Nginx and TLS on the host and publishes only Next.js on `127.0.0.1:3000`. The same process serves the application, the fixed catalog/artifact API, and authenticated steward actions. The `data/` directory holds catalog metadata, original source artifacts, and versioned Parquet tables.
 
 ## 1. Package and copy
 
@@ -23,11 +23,12 @@ cp .env.example .env
 
 Set a long random `ADMIN_TOKEN`, keep `AI_TEXT_MODEL=gpt-5.6-terra`, and add the OpenAI key to `/srv/chartize/.env`. Restrict that file with `chmod 600 .env`.
 
-## 2. Start the private application services
+## 2. Start the private application
 
 ```bash
-docker compose up --build -d engine web
+docker compose up --build -d web
 docker compose ps
+curl --fail http://127.0.0.1:3000/engine/api/health
 curl --fail http://127.0.0.1:3000/explore >/dev/null
 ```
 
@@ -63,16 +64,16 @@ Basic Auth credentials should only be used after HTTPS is active. The ACME chall
 Before replacing the application directory, keep `/srv/chartize/data`. To update code, unpack a new archive over `/srv/chartize`, then run:
 
 ```bash
-docker compose up --build -d engine web
+docker compose up --build -d web
 docker image prune -f
 ```
 
 Back up Chartize data as one unit while the service is stopped or from a filesystem snapshot:
 
 ```bash
-docker compose stop engine
+docker compose stop web
 sudo tar -C /srv/chartize -czf /var/backups/chartize-data-$(date +%F).tgz data
-docker compose start engine
+docker compose start web
 ```
 
 Monitor disk use with `du -sh /srv/chartize/data` and `df -h /srv/chartize`. The importer stages the original, normalized table, and Parquet copy, and refuses an import when its safety reserve cannot be met.

@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   devIndicators: false,
   transpilePackages: ["@chartize/contracts"],
+  serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings"],
   webpack(config) {
     config.experiments = { ...config.experiments, asyncWebAssembly: true };
     config.resolve.fallback = { ...config.resolve.fallback, canvas: false };

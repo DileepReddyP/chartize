@@ -6,7 +6,7 @@ const args = new Set(process.argv.slice(2));
 const all = args.delete("--all");
 const force = args.delete("--force");
 const selectedIds = [...args];
-const engine = (process.env.ENGINE_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+const dataService = (process.env.CHARTIZE_DATA_URL ?? "http://127.0.0.1:3000/engine/api").replace(/\/$/, "");
 const token = process.env.ADMIN_TOKEN ?? "change-me-in-production";
 const candidates = manifest.datasets.filter((dataset) => {
   if (!dataset.automatic || !dataset.url) return false;
@@ -18,9 +18,9 @@ if (!candidates.length) {
   throw new Error("No automatic datasets matched. Use --all or pass dataset IDs from datasets/recommended.json.");
 }
 
-const health = await fetch(`${engine}/health`).catch(() => null);
-if (!health?.ok) throw new Error(`Chartize data service is not reachable at ${engine}. Start pnpm dev first.`);
-const catalogResponse = await fetch(`${engine}/api/catalog`);
+const health = await fetch(`${dataService}/health`).catch(() => null);
+if (!health?.ok) throw new Error(`Chartize data service is not reachable at ${dataService}. Start pnpm dev first.`);
+const catalogResponse = await fetch(`${dataService}/catalog`);
 if (!catalogResponse.ok) throw new Error(`Could not read the Chartize catalog (${catalogResponse.status}).`);
 const publishedSlugs = new Set((await catalogResponse.json()).map((dataset) => dataset.slug));
 let publishedCount = 0;
@@ -49,7 +49,7 @@ for (const dataset of candidates) {
   form.set("source_url", dataset.sourcePage);
   form.set("license", dataset.license);
   form.set("attribution", dataset.attribution);
-  const published = await fetch(`${engine}/api/admin/imports`, {
+  const published = await fetch(`${dataService}/admin/imports`, {
     method: "POST",
     headers: { "x-admin-token": token },
     body: form,
