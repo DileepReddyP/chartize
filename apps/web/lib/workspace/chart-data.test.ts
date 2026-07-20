@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centeredDomain, describeChartSelection, presentationFromSpec, previewFromSpec, visualFieldsFromPreview } from "./chart-data";
+import { centeredDomain, describeChartExtent, describeChartSelection, mapFeatureSelectionFromDatum, presentationFromSpec, previewFromSpec, selectionTableFromSpec, shiftedDomain, visualFieldsFromPreview } from "./chart-data";
 
 describe("chart workspace data", () => {
   it("zooms numeric and temporal domains around their center", () => {
@@ -10,6 +10,38 @@ describe("chart workspace data", () => {
     ]);
   });
 
+  it("pans numeric and temporal domains by a span fraction", () => {
+    expect(shiftedDomain([0, 100], 0.1)).toEqual([10, 110]);
+    expect(shiftedDomain(["2026-01-01", "2026-01-11"], -0.1)).toEqual([
+      "2025-12-31T00:00:00.000Z",
+      "2026-01-10T00:00:00.000Z",
+    ]);
+  });
+
+  it("summarizes the rendered extent for AI context without sending every row", () => {
+    expect(describeChartExtent(
+      { columns: ["date", "approve"], rows: [["2025-03-01", "52.9"], ["2025-08-30", "37.7"]], totalRows: 183, offset: 0, limit: 200 },
+      "date",
+      "approve",
+      [{ name: "date", dataType: "DATE", nullable: false, semanticType: "temporal" }, { name: "approve", dataType: "DOUBLE", nullable: false, semanticType: "measure" }],
+      "Poll Date",
+      "Approval",
+    )).toBe("Rendered data has 183 rows; Poll Date spans 2025-03-01 to 2025-08-30; Approval spans 37.7 to 52.9; Approval moves from 52.9 to 37.7 (-15.2)");
+  });
+
+  it("summarizes positional Vega fields from one analytical layer", () => {
+    const table = selectionTableFromSpec({ data: { values: [
+      { __ggsql_source__: "ribbon", __ggsql_aes_pos1__: "2025-03-01", __ggsql_aes_pos2__: null },
+      { __ggsql_source__: "approval", __ggsql_aes_pos1__: "2025-03-01", __ggsql_aes_pos2__: 52.9 },
+      { __ggsql_source__: "approval", __ggsql_aes_pos1__: "2026-07-01", __ggsql_aes_pos2__: 41.2 },
+      { __ggsql_source__: "disapproval", __ggsql_aes_pos1__: "2025-03-01", __ggsql_aes_pos2__: 47.1 },
+      { __ggsql_source__: "disapproval", __ggsql_aes_pos1__: "2026-07-01", __ggsql_aes_pos2__: 58.8 },
+    ] } })!;
+    expect(table.totalRows).toBe(2);
+    expect(describeChartExtent(table, "poll_date", "approval", [], "Poll Date", "Approval"))
+      .toBe("Rendered data has 2 rows; Poll Date spans 2025-03-01 to 2026-07-01; Approval spans 41.2 to 52.9; Approval moves from 52.9 to 41.2 (-11.7)");
+  });
+
   it("extracts presentation and user columns without GGSQL bookkeeping", () => {
     const spec = {
       title: { text: "approval", subtitle: ["daily", "average"] },
@@ -17,6 +49,27 @@ describe("chart workspace data", () => {
     };
     expect(presentationFromSpec(spec)).toEqual({ title: "approval", subtitle: "daily average" });
     expect(previewFromSpec(spec).columns).toEqual(["date", "value"]);
+  });
+
+  it("turns one spatial mark into compact geographic context", () => {
+    expect(mapFeatureSelectionFromDatum({
+      NAMELSAD: "Cook County",
+      STATEFP: "17",
+      change_pct: -1.2345,
+      POPESTIMATE2025: 5_182_617,
+      geometry: new Uint8Array([1, 2, 3]),
+      __ggsql_aes_fill__: -1.2345,
+      label_lon: -87.7,
+    }, { x: 240, y: 180 })).toEqual({
+      pixels: { x: 240, y: 180 },
+      title: "Cook County",
+      values: [
+        { field: "NAMELSAD", value: "Cook County" },
+        { field: "STATEFP", value: "17" },
+        { field: "change_pct", value: "-1.235" },
+        { field: "POPESTIMATE2025", value: "5,182,617" },
+      ],
+    });
   });
 
   it("adds computed query aliases to the visual builder fields", () => {

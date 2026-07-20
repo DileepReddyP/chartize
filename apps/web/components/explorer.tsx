@@ -26,7 +26,6 @@ import { DwimPanel, SourceTiles, type DwimSource } from "./dwim-panel";
 import { EditableChartLabel } from "./editable-chart-label";
 import { InlineQueryControls, type InlineControlAnchors } from "./inline-query-controls";
 import { PanelResizer } from "./panel-resizer";
-import { VisualizationExamplePicker } from "./visualization-example-picker";
 import { LocalEngineClient } from "@/lib/local/engine-client";
 import { detectFormat, tableNameFromFile } from "@/lib/local/file-format";
 import { loadWorkspace, saveWorkspace, type StoredLocalFile } from "@/lib/local/workspace-store";
@@ -51,17 +50,19 @@ import {
   visualPointState,
 } from "@/lib/ggsql/query-context";
 import { makeBlankDraft, makeDefaultDraft, serializeDraft } from "@/lib/ggsql/serialize";
-import type { VisualizationExample } from "@/lib/ggsql/examples";
 import {
   centeredDomain,
+  describeChartExtent,
   describeChartSelection,
+  mapFeatureSelectionFromTableRow,
   normalizeDomainValue,
   presentationFromSpec,
   previewFromSpec,
   selectionTableFromSpec,
+  shiftedDomain,
   visualFieldsFromPreview,
 } from "@/lib/workspace/chart-data";
-import { fetchWarehouseCatalog, fetchWarehousePreview } from "@/lib/workspace/warehouse-client";
+import { fetchWarehouseCatalog, fetchWarehousePreview, fetchWarehouseQueryRow } from "@/lib/workspace/warehouse-client";
 import {
   BUILTIN_DATASETS,
   EMPTY_TABLE,
@@ -170,16 +171,16 @@ export function Explorer() {
     engineState, catalogLoaded, mode, localDatasets, warehouseDatasets, draft, query, spec,
     selectedData, fullData, resultTab, fullSort, dockSource, running, fullLoading,
     showLoadingMask, error, duration, editorContext, dwimStatus, inlineAnchors,
-    gridSelection, selectionOrigin, chartSelection, chartDomains, chartDomainHistory, mapViewport, resultStatus,
+    gridSelection, selectionOrigin, chartSelection, chartDomains, chartDomainHistory, mapViewport, mapFeatureSelection, resultStatus,
     aiOpen, aiPlacement, aiContext, aiContextNote, aiPrompt, aiBusy, aiMessage,
-    aiHistory, aiUsage, includeSamples, aiPreferences, leftPaneRatio, codePaneRatio,
+    aiHistory, aiUsage, aiFocusVersion, includeSamples, aiPreferences, leftPaneRatio, codePaneRatio, editorFontSize,
     setEngineState, setCatalogLoaded, setMode, setLocalDatasets, setWarehouseDatasets,
     setDraft, setQuery, setSpec, setSelectedData, setFullData, setResultTab, setFullSort,
     setDockSource, setRunning, setFullLoading, setShowLoadingMask, setError, setDuration,
     setEditorContext, setDwimStatus, setInlineAnchors, setGridSelection, setSelectionOrigin,
-    setChartSelection, zoomChart, zoomChartOut, resetChartZoom, zoomMap, panMap, resetMapViewport, setResultStatus, setFocusArea, setAiOpen,
+    setChartSelection, setChartDomains, zoomChart, zoomChartOut, resetChartZoom, zoomMap, panMap, resetMapViewport, setMapFeatureSelection, setResultStatus, setFocusArea, setAiOpen,
     setAiPlacement, setAiContext, setAiContextNote, setAiPrompt, setAiBusy, setAiMessage, setAiHistory, setAiUsage,
-    setIncludeSamples, setAiPreferences, setLeftPaneRatio, setCodePaneRatio, startNewVisualization,
+    setIncludeSamples, setAiPreferences, requestAiFocus, setLeftPaneRatio, setCodePaneRatio, setEditorFontSize,
   } = workspace;
   const clientRef = useRef<LocalEngineClient | null>(null);
   const chartRef = useRef<ChartViewHandle>(null);
@@ -191,13 +192,54 @@ export function Explorer() {
   const draftRef = useRef(draft);
   const runSequenceRef = useRef(0);
   const fullSequenceRef = useRef(0);
+  const featureSequenceRef = useRef(0);
   const queryCacheRef = useRef(new Map<string, CachedQuery>());
   const tableCacheRef = useRef(new Map<string, TablePreview>());
+  const workbenchRef = useRef<HTMLElement>(null);
   const workbenchGridRef = useRef<HTMLDivElement>(null);
   const editorStackRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { queryRef.current = query; }, [query]);
   useEffect(() => { draftRef.current = draft; }, [draft]);
+
+  useEffect(() => {
+    const root = workbenchRef.current;
+    if (!root) return;
+    let frame: number | null = null;
+    let editorDelta = 0;
+    const applyEditorZoom = () => {
+      frame = null;
+      if (Math.abs(editorDelta) < 0.5) { editorDelta = 0; return; }
+      const state = useChartizeWorkspace.getState();
+      const next = Math.max(10, Math.min(24, state.editorFontSize + (editorDelta < 0 ? 1 : -1)));
+      editorDelta = 0;
+      if (next === state.editorFontSize) return;
+      state.setEditorFontSize(next);
+      editorRef.current?.updateOptions({ fontSize: next, lineHeight: Math.round(next * 1.6) });
+    };
+    const lockPaneGesture = (event: WheelEvent) => {
+      if (!event.ctrlKey || !(event.target instanceof Element) || !root.contains(event.target)) return;
+      // macOS pinch arrives as a ctrl+wheel. Always consume it inside the
+      // workbench so browser zoom cannot run alongside a pane interaction.
+      event.preventDefault();
+      if (event.target.closest(".chart-interaction")) {
+        setFocusArea("chart");
+        return;
+      }
+      if (event.target.closest(".monaco-editor")) {
+        setFocusArea("code");
+        editorDelta += event.deltaY;
+        if (frame === null) frame = window.requestAnimationFrame(applyEditorZoom);
+        return;
+      }
+      if (event.target.closest(".result-table-shell, .source-dock")) setFocusArea("table");
+    };
+    root.addEventListener("wheel", lockPaneGesture, { capture: true, passive: false });
+    return () => {
+      root.removeEventListener("wheel", lockPaneGesture, true);
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [setFocusArea]);
 
   const activeSources = useMemo(() => sourcesFromQuery(query), [query]);
   const isBlankWorkspace = !query.trim();
@@ -229,6 +271,15 @@ export function Explorer() {
     [activeFields, selectedData, selectedProjectionNames],
   );
   const visualState = useMemo(() => visualPointState(query), [query]);
+  const chartLegendTitles = useMemo(() => ({
+    colour: visualState.labelColor,
+    fill: visualState.labelFill,
+    size: visualState.labelSize,
+    shape: visualState.labelShape,
+    linetype: visualState.labelLinetype,
+    linewidth: visualState.labelLinewidth,
+    opacity: visualState.labelOpacity,
+  }), [visualState]);
   const isMap = useMemo(() => /\bDRAW\s+spatial\b/i.test(splitGgsql(query).visual), [query]);
   const chartSelectionData = useMemo(() => selectionTableFromSpec(spec) ?? selectedData, [selectedData, spec]);
   const selectionFields = useMemo(() => visualSelectionFields(query), [query]);
@@ -252,8 +303,68 @@ export function Explorer() {
     const datasets = aiView.sources.length
       ? ` Active ${aiView.sources.length === 1 ? "dataset" : "datasets"}: ${aiView.sources.map((source) => `${source.title} (${source.id})`).join(", ")}.`
       : "";
-    return `${title}${subtitle}${datasets}`;
-  }, [aiView]);
+    const extent = describeChartExtent(
+      chartSelectionData,
+      selectionFields.x,
+      selectionFields.y,
+      activeFields,
+      visualState.labelX,
+      visualState.labelY,
+    );
+    return `${title}${subtitle}${datasets}${extent ? ` ${extent}.` : ""}`;
+  }, [activeFields, aiView, chartSelectionData, selectionFields.x, selectionFields.y, visualState.labelX, visualState.labelY]);
+  const mapFeatureContext = useMemo(() => mapFeatureSelection
+    ? `${aiViewNote} Selected map feature: ${mapFeatureSelection.title}. Attached feature values: ${mapFeatureSelection.values.map(({ field, value }) => `${field}=${value}`).join("; ")}. Treat this one geographic feature as the active subject unless the user broadens the question.`
+    : "", [aiViewNote, mapFeatureSelection]);
+
+  useEffect(() => {
+    featureSequenceRef.current += 1;
+    setMapFeatureSelection(null);
+  }, [query, setMapFeatureSelection]);
+
+  const selectMapFeature = useCallback((selection: Parameters<typeof setMapFeatureSelection>[0]) => {
+    const requestId = ++featureSequenceRef.current;
+    setSelectionOrigin("result");
+    setGridSelection(null);
+    setChartSelection(null);
+    setMapFeatureSelection(selection);
+    if (!selection?.pending || selection.rowIndex === undefined) return;
+
+    const selectedQuery = queryRef.current;
+    void (async () => {
+      try {
+        const executableQuery = resolveNamespacedSources(selectedQuery, (namespace, name) => {
+          if (namespace === "chartize") return warehouseDatasets.find((dataset) => dataset.slug === name || dataset.tableName === name)?.tableName;
+          return localDatasets.find((dataset) => dataset.tableName === name)?.tableName ?? name;
+        });
+        const sql = splitGgsql(executableQuery).sql.trim().replace(/;$/, "");
+        if (!sql) throw new Error("The active map has no query to inspect.");
+        const row = mode === "warehouse"
+          ? await fetchWarehouseQueryRow(sql, selection.rowIndex!)
+          : await clientRef.current?.sql(`SELECT * FROM (${sql}) AS chartize_selected_feature LIMIT 1 OFFSET ${selection.rowIndex}`);
+        if (!row?.rows[0]) throw new Error("No feature details were returned.");
+        const hydrated = mapFeatureSelectionFromTableRow(row.columns, row.rows[0], selection.pixels, selection.rowIndex);
+        if (!hydrated) throw new Error("This feature has no readable attributes.");
+        if (featureSequenceRef.current === requestId && queryRef.current === selectedQuery) setMapFeatureSelection(hydrated);
+      } catch (cause) {
+        if (featureSequenceRef.current !== requestId || queryRef.current !== selectedQuery) return;
+        setMapFeatureSelection({
+          ...selection,
+          title: `map feature ${selection.rowIndex! + 1}`,
+          pending: false,
+          error: cause instanceof Error ? cause.message : "Feature details could not be loaded.",
+        });
+      }
+    })();
+  }, [localDatasets, mode, setChartSelection, setGridSelection, setMapFeatureSelection, setSelectionOrigin, warehouseDatasets]);
+
+  // A general workspace conversation should follow the chart as it changes.
+  // Narrow code and selection contexts remain pinned until the user replaces
+  // them so their cursor/range reference is not silently lost.
+  useEffect(() => {
+    if (!aiOpen || aiBusy || aiContext !== "general") return;
+    setAiContextNote(`${aiViewNote} Current query and source catalog are attached.`);
+  }, [aiBusy, aiContext, aiOpen, aiViewNote, setAiContextNote]);
 
   useEffect(() => {
     const busy = running;
@@ -363,54 +474,27 @@ export function Explorer() {
     autoRunTimerRef.current = setTimeout(() => void runQuery(nextQuery, nextMode), 260);
   }, [runQuery]);
 
+  useEffect(() => {
+    const switched = () => {
+      if (autoRunTimerRef.current) clearTimeout(autoRunTimerRef.current);
+      initializedRef.current = true;
+      runSequenceRef.current += 1;
+      fullSequenceRef.current += 1;
+      const state = useChartizeWorkspace.getState();
+      queryRef.current = state.query;
+      draftRef.current = state.draft;
+      void runQuery(state.query, state.mode);
+      window.requestAnimationFrame(() => state.focusArea === "code" && editorRef.current?.focus());
+    };
+    window.addEventListener("chartize:workspace-switched", switched);
+    return () => window.removeEventListener("chartize:workspace-switched", switched);
+  }, [runQuery]);
+
   const runEditorQuery = useCallback(() => {
     const currentQuery = editorRef.current?.getValue() ?? queryRef.current;
     setQuery(currentQuery);
     return runQuery(currentQuery);
   }, [runQuery, setQuery]);
-
-  const startBlankVisualization = useCallback(() => {
-    if (autoRunTimerRef.current) clearTimeout(autoRunTimerRef.current);
-    initializedRef.current = true;
-    runSequenceRef.current += 1;
-    fullSequenceRef.current += 1;
-    queryRef.current = "";
-    startNewVisualization();
-    window.requestAnimationFrame(() => editorRef.current?.focus());
-  }, [startNewVisualization]);
-
-  const loadExample = useCallback((example: VisualizationExample) => {
-    if (autoRunTimerRef.current) clearTimeout(autoRunTimerRef.current);
-    const source = baseSources.find((candidate) => candidate.id === example.source);
-    const nextDraft = source
-      ? draftForDataset(example.source, {
-          id: example.source,
-          title: source.title,
-          tableName: example.source,
-          description: source.description,
-          spatial: source.fields.some((field) => field.semanticType === "geometry"),
-          fields: source.fields,
-        })
-      : makeDefaultDraft(example.source);
-    const point = visualPointState(example.query);
-    nextDraft.title = point.title || example.title;
-    nextDraft.subtitle = point.subtitle || example.description;
-    setDraft(nextDraft);
-    setQuery(example.query);
-    setSpec(null);
-    setSelectedData({ ...EMPTY_TABLE, limit: 200 });
-    setFullData(EMPTY_TABLE);
-    setFullSort(null);
-    setDockSource(example.source);
-    setMode(example.mode);
-    setResultTab("chart");
-    setEditorContext(null);
-    setGridSelection(null);
-    setChartSelection(null);
-    resetMapViewport();
-    setError("");
-    void runQuery(example.query, example.mode);
-  }, [baseSources, resetMapViewport, runQuery, setChartSelection, setDraft, setEditorContext, setError, setFullData, setFullSort, setGridSelection, setMode, setQuery, setResultTab, setSelectedData, setSpec]);
 
   const applyDataset = useCallback((source: string, dataset: LocalDataset | DatasetManifest, autoRun = true) => {
     const nextDraft = draftForDataset(source, dataset);
@@ -562,6 +646,13 @@ export function Explorer() {
   useEffect(() => {
     if (engineState !== "ready" || !catalogLoaded || initializedRef.current) return;
     initializedRef.current = true;
+    if (new URLSearchParams(window.location.search).has("workspace")) {
+      const state = useChartizeWorkspace.getState();
+      queryRef.current = state.query;
+      draftRef.current = state.draft;
+      void runQuery(state.query, state.mode);
+      return;
+    }
     const hash = window.location.hash.match(/^#view=(.+)$/)?.[1];
     if (hash) {
       const state = decodeShareState(hash);
@@ -574,7 +665,9 @@ export function Explorer() {
     }
     const featured = warehouseDatasets.find((dataset) => dataset.slug === "presidential_approval_average") ?? warehouseDatasets[0];
     if (featured) {
-      const nextDraft = draftForDataset(`chartize:${featured.slug}`, featured);
+      const nextDraft = featured.slug === "presidential_approval_average"
+        ? firstDraft
+        : draftForDataset(`chartize:${featured.slug}`, featured);
       const nextQuery = serializeDraft(nextDraft);
       setDraft(nextDraft);
       setQuery(nextQuery);
@@ -599,6 +692,7 @@ export function Explorer() {
       setAiContext(context);
       setEditorContext(null);
       setAiOpen(true);
+      requestAiFocus();
       window.dispatchEvent(new CustomEvent("chartize:ai-opened"));
     };
     const transition = (document as Document & {
@@ -623,7 +717,7 @@ export function Explorer() {
     } catch {
       commit();
     }
-  }, [setAiContext, setAiContextNote, setAiOpen, setAiPlacement, setEditorContext]);
+  }, [requestAiFocus, setAiContext, setAiContextNote, setAiOpen, setAiPlacement, setEditorContext]);
 
   useEffect(() => {
     const openAssistant = () => promoteAi(`${aiViewNote} Current query and source catalog are attached.`, "left", "general");
@@ -821,24 +915,35 @@ export function Explorer() {
     toggleColumn(dockSource, field, true);
   }, [baseSources, dockSource, toggleColumn]);
 
-  const askAi = useCallback(async (task: "generate" | "repair" | "explain", requestOverride?: string) => {
+  const askAi = useCallback(async (task: "generate" | "repair" | "explain", requestOverride?: string, retryAssistantIndex?: number) => {
     if (aiBusy) return;
     if (!catalogLoaded) {
       setAiMessage("The data catalog is still loading.");
       return;
     }
-    const request = requestOverride?.trim() || aiPrompt.trim() || (task === "explain"
+    let branchHistory = aiHistory;
+    let retriedRequest = requestOverride?.trim() ?? "";
+    if (retryAssistantIndex !== undefined) {
+      let userIndex = retryAssistantIndex - 1;
+      while (userIndex >= 0 && aiHistory[userIndex]?.role !== "user") userIndex -= 1;
+      if (userIndex < 0) return;
+      retriedRequest = aiHistory[userIndex]!.text;
+      branchHistory = aiHistory.slice(0, userIndex);
+    }
+    const request = retriedRequest || aiPrompt.trim() || (task === "explain"
       ? aiContext === "code" ? "Explain the current GGSQL, including how its VISUALISE clauses produce this chart." : "Explain the current chart and the GGSQL that produces it."
       : "Repair the current query.");
-    const history = aiHistory.slice(-12);
-    const contextualData = gridSelection
+    const history = branchHistory.slice(-12);
+    const contextualData = mapFeatureSelection
+      ? { columns: mapFeatureSelection.values.map(({ field }) => field), rows: [mapFeatureSelection.values.map(({ value }) => value)] }
+      : gridSelection
       ? { columns: gridSelection.columns, rows: gridSelection.rows }
       : chartSelectionDetails.rows.length
         ? { columns: chartSelectionData.columns, rows: chartSelectionDetails.rows }
         : { columns: selectedData.columns, rows: selectedData.rows };
     setAiBusy(true);
     setAiMessage("");
-    setAiHistory((current) => [...current, { role: "user", text: request }]);
+    setAiHistory([...branchHistory, { role: "user", text: request }]);
     setAiPrompt("");
     try {
       const response = await fetch("/api/ai/query", {
@@ -876,9 +981,8 @@ export function Explorer() {
         resetMapViewport();
         const runResult = await runQuery(body.query);
         if (!runResult.ok) {
-          const failure = `Chartize could not apply that GGSQL: ${runResult.error}`;
+          const failure = `I couldn't apply that visualization yet.\n\n> ${runResult.error}\n\nUse **redo** below to let me repair it from the same prompt.`;
           setAiHistory((current) => [...current, { role: "assistant", text: `${reply}\n\n${failure}` }]);
-          setAiMessage(failure);
           return;
         }
         setDraft(body.draft);
@@ -886,11 +990,16 @@ export function Explorer() {
       }
       setAiHistory((current) => [...current, { role: "assistant", text: reply }]);
     } catch (cause) {
-      setAiMessage(cause instanceof Error ? cause.message : String(cause));
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setAiHistory((current) => [...current, {
+        role: "assistant",
+        text: `I hit a workspace error before I could finish.\n\n> ${message}\n\nUse **redo** below to try this turn again.`,
+      }]);
+      setAiMessage("");
     } finally {
       setAiBusy(false);
     }
-  }, [activeFields, activeSource, aiBusy, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, catalogLoaded, chartSelectionData.columns, chartSelectionDetails.rows, gridSelection, includeSamples, resetMapViewport, runQuery, selectedData.columns, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setAiUsage, setDraft, setQuery]);
+  }, [activeFields, activeSource, aiBusy, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, catalogLoaded, chartSelectionData.columns, chartSelectionDetails.rows, gridSelection, includeSamples, mapFeatureSelection, resetMapViewport, runQuery, selectedData.columns, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setAiUsage, setDraft, setQuery]);
 
   const saveLocal = useCallback(async () => {
     await saveWorkspace({ id: "current", title: draftRef.current.title, query: queryRef.current, draft: draftRef.current, files: storedFilesRef.current, savedAt: new Date().toISOString() });
@@ -931,7 +1040,7 @@ export function Explorer() {
 
   const exportShareCard = useCallback(async () => {
     try {
-      const chartUrl = await chartRef.current?.toPng();
+      const chartUrl = await chartRef.current?.toPng(false);
       if (!chartUrl) throw new Error("Run a chart before exporting a share card.");
       const copy = { headline: draftRef.current.title, dek: draftRef.current.subtitle };
       const canvas = document.createElement("canvas");
@@ -971,6 +1080,18 @@ export function Explorer() {
     }
     zoomChart({ ...(x ? { x } : {}), ...(y ? { y } : {}) });
   };
+  const gestureZoomChart = (factor: number) => {
+    const visible = chartRef.current?.getDomains();
+    const x = centeredDomain(visible?.x, factor);
+    const y = centeredDomain(visible?.y, factor);
+    if (x || y) setChartDomains({ ...(x ? { x } : {}), ...(y ? { y } : {}) });
+  };
+  const gesturePanChart = (horizontal: number, vertical: number) => {
+    const visible = chartRef.current?.getDomains();
+    const x = shiftedDomain(visible?.x, horizontal);
+    const y = shiftedDomain(visible?.y, vertical);
+    if (x || y) setChartDomains({ ...(x ? { x } : {}), ...(y ? { y } : {}) });
+  };
   const selectionActions = (origin: "dock" | "result") => {
     const selectedGrid = selectionOrigin === origin ? gridSelection : null;
     const selectedChart = origin === "result" ? chartSelection : null;
@@ -988,10 +1109,11 @@ export function Explorer() {
       : selectedMap
         ? "Ask about the places in this selected area…"
         : "Ask what changed in this selected range…";
+    const isActiveAiContext = aiOpen && aiContext === "chart" && aiContextNote === context;
     return (
-      <aside className="result-context" aria-label="Selection actions">
+      <aside className={`result-context${isActiveAiContext ? " active-ai-context" : ""}`} aria-label="Selection actions">
         <header><div><h2>{selectionTitle}</h2><p>{selectionSummary}</p></div><button type="button" aria-label="Close selection actions" onClick={() => { setGridSelection(null); setChartSelection(null); setResultStatus(""); }}>×</button></header>
-        <label className="result-context-ai ai-promoter"><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={(event) => promoteAi(context, "left", "chart", event.currentTarget)} /><b>ask</b></label>
+        <label className={`result-context-ai ai-promoter${isActiveAiContext ? " active" : ""}`}><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={isActiveAiContext ? "This selection is attached to Chartize AI" : selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={(event) => promoteAi(context, "left", "chart", event.currentTarget)} /><b>{isActiveAiContext ? "active" : "ask"}</b></label>
         {resultStatus && <p className="result-context-status">{resultStatus}</p>}
         <div className="result-context-actions">
           {selectedChart?.x && selectedChart?.y && <button type="button" onClick={zoomToChartSelection}>zoom to selection</button>}
@@ -1005,7 +1127,7 @@ export function Explorer() {
   };
 
   return (
-    <main className="workbench">
+    <main className="workbench" ref={workbenchRef}>
       <div
         className="workbench-grid dwim-layout"
         ref={workbenchGridRef}
@@ -1020,10 +1142,6 @@ export function Explorer() {
             <div className="code-pane">
               <header className="code-toolbar">
                 <div><strong>visualization code <span>(ggsql)</span></strong></div>
-                <nav className="code-workspace-actions" aria-label="Visualization workspace actions">
-                  <button className="new-visualization-button" type="button" onClick={startBlankVisualization}><span aria-hidden="true">＋</span>new visualization</button>
-                  <VisualizationExamplePicker onSelect={loadExample} />
-                </nav>
                 {error && (
                   <details className="code-error" data-dismiss-on-outside>
                     <summary title="Show query error" aria-label="Show query error"><span aria-hidden="true">!</span></summary>
@@ -1039,7 +1157,7 @@ export function Explorer() {
                   theme="vs"
                   value={query}
                   onMount={handleEditorMount}
-                  options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: 13, lineHeight: 21, lineNumbersMinChars: 3, padding: { top: 15, bottom: 15 }, wordWrap: "on", scrollBeyondLastLine: false, folding: false, renderLineHighlight: "line", selectionHighlight: true }}
+                  options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: editorFontSize, lineHeight: Math.round(editorFontSize * 1.6), mouseWheelZoom: false, lineNumbersMinChars: 3, padding: { top: 15, bottom: 15 }, wordWrap: "on", scrollBeyondLastLine: false, folding: false, renderLineHighlight: "line", selectionHighlight: true }}
                   onChange={(value) => {
                     const nextQuery = value ?? "";
                     setQuery(nextQuery);
@@ -1099,7 +1217,7 @@ export function Explorer() {
               label="Resize visualization code and total data panels"
             />
 
-            <section className="source-dock" aria-label="Source tables" onPointerDown={() => setFocusArea("result")}>
+            <section className="source-dock" aria-label="Source tables" onPointerDown={() => setFocusArea("table")}>
               <header className="code-toolbar source-dock-toolbar">
                 <div><strong>total data</strong></div>
               </header>
@@ -1113,7 +1231,7 @@ export function Explorer() {
                 </details>
               </header>
               <div className="source-dock-body">
-                <DataGrid data={fullData} loading={fullLoading} selectedColumns={dockSelectedSet} sort={fullSort} streamKey={`${dockSource}:${fullSort?.column ?? ""}:${fullSort?.direction ?? ""}`} onSort={sortFullTable} onAddColumn={addColumnFromTable} onLoadMore={loadMoreFullTable} onSelection={(selection) => { setFocusArea("result"); setSelectionOrigin("dock"); setGridSelection(selection); }} />
+                <DataGrid data={fullData} loading={fullLoading} selectedColumns={dockSelectedSet} sort={fullSort} streamKey={`${dockSource}:${fullSort?.column ?? ""}:${fullSort?.direction ?? ""}`} onSort={sortFullTable} onAddColumn={addColumnFromTable} onLoadMore={loadMoreFullTable} onSelection={(selection) => { setFocusArea("table"); setSelectionOrigin("dock"); setGridSelection(selection); }} />
                 {selectionActions("dock")}
               </div>
             </section>
@@ -1129,7 +1247,7 @@ export function Explorer() {
           label="Resize workspace and visualization panels"
         />
 
-        <section className="preview-stage" aria-label="Chart and data results" onPointerDown={() => setFocusArea("result")}>
+        <section className="preview-stage" aria-label="Chart and data results">
           <article className="chart-card result-card">
             <header className="result-toolbar">
               <nav className="result-tabs" aria-label="Result views">
@@ -1154,7 +1272,7 @@ export function Explorer() {
 
             <div className="result-stage" aria-busy={running}>
               {resultTab === "chart" && (
-                <div className={`chart-result-view${isBlankWorkspace ? " blank" : ""}`}>
+                <div className={`chart-result-view${isBlankWorkspace ? " blank" : ""}`} onPointerDown={() => setFocusArea("chart")}>
                   {isBlankWorkspace ? (
                     <div className="blank-chart-grid" role="img" aria-label="Blank visualization canvas" />
                   ) : (
@@ -1166,7 +1284,7 @@ export function Explorer() {
                         </div>
                       </header>
                       <div className="chart-view-shell">
-                        <div className="chart-view"><ChartView ref={chartRef} spec={spec} onError={setError} threshold={activeSource.includes("presidential_approval_average") ? APPROVAL_THRESHOLD : undefined} domains={chartDomains} selection={chartSelection} mapMode={isMap} mapViewport={mapViewport} onMapPan={panMap} onRegionSelect={(selection) => { setSelectionOrigin("result"); setChartSelection(selection); }} /></div>
+                        <div className="chart-view"><ChartView ref={chartRef} spec={spec} featureData={selectedData} exportTitle={visualState.title || draft.title} exportSubtitle={visualState.subtitle || draft.subtitle} onError={setError} threshold={activeSource.includes("presidential_approval_average") ? APPROVAL_THRESHOLD : undefined} domains={chartDomains} legendTitles={chartLegendTitles} selection={chartSelection} mapMode={isMap} mapViewport={mapViewport} mapFeatureSelection={mapFeatureSelection} mapFeatureAiActive={Boolean(aiOpen && aiContext === "chart" && aiContextNote === mapFeatureContext)} onMapPan={panMap} onMapZoom={zoomMap} onChartZoom={gestureZoomChart} onChartPan={gesturePanChart} onRegionSelect={(selection) => { setSelectionOrigin("result"); setMapFeatureSelection(null); setChartSelection(selection); }} onMapFeatureSelect={selectMapFeature} onAskMapFeature={(origin) => { if (mapFeatureContext) promoteAi(mapFeatureContext, "left", "chart", origin); }} /></div>
                         {isMap
                           ? <MapExplorationControls viewport={mapViewport} onPan={panMap} onZoom={zoomMap} onReset={resetMapViewport} />
                           : <GraphExplorationControls
@@ -1184,7 +1302,7 @@ export function Explorer() {
                   )}
                 </div>
               )}
-              {resultTab === "selected" && <DataGrid data={selectedData} selectedColumns={selectedSetForGrid} onSelection={(selection) => { setSelectionOrigin("result"); setGridSelection(selection); }} />}
+              {resultTab === "selected" && <div className="result-table-focus" onPointerDown={() => setFocusArea("table")}><DataGrid data={selectedData} selectedColumns={selectedSetForGrid} onSelection={(selection) => { setFocusArea("table"); setSelectionOrigin("result"); setGridSelection(selection); }} /></div>}
               {selectionActions("result")}
               {showLoadingMask && <div className="pane-loading-mask" role="status"><div className="spinner" /><span>running query…</span></div>}
             </div>
@@ -1206,6 +1324,7 @@ export function Explorer() {
           status={aiMessage}
           history={aiHistory}
           usage={aiUsage}
+          focusVersion={aiFocusVersion}
           includeSamples={includeSamples}
           preferences={aiPreferences}
           leftPaneRatio={leftPaneRatio}
@@ -1214,6 +1333,7 @@ export function Explorer() {
           onIncludeSamples={setIncludeSamples}
           onPreferences={setAiPreferences}
           onAsk={(task, request) => void askAi(task, request)}
+          onRetry={(assistantMessageIndex) => void askAi("generate", undefined, assistantMessageIndex)}
         />
       )}
     </main>

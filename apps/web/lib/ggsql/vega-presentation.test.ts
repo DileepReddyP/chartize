@@ -37,6 +37,22 @@ describe("Chartize Vega presentation", () => {
     });
     const layer = (spec.layer as Array<{ encoding: { stroke: { value: unknown } } }>)[0]!;
     expect(layer.encoding.stroke.value).toBeNull();
+    expect((layer.encoding as unknown as { text: { type: string } }).text.type).toBe("nominal");
+  });
+
+  it("applies GGSQL aesthetic labels to generic engine legend titles", () => {
+    const spec = presentChartSpec({
+      layer: [{
+        mark: "line",
+        encoding: {
+          stroke: { field: "__ggsql_aes_stroke__", title: "stroke", type: "nominal" },
+          size: { field: "__ggsql_aes_size__", title: "size", type: "quantitative" },
+        },
+      }],
+    }, undefined, undefined, undefined, { colour: "Rating", size: "Sample size" });
+    const layer = (spec.layer as Array<{ encoding: { stroke: { title: string }; size: { title: string } } }>)[0]!;
+    expect(layer.encoding.stroke.title).toBe("Rating");
+    expect(layer.encoding.size.title).toBe("Sample size");
   });
 
   it("centers a red-yellow-green scale on zero for signed map values", () => {

@@ -1,3 +1,5 @@
+import { VisualizationLayerSchema, VisualizationScaleSchema, type VisualizationLayer, type VisualizationScale } from "@chartize/contracts";
+
 export type QuerySection = "sql" | "visual" | "selection";
 
 export interface VisualPointState {
@@ -487,6 +489,86 @@ function scaleState(visual: string, aesthetic: "x" | "y" | "colour") {
     format,
     palette: /\bTO\s+([a-z_][\w-]*)/i.exec(tail)?.[1]?.toLocaleLowerCase() ?? "",
   };
+}
+
+/**
+ * Reconstruct the visual-builder portion of a draft from authoritative GGSQL.
+ * Complex SQL remains authoritative; this parser only mirrors presentation
+ * clauses so an AI-authored query immediately remains editable in the UI.
+ */
+export function visualLayersFromQuery(query: string): VisualizationLayer[] {
+  const { visual } = splitGgsql(query);
+  return visualBlocks(visual).flatMap((block) => {
+    const header = /^(DRAW|PLACE)\s+([a-z_][\w-]*)/i.exec(block.text);
+    if (!header) return [];
+    const settingNumber = (name: string, fallback: number) => {
+      const value = Number(assignment(block.text, name));
+      return Number.isFinite(value) ? value : fallback;
+    };
+    const parsed = VisualizationLayerSchema.safeParse({
+      mark: header[2]?.toLocaleLowerCase(),
+      x: mappedField(block.text, "x"),
+      y: mappedField(block.text, "y"),
+      lon: mappedField(block.text, "lon"),
+      lat: mappedField(block.text, "lat"),
+      label: mappedField(block.text, "label"),
+      xEnd: mappedField(block.text, "xend"),
+      yEnd: mappedField(block.text, "yend"),
+      xMin: mappedField(block.text, "xmin"),
+      xMax: mappedField(block.text, "xmax"),
+      yMin: mappedField(block.text, "ymin"),
+      yMax: mappedField(block.text, "ymax"),
+      slope: mappedField(block.text, "slope"),
+      color: mappedField(block.text, "colou?r"),
+      fill: mappedField(block.text, "fill"),
+      size: mappedField(block.text, "size"),
+      shape: mappedField(block.text, "shape"),
+      linetype: mappedField(block.text, "linetype"),
+      linewidth: mappedField(block.text, "linewidth"),
+      opacityField: mappedField(block.text, "opacity"),
+      weight: mappedField(block.text, "weight"),
+      geometry: mappedField(block.text, "geometry"),
+      opacity: Math.max(0, Math.min(1, settingNumber("opacity", 0.9))),
+      position: unquoteLiteral(assignment(block.text, "position")) || "identity",
+      colourLegendValue: mappedLiteral(block.text, "colou?r"),
+      fillLegendValue: mappedLiteral(block.text, "fill"),
+      fixedColour: unquoteLiteral(assignment(block.text, "colou?r")),
+      fixedFill: unquoteLiteral(assignment(block.text, "fill")),
+      fixedSize: Math.max(0, settingNumber("size", 0)),
+      fixedLinewidth: Math.max(0, settingNumber("linewidth", 0)),
+      fixedLinetype: unquoteLiteral(assignment(block.text, "linetype")),
+      fixedFontSize: Math.max(0, settingNumber("fontsize", 0)),
+      fixedFontWeight: unquoteLiteral(assignment(block.text, "fontweight")),
+      smoothMethod: unquoteLiteral(assignment(block.text, "method")),
+      smoothAdjust: Math.max(Number.EPSILON, settingNumber("adjust", 1)),
+      smoothBandwidth: Math.max(0, settingNumber("bandwidth", 0)),
+      smoothKernel: unquoteLiteral(assignment(block.text, "kernel")),
+      place: header[1]?.toLocaleUpperCase() === "PLACE",
+      literalX: assignment(block.text, "x"),
+      literalY: assignment(block.text, "y"),
+      literalXEnd: assignment(block.text, "xend"),
+      literalYEnd: assignment(block.text, "yend"),
+      literalSlope: assignment(block.text, "slope"),
+    });
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+export function visualScalesFromQuery(query: string): VisualizationScale[] {
+  const { visual } = splitGgsql(query);
+  return visualBlocks(visual).flatMap((block) => {
+    const header = /^SCALE\s+(?:(continuous|discrete|binned|ordinal|identity)\s+)?(x|y|colou?r|fill|size|opacity)\b([\s\S]*)/i.exec(block.text);
+    if (!header) return [];
+    const formatter = /\bRENAMING\s+\*\s*=>\s*('(?:''|[^'])*)/i.exec(header[3] ?? "")?.[1];
+    const parsed = VisualizationScaleSchema.safeParse({
+      aesthetic: header[2]?.toLocaleLowerCase().replace("color", "colour"),
+      type: header[1]?.toLocaleLowerCase() ?? "",
+      palette: /\bTO\s+([a-z_][\w-]*)/i.exec(header[3] ?? "")?.[1] ?? "",
+      transform: /\bVIA\s+([a-z_][\w-]*)/i.exec(header[3] ?? "")?.[1]?.toLocaleLowerCase(),
+      labelFormat: formatter ? unquoteLiteral(formatter) : undefined,
+    });
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 function labelState(visual: string) {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { AiUsage } from "@chartize/contracts";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -19,6 +19,7 @@ interface AiAssistantProps {
   status: string;
   history: AiConversationMessage[];
   usage: AiUsage | null;
+  focusVersion: number;
   includeSamples: boolean;
   preferences: AiResponsePreferences;
   leftPaneRatio: number;
@@ -27,6 +28,7 @@ interface AiAssistantProps {
   onIncludeSamples: (value: boolean) => void;
   onPreferences: (value: AiResponsePreferences) => void;
   onAsk: (task: "generate" | "repair" | "explain", request?: string) => void;
+  onRetry: (assistantMessageIndex: number) => void;
 }
 
 const contextCopy: Record<AiContext, {
@@ -94,6 +96,7 @@ export function AiAssistant({
   status,
   history,
   usage,
+  focusVersion,
   includeSamples,
   preferences,
   leftPaneRatio,
@@ -102,6 +105,7 @@ export function AiAssistant({
   onIncludeSamples,
   onPreferences,
   onAsk,
+  onRetry,
 }: AiAssistantProps) {
   const copy = contextCopy[context];
   const placeholder = context === "chart" && /selected|selection|range|point/i.test(contextNote)
@@ -110,7 +114,16 @@ export function AiAssistant({
       : "Ask what changed in this selected range, or why…"
     : copy.placeholder;
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const conversationRef = useRef<HTMLDivElement>(null);
+  const conversationEndRef = useRef<HTMLDivElement>(null);
   const [composerMode, setComposerMode] = useState<"write" | "preview">("write");
+  const [thinkingStep, setThinkingStep] = useState(0);
+
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const conversation = conversationRef.current;
+    if (!conversation) return;
+    conversation.scrollTo({ top: conversation.scrollHeight, behavior });
+  }, []);
 
   useEffect(() => {
     const focusFrame = requestAnimationFrame(() => {
@@ -132,7 +145,28 @@ export function AiAssistant({
       cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [context, onClose]);
+  }, [context, contextNote, focusVersion, onClose]);
+
+  useEffect(() => {
+    setComposerMode("write");
+    const frame = requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
+      scrollToLatest("smooth");
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusVersion, scrollToLatest]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => scrollToLatest(history.length || busy ? "smooth" : "auto"));
+    return () => cancelAnimationFrame(frame);
+  }, [busy, history.length, scrollToLatest, status]);
+
+  useEffect(() => {
+    if (!busy) { setThinkingStep(0); return; }
+    const timer = window.setInterval(() => setThinkingStep((current) => current + 1), 1450);
+    return () => window.clearInterval(timer);
+  }, [busy]);
 
   useEffect(() => {
     if (prompt) return;
@@ -149,6 +183,18 @@ export function AiAssistant({
   const usageTitle = usage
     ? `${usage.calls} API call${usage.calls === 1 ? "" : "s"} · ${usage.inputTokens.toLocaleString()} input · ${usage.cachedInputTokens.toLocaleString()} cached · ${usage.outputTokens.toLocaleString()} output · ${usage.reasoningTokens.toLocaleString()} reasoning`
     : undefined;
+  const thinkingSteps = [
+    "reading the active workspace",
+    ...(preferences.dataAccess ? ["querying the warehouse"] : []),
+    ...(preferences.webSearch ? ["grounding the answer"] : []),
+    "checking the visual design",
+    "shaping a useful reply",
+  ];
+  const submit = () => {
+    if (busy || !prompt.trim() || !ready) return;
+    scrollToLatest("smooth");
+    onAsk("generate", prompt);
+  };
 
   return createPortal(
     <div
@@ -164,22 +210,42 @@ export function AiAssistant({
           </div>
           <button type="button" title="Close" aria-label="Close AI conversation" onClick={onClose}>×</button>
         </header>
-        <div className="ai-conversation" aria-live="polite">
-          <div className="ai-active-context">
-            <span className="ai-context-index">01</span>
-            <div><b>active context</b><span>{contextNote}</span></div>
-          </div>
+        <div ref={conversationRef} className="ai-conversation" aria-live="polite">
           {history.map((message, index) => (
             <article key={`${message.role}-${index}`} className={message.role}>
               <RoleIcon role={message.role} />
               <b>{message.role === "user" ? "you" : "chartize ai"}</b>
               <MessageBody text={message.text} />
+              {message.role === "assistant" && (
+                <button
+                  type="button"
+                  className="ai-message-redo"
+                  title="Redo from the preceding prompt"
+                  aria-label="Redo this response from the preceding prompt"
+                  onClick={() => onRetry(index)}
+                  disabled={busy}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7H4V3M4.6 7A8 8 0 0 1 18.8 5.2M16 17h4v4m-.6-4A8 8 0 0 1 5.2 18.8" /></svg>
+                  redo
+                </button>
+              )}
             </article>
           ))}
-          {busy && <p className="ai-thinking">thinking…</p>}
+          {busy && (
+            <div className="ai-thinking" role="status">
+              <RoleIcon role="assistant" />
+              <span><i /><i /><i /></span>
+              <b>{thinkingSteps[thinkingStep % thinkingSteps.length]}…</b>
+            </div>
+          )}
+          <div ref={conversationEndRef} className="ai-conversation-end" />
         </div>
         <div className="ai-compose-area">
           {status && <p className="ai-status">{status}</p>}
+          <div key={contextNote} className="ai-active-context">
+            <span className="ai-context-index">01</span>
+            <div><b>active context</b><span>{contextNote}</span></div>
+          </div>
           <div className="ai-composer">
             <header className="ai-composer-heading">
               <span>02</span><b>ask or direct</b>
@@ -200,7 +266,7 @@ export function AiAssistant({
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey && event.currentTarget.value.trim() && !busy && ready) {
                     event.preventDefault();
-                    onAsk("generate", event.currentTarget.value);
+                    submit();
                   }
                 }}
               />
@@ -214,20 +280,41 @@ export function AiAssistant({
                 {!ready && <span className="ai-catalog-loading">loading data catalog…</span>}
               </div>
               <div className="ai-send-cluster">
-                <details className="ai-settings" data-dismiss-on-outside>
+                <div className="ai-settings-cluster">
+                  <div className="ai-active-options" aria-label="Active response options">
+                    <span title="Grounded in the active Chartize workspace" aria-label="Workspace grounding is active">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 12.5 10.2 16 17 8.5" /><path d="M4 4h16v16H4z" /></svg>
+                    </span>
+                    {preferences.webSearch && <span title="Live web search and source grounding" aria-label="Web search is active">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.2 2.4 3.3 5.2 3.3 8.5S14.2 18.1 12 20.5C9.8 18.1 8.7 15.3 8.7 12S9.8 5.9 12 3.5Z" /></svg>
+                    </span>}
+                    {preferences.dataAccess && <span title="Read-only warehouse tools" aria-label="Warehouse data access is active">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="3" /><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6" /></svg>
+                    </span>}
+                    {preferences.hypothesize && <span title="Helpful hypotheses" aria-label="Hypotheses are active">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8.2 14.5A6 6 0 1 1 15.8 14.5c-.9.7-1.3 1.4-1.3 2.5h-5c0-1.1-.4-1.8-1.3-2.5Z" /></svg>
+                    </span>}
+                    {includeSamples && <span title="Selected rows attached" aria-label="Selected rows are attached">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM4 10h16M9 5v14" /></svg>
+                    </span>}
+                  </div>
+                  <details className="ai-settings" data-dismiss-on-outside>
                   <summary title="Response settings" aria-label="Response settings">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.7 3.1 10.3 2h3.4l.6 1.1 1.5.6 1.2-.4 2.4 2.4-.4 1.2.6 1.5 1.1.6v3.4l-1.1.6-.6 1.5.4 1.2-2.4 2.4-1.2-.4-1.5.6-.6 1.1h-3.4l-.6-1.1-1.5-.6-1.2.4-2.4-2.4.4-1.2-.6-1.5-1.1-.6V9l1.1-.6.6-1.5-.4-1.2L7 3.3l1.2.4 1.5-.6Z" /><circle cx="12" cy="11.7" r="3" /></svg>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4A2 2 0 0 0 4 9.9l.2.1a2 2 0 0 1 1 1.7v.6a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.6a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2Z" /><circle cx="12" cy="12" r="3" /></svg>
                   </summary>
                   <div>
                     <header><i>03</i><span><b>response profile</b><small>tune this conversation</small></span></header>
                     <label><input name="ai-hypothesize" type="checkbox" checked={preferences.hypothesize} onChange={(event) => onPreferences({ ...preferences, hypothesize: event.target.checked })} /><span><b>offer hypotheses</b><small>use clearly labeled historical or outside context</small></span></label>
+                    <label><input name="ai-web-search" type="checkbox" checked={preferences.webSearch} onChange={(event) => onPreferences({ ...preferences, webSearch: event.target.checked })} /><span><b>search and ground</b><small>look up causal, historical, and current questions on the live web</small></span></label>
+                    <label><input name="ai-data-access" type="checkbox" checked={preferences.dataAccess} onChange={(event) => onPreferences({ ...preferences, dataAccess: event.target.checked })} /><span><b>query the warehouse</b><small>let the assistant run bounded read-only queries over server datasets</small></span></label>
                     <label><input name="ai-concise" type="checkbox" checked={preferences.concise} onChange={(event) => onPreferences({ ...preferences, concise: event.target.checked })} /><span><b>keep it concise</b><small>lead with the answer and trim repeated caveats</small></span></label>
                     <label><input name="ai-challenge" type="checkbox" checked={preferences.challenge} onChange={(event) => onPreferences({ ...preferences, challenge: event.target.checked })} /><span><b>challenge my framing</b><small>surface weak assumptions and alternative readings</small></span></label>
                     <label><input name="ai-technical" type="checkbox" checked={preferences.technical} onChange={(event) => onPreferences({ ...preferences, technical: event.target.checked })} /><span><b>show technical detail</b><small>include methodology and GGSQL mechanics</small></span></label>
                     <label className="ai-data-setting"><input name="include-preview-rows" type="checkbox" checked={includeSamples} onChange={(event) => onIncludeSamples(event.target.checked)} /><span><b>send selected data</b><small>share column names and up to 20 selected or preview rows</small></span></label>
                   </div>
-                </details>
-                <button className="ai-send-button" type="button" title="Send (Enter) · new line (Shift+Enter)" disabled={busy || !prompt.trim() || !ready} onClick={() => onAsk("generate", prompt)}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
+                  </details>
+                </div>
+                <button className="ai-send-button" type="button" title="Send (Enter) · new line (Shift+Enter)" disabled={busy || !prompt.trim() || !ready} onClick={submit}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
               </div>
             </div>
           </div>

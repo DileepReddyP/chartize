@@ -24,7 +24,7 @@ export function MapExplorationControls({ viewport, onPan, onZoom, onReset }: Map
         <span aria-live="polite">{Math.round(viewport.zoom * 100)}%</span>
         <button type="button" disabled={viewport.zoom <= 0.5} title="Zoom map out" aria-label="Zoom map out" onClick={() => onZoom(1 / 1.35)}>−</button>
       </div>
-      <small>drag to pan · shift-drag to select</small>
+      <small>drag or scroll to pan · pinch to zoom · shift-drag to select</small>
     </nav>
   );
 }

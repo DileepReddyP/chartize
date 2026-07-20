@@ -12,6 +12,7 @@ loadEnvConfig(path.resolve(webDirectory, "../.."), process.env.NODE_ENV !== "pro
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  devIndicators: false,
   transpilePackages: ["@chartize/contracts"],
   webpack(config) {
     config.experiments = { ...config.experiments, asyncWebAssembly: true };

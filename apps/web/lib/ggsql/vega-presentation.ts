@@ -20,6 +20,16 @@ export interface ChartDomains {
   y?: [unknown, unknown];
 }
 
+export interface ChartLegendTitles {
+  colour?: string;
+  fill?: string;
+  size?: string;
+  shape?: string;
+  linetype?: string;
+  linewidth?: string;
+  opacity?: string;
+}
+
 const chartColors = {
   ink: "#0a0f0d",
   muted: "#596662",
@@ -110,7 +120,23 @@ function makeThresholdStroke(y: { scale?: { domain?: unknown } }, threshold: Cha
   };
 }
 
-function styleSpecNode(node: Record<string, unknown>, threshold?: ChartThreshold, domains?: ChartDomains): Record<string, unknown> {
+function withLegendTitle(channel: unknown, title: string | undefined, genericNames: readonly string[]) {
+  if (!title?.trim() || !channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
+  const value = channel as Record<string, unknown>;
+  if (typeof value.field !== "string") return channel;
+  const current = typeof value.title === "string" ? value.title.toLocaleLowerCase() : "";
+  const generic = !current
+    || genericNames.some((name) => current === name)
+    || current.startsWith("__ggsql_aes_");
+  return generic ? { ...value, title: title.trim() } : channel;
+}
+
+function styleSpecNode(
+  node: Record<string, unknown>,
+  threshold?: ChartThreshold,
+  domains?: ChartDomains,
+  legendTitles?: ChartLegendTitles,
+): Record<string, unknown> {
   const encoding = node.encoding as Record<string, unknown> | undefined;
   const mark = typeof node.mark === "string" ? node.mark : (node.mark as { type?: string } | undefined)?.type;
   const y = encoding?.y as { field?: unknown; title?: unknown; scale?: { domain?: unknown } } | undefined;
@@ -129,11 +155,23 @@ function styleSpecNode(node: Record<string, unknown>, threshold?: ChartThreshold
         ...node,
         encoding: {
           ...encoding,
+          // GGSQL can infer a shared label aesthetic as quantitative when
+          // earlier layers contribute only null labels. Vega then renders
+          // perfectly valid event strings as `NaN`. Text is a display
+          // channel, so keep it nominal regardless of that union inference.
+          text: encoding.text && typeof encoding.text === "object" && !Array.isArray(encoding.text)
+            ? { ...(encoding.text as Record<string, unknown>), type: "nominal" }
+            : encoding.text,
           x: withDomain(withOrdinalDateLabels(encoding.x), domains?.x),
           y: withDomain(encoding.y, domains?.y),
-          color: replaceDefaultBlack(encoding.color, chartColors.tealDark),
-          fill: withSignedDivergingMidpoint(replaceDefaultBlack(encoding.fill, chartColors.teal)),
-          stroke: thresholdStroke ?? replaceDefaultBlack(withoutDuplicateTextStroke(encoding), chartColors.tealDark),
+          color: withLegendTitle(replaceDefaultBlack(encoding.color, chartColors.tealDark), legendTitles?.colour, ["color", "colour"]),
+          fill: withLegendTitle(withSignedDivergingMidpoint(replaceDefaultBlack(encoding.fill, chartColors.teal)), legendTitles?.fill, ["fill"]),
+          size: withLegendTitle(encoding.size, legendTitles?.size, ["size"]),
+          shape: withLegendTitle(encoding.shape, legendTitles?.shape, ["shape"]),
+          stroke: withLegendTitle(thresholdStroke ?? replaceDefaultBlack(withoutDuplicateTextStroke(encoding), chartColors.tealDark), legendTitles?.colour, ["stroke", "color", "colour"]),
+          strokeDash: withLegendTitle(encoding.strokeDash, legendTitles?.linetype, ["strokedash", "linetype"]),
+          strokeWidth: withLegendTitle(encoding.strokeWidth, legendTitles?.linewidth, ["strokewidth", "linewidth"]),
+          opacity: withLegendTitle(encoding.opacity, legendTitles?.opacity, ["opacity"]),
         },
       }
     : { ...node };
@@ -141,11 +179,11 @@ function styleSpecNode(node: Record<string, unknown>, threshold?: ChartThreshold
   for (const key of ["layer", "concat", "hconcat", "vconcat"] as const) {
     const children = styled[key];
     if (Array.isArray(children)) {
-      styled[key] = children.map((child) => child && typeof child === "object" ? styleSpecNode(child as Record<string, unknown>, threshold, domains) : child);
+      styled[key] = children.map((child) => child && typeof child === "object" ? styleSpecNode(child as Record<string, unknown>, threshold, domains, legendTitles) : child);
     }
   }
   if (styled.spec && typeof styled.spec === "object" && !Array.isArray(styled.spec)) {
-    styled.spec = styleSpecNode(styled.spec as Record<string, unknown>, threshold, domains);
+    styled.spec = styleSpecNode(styled.spec as Record<string, unknown>, threshold, domains, legendTitles);
   }
   return styled;
 }
@@ -174,8 +212,8 @@ function mapPointFields(node: Record<string, unknown>, fields = new Map<string, 
   return [...fields.values()];
 }
 
-function withChartizePresentation(spec: Record<string, unknown>, threshold?: ChartThreshold, domains?: ChartDomains) {
-  const normalized = styleSpecNode(spec, threshold, domains);
+function withChartizePresentation(spec: Record<string, unknown>, threshold?: ChartThreshold, domains?: ChartDomains, legendTitles?: ChartLegendTitles) {
+  const normalized = styleSpecNode(spec, threshold, domains, legendTitles);
   delete normalized.title;
   const config = (normalized.config ?? {}) as Record<string, unknown>;
   const axis = (config.axis ?? {}) as Record<string, unknown>;
@@ -212,8 +250,9 @@ export function presentChartSpec(
   threshold?: ChartThreshold,
   domains?: ChartDomains,
   mapViewport: MapViewport = { zoom: 1, panX: 0, panY: 0 },
+  legendTitles?: ChartLegendTitles,
 ) {
-  const spec = withChartizePresentation(input, threshold, domains);
+  const spec = withChartizePresentation(input, threshold, domains, legendTitles);
   const data = spec.data as { values?: Array<Record<string, unknown>> } | undefined;
   const hasGeometry = data?.values?.some((value) => {
     const geometry = value.geometry as { type?: string; coordinates?: unknown } | undefined;
