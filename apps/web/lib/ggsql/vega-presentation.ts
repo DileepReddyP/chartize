@@ -93,6 +93,12 @@ function withSignedDivergingMidpoint(channel: unknown) {
   return { ...value, scale: { ...scaleValue, domainMid: 0 } };
 }
 
+function withoutExplicitlyUntitledAxis(channel: unknown) {
+  if (!channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
+  const value = channel as Record<string, unknown>;
+  return value.title === null ? { ...value, axis: null } : channel;
+}
+
 function makeThresholdStroke(y: { scale?: { domain?: unknown } }, threshold: ChartThreshold) {
   const domain = y.scale?.domain;
   if (!Array.isArray(domain) || domain.length < 2 || !domain.every((value) => typeof value === "number")) {
@@ -175,8 +181,8 @@ function styleSpecNode(
           text: encoding.text && typeof encoding.text === "object" && !Array.isArray(encoding.text)
             ? { ...(encoding.text as Record<string, unknown>), type: "nominal" }
             : encoding.text,
-          x: withDomain(withOrdinalDateLabels(encoding.x), domains?.x),
-          y: withDomain(encoding.y, domains?.y),
+          x: withDomain(withoutExplicitlyUntitledAxis(withOrdinalDateLabels(encoding.x)), domains?.x),
+          y: withDomain(withoutExplicitlyUntitledAxis(encoding.y), domains?.y),
           color: withLegendTitle(replaceDefaultBlack(encoding.color, chartColors.tealDark), legendTitles?.colour, ["color", "colour"]),
           fill: withLegendTitle(withSignedDivergingMidpoint(replaceDefaultBlack(encoding.fill, chartColors.teal)), legendTitles?.fill, ["fill"]),
           size: withLegendTitle(encoding.size, legendTitles?.size, ["size"]),

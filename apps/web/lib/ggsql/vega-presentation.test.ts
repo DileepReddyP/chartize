@@ -94,6 +94,18 @@ describe("Chartize Vega presentation", () => {
     expect((spec.encoding as { fill: { scale: { domainMid: number } } }).fill.scale.domainMid).toBe(0);
   });
 
+  it("hides an axis when GGSQL explicitly labels it null", () => {
+    const spec = presentChartSpec({
+      mark: "rect",
+      encoding: {
+        x: { field: "grid_x", title: null, axis: { grid: true } },
+        y: { field: "grid_y", title: null, axis: { grid: true } },
+      },
+    });
+    expect((spec.encoding as { x: { axis: unknown }; y: { axis: unknown } }).x.axis).toBeNull();
+    expect((spec.encoding as { x: { axis: unknown }; y: { axis: unknown } }).y.axis).toBeNull();
+  });
+
   it("preserves GGSQL's projected camera so text and geoshapes share one translation", () => {
     const projection = {
       type: "identity",

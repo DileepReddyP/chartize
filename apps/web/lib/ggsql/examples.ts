@@ -1,6 +1,6 @@
 export interface VisualizationExample {
   id: string;
-  category: "quick" | "range" | "map" | "model" | "linked";
+  category: "quick" | "range" | "map" | "model" | "linked" | "transit" | "climate" | "composition";
   title: string;
   description: string;
   source: string;
@@ -44,18 +44,17 @@ DRAW ribbon
   MAPPING "end_date" AS x, "approve_lower_ci" AS ymin, "approve_upper_ci" AS ymax
   SETTING fill => '#3cbbb1', opacity => 0.18
 DRAW line
-  MAPPING "end_date" AS x, "approve" AS y, 'Approval' AS colour
-  SETTING linewidth => 2
+  MAPPING "end_date" AS x, "approve" AS y
+  SETTING colour => '#16877d', linewidth => 2
 DRAW line
-  MAPPING "end_date" AS x, "disapprove" AS y, 'Disapproval' AS colour
-  SETTING linewidth => 2
+  MAPPING "end_date" AS x, "disapprove" AS y
+  SETTING colour => '#c44e52', linewidth => 2
 DRAW rule
   MAPPING "majority" AS y
   SETTING aggregate => 'max', color => '#596662', linetype => 'dashed'
 SCALE x VIA date
   RENAMING * => '{:time %B %-d, %Y}'
-SCALE DISCRETE colour TO tableau10
-LABEL title => 'approval, disapproval + uncertainty', subtitle => 'daily average with approval confidence interval and majority threshold', x => 'Poll Date', y => 'Share', colour => 'Series'`,
+LABEL title => 'approval, disapproval + uncertainty', subtitle => 'approval in teal · disapproval in red · approval uncertainty shown as a band', x => 'Poll Date', y => 'Share'`,
   },
   {
     id: "generic-ballot-bands",
@@ -76,15 +75,14 @@ DRAW ribbon
   MAPPING "end_date" AS x, "rep_lower_ci" AS ymin, "rep_upper_ci" AS ymax
   SETTING fill => '#ee4266', opacity => 0.12
 DRAW line
-  MAPPING "end_date" AS x, "dem" AS y, 'Democratic' AS colour
-  SETTING linewidth => 2
+  MAPPING "end_date" AS x, "dem" AS y
+  SETTING colour => '#3976c6', linewidth => 2
 DRAW line
-  MAPPING "end_date" AS x, "rep" AS y, 'Republican' AS colour
-  SETTING linewidth => 2
+  MAPPING "end_date" AS x, "rep" AS y
+  SETTING colour => '#d34d5f', linewidth => 2
 SCALE x VIA date
   RENAMING * => '{:time %B %-d, %Y}'
-SCALE DISCRETE colour TO tableau10
-LABEL title => 'generic ballot with uncertainty', subtitle => 'daily party averages and confidence intervals', x => 'Poll Date', y => 'Support', colour => 'Party'`,
+LABEL title => 'generic ballot with uncertainty', subtitle => 'Democratic average in blue · Republican average in red · confidence intervals shown as bands', x => 'Poll Date', y => 'Support'`,
   },
   {
     id: "county-regression",
@@ -122,18 +120,17 @@ LIMIT 5000
 
 VISUALISE
 DRAW line
-  MAPPING "end_date" AS x, "approve" AS y, 'Observed approval' AS colour
-  SETTING linewidth => 2
+  MAPPING "end_date" AS x, "approve" AS y
+  SETTING colour => '#16877d', linewidth => 2
 DRAW line
-  MAPPING "end_date" AS x, "approve_plus_3" AS y, 'Hypothetical +3 points' AS colour
-  SETTING linewidth => 2, linetype => 'dashed'
+  MAPPING "end_date" AS x, "approve_plus_3" AS y
+  SETTING colour => '#2a1e5c', linewidth => 2, linetype => 'dashed'
 DRAW rule
   MAPPING "majority" AS y
   SETTING aggregate => 'max', color => '#596662', linetype => 'dotted'
 SCALE x VIA date
   RENAMING * => '{:time %B %-d, %Y}'
-SCALE DISCRETE colour TO tableau10
-LABEL title => 'approval with hypothetical +3-point scenario', subtitle => 'scenario only — not observed data or a forecast', x => 'Poll Date', y => 'Approval', colour => 'Series'`,
+LABEL title => 'approval with hypothetical +3-point scenario', subtitle => 'observed in teal · hypothetical in dashed amethyst · scenario only, not a forecast', x => 'Poll Date', y => 'Approval'`,
   },
   {
     id: "county-population-map",
@@ -176,8 +173,8 @@ LIMIT 4000
 VISUALISE
 DRAW spatial
   MAPPING "geometry" AS geometry, "population_change" AS fill
-SCALE CONTINUOUS fill TO vik
-LABEL title => 'county population change, 2020–2025', subtitle => 'estimated percent change; diverging color separates growth from decline', fill => 'Change (%)'
+SCALE CONTINUOUS fill TO RdYlGn
+LABEL title => 'county population change, 2020–2025', subtitle => 'red decline · yellow little change · green growth', fill => 'Change (%)'
 PROJECT TO albers
   SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
   },
@@ -224,7 +221,7 @@ DRAW smooth
   MAPPING "population" AS x, "obesity" AS y
   SETTING method => 'ols', color => '#2a1e5c', linewidth => 2
 SCALE x VIA log
-LABEL title => 'county population × adult obesity', subtitle => 'descriptive association using Census 2025 population and CDC PLACES · not causal', x => '2025 population', y => 'Obesity prevalence (%)'`,
+LABEL title => 'county population × adult obesity', subtitle => 'descriptive OLS overlay on a log population axis · Census + CDC PLACES · not causal', x => '2025 population', y => 'Obesity prevalence (%)'`,
   },
   {
     id: "income-obesity-link",
@@ -248,7 +245,8 @@ DRAW point
 DRAW smooth
   MAPPING "per_capita_income" AS x, "obesity" AS y
   SETTING method => 'ols', color => '#2a1e5c', linewidth => 2
-LABEL title => 'income × adult obesity', subtitle => 'BEA 2024 per-capita income joined to CDC PLACES · descriptive, not causal', x => 'Per-capita personal income ($)', y => 'Obesity prevalence (%)'`,
+SCALE x VIA log
+LABEL title => 'income × adult obesity', subtitle => 'descriptive OLS overlay on a log income axis · BEA + CDC PLACES · not causal', x => 'Per-capita personal income ($)', y => 'Obesity prevalence (%)'`,
   },
   {
     id: "county-income-map",
@@ -267,7 +265,7 @@ LIMIT 4000
 VISUALISE
 DRAW spatial
   MAPPING "geometry" AS geometry, "income" AS fill
-SCALE CONTINUOUS fill TO viridis
+SCALE CONTINUOUS fill TO viridis VIA log
 LABEL title => 'per-capita personal income, 2024', subtitle => 'BEA CAINC1 joined to 2025 Census cartographic boundaries', fill => 'Income ($)'
 PROJECT TO albers
   SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
@@ -290,10 +288,187 @@ LIMIT 4000
 VISUALISE
 DRAW spatial
   MAPPING "geometry" AS geometry, "real_gdp_change" AS fill
-SCALE CONTINUOUS fill TO vik
-LABEL title => 'real county GDP change, 2019–2024', subtitle => 'inflation-adjusted BEA CAGDP1 estimates', fill => 'Change (%)'
+SCALE CONTINUOUS fill TO RdYlGn
+LABEL title => 'real county GDP change, 2019–2024', subtitle => 'red decline · yellow little change · green growth · inflation-adjusted BEA estimates', fill => 'Change (%)'
 PROJECT TO albers
   SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
+  },
+  {
+    id: "mta-route-delay-map",
+    category: "transit",
+    title: "subway map · customer delay",
+    description: "Join passenger-weighted route delay to official MTA service-line geometry.",
+    source: "chartize:mta_subway_service_lines",
+    tags: ["MTA", "map", "weighted join"],
+    query: `WITH route_delay AS (
+  SELECT "line" AS "route",
+    SUM("num_passengers" * ("additional_platform_time" + "additional_train_time"))
+      / NULLIF(SUM("num_passengers"), 0) AS "extra_minutes",
+    SUM("num_passengers") / 1000000.0 AS "passenger_millions"
+  FROM chartize:mta_subway_journey_metrics_2024_2025
+  WHERE "month" >= '2025-01-01' AND "month" < '2026-01-01' AND "period" = 'peak'
+  GROUP BY "line"
+)
+SELECT l."geometry" AS "geometry", l."service" AS "route", l."service_name" AS "service_name",
+  d."extra_minutes" AS "extra_minutes", d."passenger_millions" AS "passenger_millions"
+FROM chartize:mta_subway_service_lines AS l
+JOIN route_delay AS d ON l."service" = d."route"
+
+VISUALISE
+DRAW spatial
+  MAPPING "geometry" AS geometry FROM chartize:nyc_borough_boundaries
+  SETTING fill => '#f4f6f5', stroke => '#c4cbca', linewidth => 0.8
+DRAW spatial
+  MAPPING "geometry" AS geometry, "extra_minutes" AS stroke, "passenger_millions" AS linewidth
+  SETTING fill => null
+SCALE CONTINUOUS stroke TO ylorrd
+SCALE CONTINUOUS linewidth TO (1.2, 6)
+LABEL title => 'where peak subway trips lose time', subtitle => '2025 passenger-weighted extra platform + train minutes · line width reflects ridership', stroke => 'Extra minutes', linewidth => 'Million riders'
+PROJECT TO mercator`,
+  },
+  {
+    id: "mta-route-delay-heatmap",
+    category: "transit",
+    title: "subway delay · route × month",
+    description: "A 24-month route heatmap weighted by the passengers exposed to each delay.",
+    source: "chartize:mta_subway_journey_metrics_2024_2025",
+    tags: ["MTA", "tile", "weighted metric"],
+    query: `SELECT strftime('%Y-%m', "month") AS "month_label", "line" AS "route",
+  SUM("num_passengers" * ("additional_platform_time" + "additional_train_time"))
+    / NULLIF(SUM("num_passengers"), 0) AS "extra_minutes"
+FROM chartize:mta_subway_journey_metrics_2024_2025
+WHERE "period" = 'peak'
+GROUP BY "month_label", "line"
+ORDER BY "month_label", "line"
+
+VISUALISE
+DRAW tile
+  MAPPING "month_label" AS x, "route" AS y, "extra_minutes" AS fill
+  SETTING stroke => '#f4f6f5', linewidth => 0.5
+SCALE CONTINUOUS fill TO ylorrd
+LABEL title => 'peak subway delay by route', subtitle => 'passenger-weighted extra platform + train minutes · 2024–2025', x => 'Month', y => 'Route', fill => 'Delay (min)'`,
+  },
+  {
+    id: "mta-station-accessibility-map",
+    category: "transit",
+    title: "subway stations · step-free access",
+    description: "Explore the official station points with ADA status as a categorical layer.",
+    source: "chartize:mta_subway_stations",
+    tags: ["MTA", "stations", "accessibility"],
+    query: `SELECT "geometry" AS "geometry", "stop_name" AS "station", "borough" AS "borough",
+  "daytime_routes" AS "routes", CASE WHEN "ada" = '1' THEN 'ADA accessible' ELSE 'Not fully ADA accessible' END AS "access_status"
+FROM chartize:mta_subway_stations
+
+VISUALISE
+DRAW spatial
+  MAPPING "geometry" AS geometry, "access_status" AS fill
+  SETTING stroke => '#ffffff', linewidth => 0.5, opacity => 0.9
+SCALE DISCRETE fill FROM ('ADA accessible', 'Not fully ADA accessible') TO ('#3cbbb1', '#c4cbca')
+LABEL title => 'step-free access across subway stations', subtitle => 'official MTA station inventory · connected station complexes may contain multiple points', fill => 'Station status'
+PROJECT TO mercator`,
+  },
+  {
+    id: "june-temperature-heatmap",
+    category: "climate",
+    title: "June temperature · day × year",
+    description: "Compare every June day across two years in one compact temperature heatmap.",
+    source: "chartize:nyc_central_park_weather_2024_2025",
+    tags: ["NOAA", "tile", "calendar"],
+    query: `SELECT CAST(strftime('%d', "DATE") AS INTEGER) AS "day_of_month",
+  strftime('%Y', "DATE") AS "year_label",
+  (CAST("TMAX" AS DOUBLE) + CAST("TMIN" AS DOUBLE)) / 2.0 AS "daily_midpoint_c"
+FROM chartize:nyc_central_park_weather_2024_2025
+WHERE strftime('%m', "DATE") = '06' AND "TMAX" IS NOT NULL AND "TMIN" IS NOT NULL
+ORDER BY "year_label", "day_of_month"
+
+VISUALISE
+DRAW tile
+  MAPPING "day_of_month" AS x, "year_label" AS y, "daily_midpoint_c" AS fill
+  SETTING stroke => '#f4f6f5', linewidth => 0.7
+SCALE CONTINUOUS fill TO inferno
+LABEL title => 'how June warmed and cooled, day by day', subtitle => 'Central Park daily midpoint of NOAA maximum and minimum temperature · 2024–2025', x => 'Day in June', y => 'Year', fill => 'Midpoint (°C)'`,
+  },
+  {
+    id: "nyc-seasonal-temperature-range",
+    category: "climate",
+    title: "temperature · seasonal range",
+    description: "Summarize two years as monthly mean daily lows, midpoints, and highs.",
+    source: "chartize:nyc_central_park_weather_2024_2025",
+    tags: ["NOAA", "range", "seasonality"],
+    query: `WITH daily AS (
+  SELECT CAST(strftime('%m', "DATE") AS INTEGER) AS "month_number",
+    CAST("TMIN" AS DOUBLE) AS "daily_low", CAST("TMAX" AS DOUBLE) AS "daily_high"
+  FROM chartize:nyc_central_park_weather_2024_2025
+  WHERE "TMAX" IS NOT NULL AND "TMIN" IS NOT NULL
+)
+SELECT "month_number", CASE "month_number"
+    WHEN 1 THEN 'Jan' WHEN 2 THEN 'Feb' WHEN 3 THEN 'Mar' WHEN 4 THEN 'Apr'
+    WHEN 5 THEN 'May' WHEN 6 THEN 'Jun' WHEN 7 THEN 'Jul' WHEN 8 THEN 'Aug'
+    WHEN 9 THEN 'Sep' WHEN 10 THEN 'Oct' WHEN 11 THEN 'Nov' ELSE 'Dec' END AS "month_name",
+  AVG("daily_low") AS "mean_low_c", AVG(("daily_low" + "daily_high") / 2.0) AS "mean_midpoint_c",
+  AVG("daily_high") AS "mean_high_c"
+FROM daily
+GROUP BY "month_number"
+ORDER BY "month_number"
+
+VISUALISE
+DRAW range
+  MAPPING "month_name" AS x, "mean_low_c" AS ymin, "mean_high_c" AS ymax
+  SETTING colour => '#3cbbb1', linewidth => 3, hinge => null
+DRAW point
+  MAPPING "month_name" AS x, "mean_midpoint_c" AS y
+  SETTING fill => '#2a1e5c', stroke => '#ffffff', size => 4
+SCALE DISCRETE x FROM ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+LABEL title => 'New York’s seasonal temperature envelope', subtitle => 'mean daily low-to-high range with midpoint · Central Park, 2024–2025', x => 'Month', y => 'Temperature (°C)'`,
+  },
+  {
+    id: "us-land-use-square",
+    category: "composition",
+    title: "American land · 100-square atlas",
+    description: "A Bloomberg-inspired 10×10 proportional square built from official USDA acreage.",
+    source: "chartize:usda_major_land_uses",
+    tags: ["USDA", "waffle", "composition"],
+    query: `WITH categories AS (
+  SELECT CASE "Land use"
+      WHEN 'Grassland pasture and range' THEN 'Grass + range' WHEN 'Forest-use land (all)' THEN 'Forest'
+      WHEN 'Total cropland' THEN 'Cropland' WHEN 'All special uses of land' THEN 'Parks + special uses'
+      WHEN 'Miscellaneous other land' THEN 'Other' ELSE 'Urban' END AS "land_use",
+    CAST("Value" AS DOUBLE) AS "thousand_acres",
+    CASE "Land use"
+      WHEN 'Grassland pasture and range' THEN 1 WHEN 'Forest-use land (all)' THEN 2
+      WHEN 'Total cropland' THEN 3 WHEN 'All special uses of land' THEN 4
+      WHEN 'Miscellaneous other land' THEN 5 ELSE 6 END AS "display_order"
+  FROM chartize:usda_major_land_uses
+  WHERE "Region or State" = 'U.S. total' AND "Year" = 2017
+    AND "Land use" IN ('Grassland pasture and range', 'Forest-use land (all)', 'Total cropland',
+      'All special uses of land', 'Land in urban areas', 'Miscellaneous other land')
+), running AS (
+  SELECT *, SUM("thousand_acres") OVER () AS "total_acres",
+    SUM("thousand_acres") OVER (ORDER BY "display_order" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS "running_acres"
+  FROM categories
+), segments AS (
+  SELECT *, "running_acres" - "thousand_acres" AS "starting_acres" FROM running
+), numbers AS (
+  SELECT ROW_NUMBER() OVER () - 1 AS "cell"
+  FROM chartize:usda_major_land_uses
+  LIMIT 100
+), cells AS (
+  SELECT CAST(g."cell" % 10 AS INTEGER) AS "grid_x", CAST(9 - floor(g."cell" / 10.0) AS INTEGER) AS "grid_y",
+    s."land_use", s."thousand_acres"
+  FROM numbers AS g
+  JOIN segments AS s
+    ON g."cell" >= floor(100.0 * s."starting_acres" / s."total_acres")
+   AND g."cell" < floor(100.0 * s."running_acres" / s."total_acres")
+)
+SELECT "grid_x", "grid_y", "land_use", "thousand_acres" FROM cells
+ORDER BY "grid_y" DESC, "grid_x"
+
+VISUALISE
+DRAW tile
+  MAPPING "grid_x" AS x, "grid_y" AS y, "land_use" AS fill
+  SETTING stroke => '#f7f8f7', linewidth => 1.4
+SCALE DISCRETE fill FROM ('Grass + range', 'Forest', 'Cropland', 'Parks + special uses', 'Other', 'Urban') TO ('#d4aa55', '#356b59', '#ee4266', '#93b85c', '#c9d0ce', '#6575a4')
+LABEL title => 'what America’s land is used for', subtitle => 'each square is about 1% of 2.26 billion acres · USDA ERS complete 2017 inventory', x => null, y => null, fill => 'Major land use'`,
   },
 ];
 
@@ -303,4 +478,7 @@ export const EXAMPLE_CATEGORIES: Array<{ id: VisualizationExample["category"]; t
   { id: "map", title: "maps", description: "spatial joins and choropleths" },
   { id: "model", title: "models + scenarios", description: "fits, deltas, and counterfactuals" },
   { id: "linked", title: "linked sources", description: "questions spanning linked datasets" },
+  { id: "transit", title: "New York transit", description: "route geometry, passenger delay, and station access" },
+  { id: "climate", title: "weather + seasons", description: "daily heatmaps and compact temperature ranges" },
+  { id: "composition", title: "composition", description: "part-to-whole views with deliberately shaped layouts" },
 ];

@@ -60,6 +60,19 @@ DRAW spatial`;
     ]);
   });
 
+  it("discovers a namespaced source used by a visualization layer", () => {
+    const layered = `${query}
+DRAW spatial
+  MAPPING "geometry" AS geometry FROM chartize:borough_boundaries`;
+
+    expect(sourcesFromQuery(layered)).toEqual([
+      "chartize:polls",
+      "chartize:borough_boundaries",
+    ]);
+    expect(resolveNamespacedSources(layered, (_, name) => `cached_${name}`))
+      .toContain('FROM "cached_borough_boundaries"');
+  });
+
   it("reports only canonical sources in a multi-statement local cleanup program", () => {
     const cleanup = `DROP TABLE IF EXISTS cleaned;
 CREATE TEMP TABLE cleaned AS

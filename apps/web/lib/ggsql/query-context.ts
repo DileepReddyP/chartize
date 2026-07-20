@@ -253,8 +253,7 @@ function terminalFromEnd(sql: string, fromStart: number) {
 }
 
 export function sourcesFromQuery(query: string) {
-  const sql = splitGgsql(query).sql;
-  return [...new Set(allSourceRefs(sql)
+  return [...new Set(allSourceRefs(query)
     .map((source) => source.id)
     .filter((source) => /^(?:chartize|user|ggsql):[\w-]+$/i.test(source)))];
 }
