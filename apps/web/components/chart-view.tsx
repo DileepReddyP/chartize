@@ -1,12 +1,13 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useReducer, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useReducer, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import embed, { type Result as EmbedResult, type VisualizationSpec } from "vega-embed";
 import * as vegaRuntime from "vega";
 import type { TablePreview } from "@chartize/contracts";
 import type { MapViewport } from "@/lib/ggsql/geo-fit";
 import { pngWithHeader, svgWithHeader } from "@/lib/ggsql/chart-export";
 import { presentChartSpec, type ChartLegendTitles, type ChartThreshold } from "@/lib/ggsql/vega-presentation";
+import { placeFloating } from "@/lib/floating-placement";
 import {
   MAX_VISUAL_ITEM_SELECTIONS,
   visualItemSelectionFromDatum,
@@ -94,12 +95,11 @@ function visualItemsInside(
   const scenegraph = embedded.view.scenegraph() as unknown as { root?: unknown };
   if (!scenegraph.root) return [];
   const next = normalizedPixels(pixels);
-  const [originX, originY] = embedded.view.origin();
   const bounds = new vegaRuntime.Bounds().set(
-    next.x0 - originX,
-    next.y0 - originY,
-    next.x1 - originX,
-    next.y1 - originY,
+    next.x0,
+    next.y0,
+    next.x1,
+    next.y1,
   );
   const hits = sceneIntersect(scenegraph.root, bounds, (mark) => (
     mark.role === "mark" && Boolean(mark.marktype && selectableMarkTypes.has(mark.marktype))
@@ -107,8 +107,11 @@ function visualItemsInside(
   const selections = new Map<string, VisualItemSelection>();
   for (const item of hits) {
     const itemBounds = item.bounds;
-    const x = originX + (itemBounds ? (itemBounds.x1 + itemBounds.x2) / 2 : (item.x ?? (next.x0 + next.x1) / 2));
-    const y = originY + (itemBounds ? (itemBounds.y1 + itemBounds.y2) / 2 : (item.y ?? (next.y0 + next.y1) / 2));
+    // `vega.intersect` traverses from the scenegraph root, so its item bounds
+    // are already in view/canvas coordinates. Applying view.origin() again
+    // shifts selections by the plot padding (most visibly on tiled charts).
+    const x = itemBounds ? (itemBounds.x1 + itemBounds.x2) / 2 : (item.x ?? (next.x0 + next.x1) / 2);
+    const y = itemBounds ? (itemBounds.y1 + itemBounds.y2) / 2 : (item.y ?? (next.y0 + next.y1) / 2);
     const selection = visualItemSelectionFromDatum(item.datum, { x, y }, table, mapMode);
     if (selection && !selections.has(selection.key)) selections.set(selection.key, selection);
     if (selections.size >= MAX_VISUAL_ITEM_SELECTIONS) break;
@@ -141,6 +144,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
 }, ref) {
   const interaction = useRef<HTMLDivElement>(null);
   const element = useRef<HTMLDivElement>(null);
+  const itemInspector = useRef<HTMLElement>(null);
   const result = useRef<EmbedResult | null>(null);
   const [interactionState, setInteractionState] = useReducer(interactionReducer, { kind: "idle" });
   const gesture = interactionState.kind === "selection"
@@ -380,6 +384,41 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     });
   };
 
+  const activeVisualItem = mapFeatureSelections.at(-1) ?? null;
+  const itemNoun = mapMode ? "place" : "data point";
+
+  useLayoutEffect(() => {
+    const root = interaction.current;
+    const panel = itemInspector.current;
+    if (!root || !panel || !activeVisualItem) return;
+    const position = () => {
+      const width = root.clientWidth;
+      const height = root.clientHeight;
+      const pixels = selection ? normalizedPixels(selection.pixels) : null;
+      const anchor = pixels
+        ? { left: pixels.x0, top: pixels.y0, right: pixels.x1, bottom: pixels.y1 }
+        : {
+            left: activeVisualItem.pixels.x - 7,
+            top: activeVisualItem.pixels.y - 7,
+            right: activeVisualItem.pixels.x + 7,
+            bottom: activeVisualItem.pixels.y + 7,
+          };
+      const placed = placeFloating(
+        anchor,
+        { width: panel.offsetWidth, height: panel.offsetHeight },
+        { left: 0, top: 0, right: width, bottom: height },
+      );
+      panel.style.left = `${placed.left}px`;
+      panel.style.top = `${placed.top}px`;
+      panel.dataset.placement = placed.quadrant;
+    };
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(root);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [activeVisualItem, mapFeatureSelections.length, selection]);
+
   if (!spec) {
     return (
       <div className="empty-chart">
@@ -392,8 +431,6 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     mapGesture.current.x - mapGesture.start.x,
     mapGesture.current.y - mapGesture.start.y,
   ) > 4);
-  const activeVisualItem = mapFeatureSelections.at(-1) ?? null;
-  const itemNoun = mapMode ? "place" : "data point";
 
   return (
     <div
@@ -423,13 +460,10 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
               style={{ left: selection.pixels.x, top: selection.pixels.y }}
             />
           ))}
-          {!selection && <aside
+          <aside
+            ref={itemInspector}
             className="map-feature-inspector"
             aria-label={`${mapFeatureSelections.length} selected ${mapFeatureSelections.length === 1 ? itemNoun : `${itemNoun}s`}`}
-            style={{
-              "--feature-x": `${activeVisualItem.pixels.x + 14}px`,
-              "--feature-y": `${activeVisualItem.pixels.y + 14}px`,
-            } as CSSProperties}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <header>
@@ -450,7 +484,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
               />
               <b>{mapFeatureAiActive ? "active" : "ask"}</b>
             </label>
-          </aside>}
+          </aside>
         </>
       )}
       {(gesture?.pixels ?? selection?.pixels) && (() => {

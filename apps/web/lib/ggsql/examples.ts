@@ -370,23 +370,38 @@ PROJECT TO mercator`,
   {
     id: "june-temperature-heatmap",
     category: "climate",
-    title: "June temperature · day × year",
-    description: "Compare every June day across two years in one compact temperature heatmap.",
-    source: "chartize:nyc_central_park_weather_2024_2025",
+    title: "June 2026 · calendar temperatures",
+    description: "Read Central Park's June weather as a familiar Sunday-to-Saturday calendar.",
+    source: "chartize:nyc_central_park_weather_2024_2026",
     tags: ["NOAA", "tile", "calendar"],
-    query: `SELECT CAST(strftime('%d', "DATE") AS INTEGER) AS "day_of_month",
-  strftime('%Y', "DATE") AS "year_label",
-  (CAST("TMAX" AS DOUBLE) + CAST("TMIN" AS DOUBLE)) / 2.0 AS "daily_midpoint_c"
-FROM chartize:nyc_central_park_weather_2024_2025
-WHERE strftime('%m', "DATE") = '06' AND "TMAX" IS NOT NULL AND "TMIN" IS NOT NULL
-ORDER BY "year_label", "day_of_month"
+    query: `WITH june AS (
+  SELECT CAST(strftime('%d', "DATE") AS INTEGER) AS "day_of_month",
+    CASE strftime('%w', "DATE")
+      WHEN '0' THEN 'Sun' WHEN '1' THEN 'Mon' WHEN '2' THEN 'Tue' WHEN '3' THEN 'Wed'
+      WHEN '4' THEN 'Thu' WHEN '5' THEN 'Fri' ELSE 'Sat' END AS "weekday",
+    1 + CAST(CAST(strftime('%d', "DATE") AS INTEGER) / 7 AS INTEGER) AS "week_number",
+    (CAST("TMAX" AS DOUBLE) + CAST("TMIN" AS DOUBLE)) / 2.0 AS "daily_midpoint_c",
+    CAST("TMAX" AS DOUBLE) AS "high_c", CAST("TMIN" AS DOUBLE) AS "low_c"
+  FROM chartize:nyc_central_park_weather_2024_2026
+  WHERE strftime('%Y-%m', "DATE") = '2026-06' AND "TMAX" IS NOT NULL AND "TMIN" IS NOT NULL
+)
+SELECT 'June ' || "day_of_month" || ', 2026' AS "date_label", "day_of_month",
+  "weekday", 'week ' || "week_number" AS "calendar_week",
+  "daily_midpoint_c", "high_c", "low_c"
+FROM june
+ORDER BY "week_number", "day_of_month"
 
 VISUALISE
 DRAW tile
-  MAPPING "day_of_month" AS x, "year_label" AS y, "daily_midpoint_c" AS fill
-  SETTING stroke => '#f4f6f5', linewidth => 0.7
+  MAPPING "weekday" AS x, "calendar_week" AS y, "daily_midpoint_c" AS fill
+  SETTING stroke => '#ffffff', linewidth => 2
+DRAW text
+  MAPPING "weekday" AS x, "calendar_week" AS y, "day_of_month" AS label
+  SETTING colour => '#0a0f0d', fontsize => 10, fontweight => 'bold'
+SCALE DISCRETE x FROM ('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat')
+SCALE DISCRETE y FROM ('week 1', 'week 2', 'week 3', 'week 4', 'week 5')
 SCALE CONTINUOUS fill TO inferno
-LABEL title => 'how June warmed and cooled, day by day', subtitle => 'Central Park daily midpoint of NOAA maximum and minimum temperature · 2024–2025', x => 'Day in June', y => 'Year', fill => 'Midpoint (°C)'`,
+LABEL title => 'June 2026, day by day', subtitle => 'Central Park daily midpoint of NOAA maximum and minimum temperature', x => 'Day of week', y => null, fill => 'Midpoint (°C)'`,
   },
   {
     id: "nyc-seasonal-temperature-range",
@@ -424,10 +439,10 @@ LABEL title => 'New York’s seasonal temperature envelope', subtitle => 'mean d
   {
     id: "us-land-use-square",
     category: "composition",
-    title: "American land · 100-square atlas",
-    description: "A Bloomberg-inspired 10×10 proportional square built from official USDA acreage.",
+    title: "American land · silhouette atlas",
+    description: "A Bloomberg-inspired unit map that packs official USDA acreage into the contiguous-U.S. outline.",
     source: "chartize:usda_major_land_uses",
-    tags: ["USDA", "waffle", "composition"],
+    tags: ["USDA", "unit map", "composition"],
     query: `WITH categories AS (
   SELECT CASE "Land use"
       WHEN 'Grassland pasture and range' THEN 'Grass + range' WHEN 'Forest-use land (all)' THEN 'Forest'
@@ -439,36 +454,95 @@ LABEL title => 'New York’s seasonal temperature envelope', subtitle => 'mean d
       WHEN 'Total cropland' THEN 3 WHEN 'All special uses of land' THEN 4
       WHEN 'Miscellaneous other land' THEN 5 ELSE 6 END AS "display_order"
   FROM chartize:usda_major_land_uses
-  WHERE "Region or State" = 'U.S. total' AND "Year" = 2017
+  WHERE "Region or State" = '48 States' AND "Year" = 2017
     AND "Land use" IN ('Grassland pasture and range', 'Forest-use land (all)', 'Total cropland',
       'All special uses of land', 'Land in urban areas', 'Miscellaneous other land')
 ), running AS (
   SELECT *, SUM("thousand_acres") OVER () AS "total_acres",
-    SUM("thousand_acres") OVER (ORDER BY "display_order" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS "running_acres"
+    SUM("thousand_acres") OVER (ORDER BY "display_order") AS "running_acres"
   FROM categories
 ), segments AS (
   SELECT *, "running_acres" - "thousand_acres" AS "starting_acres" FROM running
+), mainland_states AS (
+  SELECT "geometry" AS "state_geometry", "STUSPS" AS "state_abbr", "NAME" AS "state_name"
+  FROM chartize:us_states_2025
+  WHERE "STATEFP" NOT IN ('02', '15', '60', '66', '69', '72', '78')
 ), numbers AS (
-  SELECT ROW_NUMBER() OVER () - 1 AS "cell"
+  SELECT ROW_NUMBER() OVER () - 1 AS "cell_number"
   FROM chartize:usda_major_land_uses
-  LIMIT 100
-), cells AS (
-  SELECT CAST(g."cell" % 10 AS INTEGER) AS "grid_x", CAST(9 - floor(g."cell" / 10.0) AS INTEGER) AS "grid_y",
-    s."land_use", s."thousand_acres"
-  FROM numbers AS g
+  LIMIT 1664
+), grid AS (
+  SELECT CAST("cell_number" % 64 AS INTEGER) AS "grid_column",
+    CAST(floor("cell_number" / 64.0) AS INTEGER) AS "grid_row",
+    -125.0 + (CAST("cell_number" % 64 AS INTEGER) + 0.5) * 0.91 AS "longitude",
+    24.0 + (CAST(floor("cell_number" / 64.0) AS INTEGER) + 0.5) * 0.97 AS "latitude"
+  FROM numbers
+), clipped_grid AS (
+  SELECT g.*,
+    BuildMbr(g."longitude" - 0.41, g."latitude" - 0.43,
+      g."longitude" + 0.41, g."latitude" + 0.43, 4326) AS "cell_geometry"
+  FROM grid AS g
+  WHERE (g."grid_row" = 0 AND g."grid_column" BETWEEN 51 AND 53)
+    OR (g."grid_row" = 1 AND g."grid_column" BETWEEN 49 AND 53)
+    OR (g."grid_row" = 2 AND (g."grid_column" BETWEEN 29 AND 38 OR g."grid_column" BETWEEN 47 AND 54))
+    OR (g."grid_row" = 3 AND (g."grid_column" BETWEEN 24 AND 41 OR g."grid_column" BETWEEN 44 AND 55))
+    OR (g."grid_row" = 4 AND g."grid_column" BETWEEN 19 AND 55)
+    OR (g."grid_row" = 5 AND g."grid_column" BETWEEN 15 AND 56)
+    OR (g."grid_row" = 6 AND g."grid_column" BETWEEN 12 AND 57)
+    OR (g."grid_row" = 7 AND g."grid_column" BETWEEN 9 AND 58)
+    OR (g."grid_row" = 8 AND g."grid_column" BETWEEN 7 AND 59)
+    OR (g."grid_row" = 9 AND g."grid_column" BETWEEN 5 AND 60)
+    OR (g."grid_row" = 10 AND g."grid_column" BETWEEN 4 AND 61)
+    OR (g."grid_row" = 11 AND g."grid_column" BETWEEN 3 AND 62)
+    OR (g."grid_row" = 12 AND g."grid_column" BETWEEN 2 AND 63)
+    OR (g."grid_row" = 13 AND g."grid_column" BETWEEN 1 AND 63)
+    OR (g."grid_row" = 14 AND g."grid_column" BETWEEN 0 AND 63)
+    OR (g."grid_row" = 15 AND g."grid_column" BETWEEN 0 AND 63)
+    OR (g."grid_row" = 16 AND g."grid_column" BETWEEN 0 AND 62)
+    OR (g."grid_row" = 17 AND g."grid_column" BETWEEN 1 AND 62)
+    OR (g."grid_row" = 18 AND g."grid_column" BETWEEN 1 AND 61)
+    OR (g."grid_row" = 19 AND g."grid_column" BETWEEN 2 AND 60)
+    OR (g."grid_row" = 20 AND g."grid_column" BETWEEN 3 AND 59)
+    OR (g."grid_row" = 21 AND g."grid_column" BETWEEN 4 AND 58)
+    OR (g."grid_row" = 22 AND g."grid_column" BETWEEN 5 AND 57)
+    OR (g."grid_row" = 23 AND g."grid_column" BETWEEN 7 AND 56)
+    OR (g."grid_row" = 24 AND g."grid_column" BETWEEN 8 AND 54)
+    OR (g."grid_row" = 25 AND g."grid_column" BETWEEN 10 AND 52)
+), ranked_cells AS (
+  SELECT *, ROW_NUMBER() OVER (
+      ORDER BY "grid_row" DESC, "grid_column"
+    ) - 1 AS "cell_index",
+    COUNT(*) OVER () AS "cell_count"
+  FROM clipped_grid
+), assigned_cells AS (
+  SELECT c."cell_geometry", c."grid_column", c."grid_row", s."land_use",
+    ROUND(1000.0 * s."total_acres" / c."cell_count") AS "acres_per_tile"
+  FROM ranked_cells AS c
   JOIN segments AS s
-    ON g."cell" >= floor(100.0 * s."starting_acres" / s."total_acres")
-   AND g."cell" < floor(100.0 * s."running_acres" / s."total_acres")
+    ON c."cell_index" >= floor(c."cell_count" * s."starting_acres" / s."total_acres")
+   AND c."cell_index" < floor(c."cell_count" * s."running_acres" / s."total_acres")
+), atlas AS (
+  SELECT "cell_geometry", NULL AS "state_geometry", "land_use", "acres_per_tile",
+    "grid_column", "grid_row", NULL AS "state_name"
+  FROM assigned_cells
+  UNION ALL
+  SELECT NULL AS "cell_geometry", "state_geometry", NULL AS "land_use", NULL AS "acres_per_tile",
+    NULL AS "grid_column", NULL AS "grid_row", "state_name"
+  FROM mainland_states
 )
-SELECT "grid_x", "grid_y", "land_use", "thousand_acres" FROM cells
-ORDER BY "grid_y" DESC, "grid_x"
+SELECT * FROM atlas
 
 VISUALISE
-DRAW tile
-  MAPPING "grid_x" AS x, "grid_y" AS y, "land_use" AS fill
-  SETTING stroke => '#f7f8f7', linewidth => 1.4
+DRAW spatial
+  MAPPING "cell_geometry" AS geometry, "land_use" AS fill
+  SETTING stroke => '#ffffff', linewidth => 0.35, opacity => 0.97
+DRAW spatial
+  MAPPING "state_geometry" AS geometry
+  SETTING fill => null, stroke => '#5d6864', linewidth => 0.45, opacity => 0.58
 SCALE DISCRETE fill FROM ('Grass + range', 'Forest', 'Cropland', 'Parks + special uses', 'Other', 'Urban') TO ('#d4aa55', '#356b59', '#ee4266', '#93b85c', '#c9d0ce', '#6575a4')
-LABEL title => 'what America’s land is used for', subtitle => 'each square is about 1% of 2.26 billion acres · USDA ERS complete 2017 inventory', x => null, y => null, fill => 'Major land use'`,
+LABEL title => 'how the contiguous U.S. uses its land', subtitle => 'each tile carries an equal share of the 1.89-billion-acre 2017 inventory · composition, not local land cover', fill => 'Major land use'
+PROJECT TO albers
+  SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
   },
 ];
 

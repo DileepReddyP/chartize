@@ -68,11 +68,16 @@ describe("visualization examples", () => {
       "chartize:mta_subway_journey_metrics_2024_2025",
       "chartize:mta_subway_stations",
       "chartize:nyc_central_park_weather_2024_2025",
+      "chartize:nyc_central_park_weather_2024_2026",
       "chartize:usda_major_land_uses",
     ]));
     expect(VISUALIZATION_EXAMPLES.find((example) => example.id === "mta-route-delay-map")?.query)
       .toContain("SUM(\"num_passengers\" *");
-    expect(VISUALIZATION_EXAMPLES.find((example) => example.id === "us-land-use-square")?.query)
-      .toContain("ROW_NUMBER() OVER () - 1");
+    const landUse = VISUALIZATION_EXAMPLES.find((example) => example.id === "us-land-use-square")?.query;
+    expect(landUse).toContain("chartize:us_states_2025");
+    expect(landUse).toContain("'48 States'");
+    expect(landUse).toContain("BuildMbr");
+    expect(landUse).toContain("mainland_states");
+    expect(landUse).toContain("PROJECT TO albers");
   });
 });

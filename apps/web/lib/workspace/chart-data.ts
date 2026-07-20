@@ -29,7 +29,11 @@ function mapFeatureValue(value: unknown) {
       ? value.toLocaleString("en-US")
       : value.toLocaleString("en-US", { maximumFractionDigits: 3 });
   }
-  if (typeof value === "string" || typeof value === "boolean") return String(value);
+  if (typeof value === "string" || typeof value === "boolean") {
+    const text = String(value);
+    if (typeof value === "string" && /^(?:null|undefined)$/i.test(text.trim())) return "";
+    return text.length > 1000 ? `${text.slice(0, 999)}…` : text;
+  }
   return "";
 }
 
@@ -51,7 +55,7 @@ function recordSelection(
   const candidates = Object.entries(datum)
     .filter(([field, value]) => (
       !field.startsWith("__ggsql_")
-      && !/^(?:geometry|geom|wkb|geojson)$/i.test(field)
+      && !/(?:^|_)(?:geometry|geom|wkb|geojson)$/i.test(field)
       && !(field === "type" && /^(?:feature|featurecollection|polygon|multipolygon)$/i.test(String(value)))
       && !/^(?:label_)?(?:lon|lat|longitude|latitude)$/i.test(field)
       && (value instanceof Date || ["string", "number", "boolean"].includes(typeof value))
@@ -74,7 +78,7 @@ function recordSelection(
       ? candidates.map(({ field, value }) => `${field}:${value}`).join("|").slice(0, 1000)
       : `row:${rowIndex}`,
     pixels,
-    title,
+    title: title.slice(0, 500),
     values: candidates,
     ...(rowIndex === undefined ? {} : { rowIndex }),
   });

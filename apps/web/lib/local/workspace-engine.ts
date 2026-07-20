@@ -5,8 +5,9 @@ import { BrowserSqlResultSchema, LocalFormatSchema, type LocalFormat } from "./w
 
 let wasmPromise: ReturnType<typeof init> | undefined;
 let spatialiteUrl = "/wasm/mod_spatialite.wasm";
-let spatialReady = false;
-let spatialPromise: Promise<void> | undefined;
+let spatialiteInstalled = false;
+let spatialiteInstallPromise: Promise<void> | undefined;
+const spatialContexts = new Set<string>();
 const contexts = new Map<string, GgsqlContext>();
 const contextPromises = new Map<string, Promise<GgsqlContext>>();
 const registrations = new Map<string, string>();
@@ -40,18 +41,22 @@ export async function workspaceEngine(workspaceId: string) {
 }
 
 async function ensureSpatial(workspaceId: string) {
-  if (spatialReady) return;
-  if (!spatialPromise) {
-    spatialPromise = (async () => {
-      await workspaceEngine(workspaceId);
+  if (spatialContexts.has(workspaceId)) return;
+  const engine = await workspaceEngine(workspaceId);
+  if (!spatialiteInstalled && !spatialiteInstallPromise) {
+    spatialiteInstallPromise = (async () => {
       await installExtension("mod_spatialite", spatialiteUrl);
-      spatialReady = true;
+      spatialiteInstalled = true;
     })();
   }
   try {
-    await spatialPromise;
+    await spatialiteInstallPromise;
+    // Installing makes the extension binary available to SQLite, but every
+    // workspace owns a separate connection and must load it for itself.
+    engine.load_extension("mod_spatialite");
+    spatialContexts.add(workspaceId);
   } catch (error) {
-    spatialPromise = undefined;
+    if (!spatialiteInstalled) spatialiteInstallPromise = undefined;
     throw error;
   }
 }
@@ -144,6 +149,7 @@ export function resetWorkspacesContainingSource(name: string) {
     contexts.get(workspaceId)?.free();
     contexts.delete(workspaceId);
     contextPromises.delete(workspaceId);
+    spatialContexts.delete(workspaceId);
     for (const key of [...registrations.keys()]) {
       if (key.startsWith(`${workspaceId}:`)) registrations.delete(key);
     }
@@ -155,6 +161,7 @@ export function releaseWorkspaceEngine(workspaceId: string) {
   contexts.get(workspaceId)?.free();
   contexts.delete(workspaceId);
   contextPromises.delete(workspaceId);
+  spatialContexts.delete(workspaceId);
   for (const key of [...registrations.keys()]) {
     if (key.startsWith(`${workspaceId}:`)) registrations.delete(key);
   }

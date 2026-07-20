@@ -8,6 +8,7 @@ import {
   queryControlOffsets,
   querySectionAtOffset,
 } from "@/lib/ggsql/query-context";
+import { placeFloating } from "@/lib/floating-placement";
 import { useChartizeWorkspace, type AiContext } from "@/lib/workspace/store";
 import { useWorkspaceViewModel } from "@/lib/workspace/view-model";
 import { DwimPanel } from "./dwim-panel";
@@ -166,13 +167,35 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
       const selectedText = hasSelection ? model.getValueInRange(selection) : "";
       const anchor = hasSelection ? selection.getEndPosition() : position;
       const visible = editor.getScrolledVisiblePosition(anchor);
+      const startVisible = hasSelection ? editor.getScrolledVisiblePosition(selection.getStartPosition()) : visible;
       const offset = model.getOffsetAt(anchor);
       const section = querySectionAtOffset(model.getValue(), offset, hasSelection);
       const bounds = editor.getDomNode()?.getBoundingClientRect();
-      const panelHeight = section === "visual" ? 620 : 520;
-      const left = Math.max(12, Math.min((bounds?.right ?? window.innerWidth * .44) + 1, window.innerWidth - 360));
-      const top = Math.max(48, Math.min((bounds?.top ?? 40) + (visible?.top ?? 20) + (visible?.height ?? 20) + 8, window.innerHeight - panelHeight - 12));
-      actions.setEditorContext({ section, selectedText, offset, left, top });
+      const cursorLeft = (bounds?.left ?? 0) + (visible?.left ?? 0);
+      const cursorTop = (bounds?.top ?? 48) + (visible?.top ?? 20);
+      const selectionLeft = (bounds?.left ?? 0) + (startVisible?.left ?? visible?.left ?? 0);
+      const selectionTop = (bounds?.top ?? 48) + (startVisible?.top ?? visible?.top ?? 20);
+      const anchorRect = {
+        // Keep the preferred right-hand popup anchored to the pane divider,
+        // while allowing a genuinely roomy left quadrant when needed.
+        left: Math.min(cursorLeft, selectionLeft),
+        top: Math.min(cursorTop, selectionTop),
+        right: bounds?.right ?? Math.max(cursorLeft, selectionLeft) + 2,
+        bottom: Math.max(cursorTop + (visible?.height ?? 20), selectionTop + (startVisible?.height ?? 20)),
+      };
+      const preferredWidth = section === "visual" ? 560 : 640;
+      const preferredHeight = section === "visual" ? 590 : section === "selection" ? 330 : 520;
+      const rightRoom = window.innerWidth - (bounds?.right ?? window.innerWidth * .44) - 12;
+      const placed = placeFloating(
+        anchorRect,
+        {
+          width: Math.min(preferredWidth, Math.max(280, rightRoom)),
+          height: Math.min(preferredHeight, window.innerHeight - 72),
+        },
+        { left: 0, top: 48, right: window.innerWidth, bottom: window.innerHeight },
+        8,
+      );
+      actions.setEditorContext({ section, selectedText, offset, left: placed.left, top: placed.top });
       actions.setDwimStatus("");
     };
     const activate = () => {

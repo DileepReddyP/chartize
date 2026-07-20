@@ -73,6 +73,30 @@ describe("chart workspace data", () => {
     });
   });
 
+  it("omits aliased geometry and safely bounds long textual values", () => {
+    const selection = mapFeatureSelectionFromDatum({
+      state_name: "Wyoming",
+      state_geometry: "POLYGON".repeat(400),
+      note: "x".repeat(1200),
+      land_use: "Grass + range",
+    }, { x: 40, y: 70 })!;
+
+    expect(selection.values.map(({ field }) => field)).not.toContain("state_geometry");
+    expect(selection.values.find(({ field }) => field === "note")?.value).toHaveLength(1000);
+    expect(selection.title).toBe("Wyoming");
+  });
+
+  it("does not promote serialized nulls into a selection title", () => {
+    const selection = mapFeatureSelectionFromDatum({
+      state_name: "null",
+      land_use: "Grass + range",
+      acres_per_tile: 1450,
+    }, { x: 40, y: 70 })!;
+
+    expect(selection.title).toBe("Grass + range");
+    expect(selection.values.map(({ value }) => value)).not.toContain("null");
+  });
+
   it("hydrates map clicks from the rendered relation and combines multi-selection rows", () => {
     const first = mapFeatureSelectionFromDatum(
       { __ggsql_row_index__: "1", geometry: new Uint8Array([1]) },
