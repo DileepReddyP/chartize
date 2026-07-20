@@ -4,6 +4,7 @@ import {
   type DatasetManifest,
   type TablePreview,
 } from "@chartize/contracts";
+import { z } from "zod";
 
 interface WarehousePreviewRequest {
   slug: string;
@@ -14,6 +15,11 @@ interface WarehousePreviewRequest {
 
 let catalogRequest: Promise<DatasetManifest[]> | undefined;
 const previewRequests = new Map<string, Promise<TablePreview>>();
+const QueryRowsSchema = z.object({
+  columns: z.array(z.string()),
+  rows: z.array(z.array(z.string())),
+});
+const featureRowRequests = new Map<string, Promise<z.infer<typeof QueryRowsSchema>>>();
 
 function retain<T>(cache: Map<string, Promise<T>>, key: string, request: Promise<T>, maximum: number) {
   cache.delete(key);
@@ -63,4 +69,33 @@ export function fetchWarehousePreview({ slug, version, offset, sort }: Warehouse
       return TablePreviewSchema.parse(body);
     });
   return retain(previewRequests, key, request, 32);
+}
+
+export function fetchWarehouseQueryRow(sql: string, offset: number) {
+  const normalizedOffset = Math.max(0, Math.trunc(offset));
+  const normalizedSql = sql.trim().replace(/;$/, "");
+  const key = `${normalizedOffset}:${normalizedSql}`;
+  const cached = featureRowRequests.get(key);
+  if (cached) {
+    featureRowRequests.delete(key);
+    featureRowRequests.set(key, cached);
+    return cached;
+  }
+  const request = fetch("/engine/api/ai/query-data", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sql: `SELECT * FROM (${normalizedSql}) AS chartize_selected_feature LIMIT 1 OFFSET ${normalizedOffset}`,
+      limit: 1,
+    }),
+  }).then(async (response) => {
+    const body = await response.json() as unknown;
+    if (!response.ok) {
+      throw new Error(typeof body === "object" && body && "error" in body
+        ? String(body.error)
+        : "Feature details could not be loaded.");
+    }
+    return QueryRowsSchema.parse(body);
+  });
+  return retain(featureRowRequests, key, request, 64);
 }

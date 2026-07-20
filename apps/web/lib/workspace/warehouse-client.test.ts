@@ -44,4 +44,27 @@ describe("warehouse request cache", () => {
     expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledWith("/engine/api/datasets/approval/preview?limit=100&offset=0&sort=value&direction=asc");
   });
+
+  it("coalesces repeated map-feature row requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ columns: ["county"], rows: [["Grant County"]] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { fetchWarehouseQueryRow } = await import("./warehouse-client");
+
+    const [first, second] = await Promise.all([
+      fetchWarehouseQueryRow('SELECT county FROM "counties"', 4),
+      fetchWarehouseQueryRow('SELECT county FROM "counties"', 4),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+    expect(fetchMock).toHaveBeenCalledWith("/engine/api/ai/query-data", expect.objectContaining({
+      body: JSON.stringify({
+        sql: 'SELECT * FROM (SELECT county FROM "counties") AS chartize_selected_feature LIMIT 1 OFFSET 4',
+        limit: 1,
+      }),
+    }));
+  });
 });

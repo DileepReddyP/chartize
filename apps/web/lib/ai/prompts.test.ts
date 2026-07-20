@@ -5,13 +5,14 @@ describe("Chartize AI prompt contract", () => {
   it("defines one persistent GGSQL collaborator", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("sole AI collaborator");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("Continue as one conversation");
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("complete, executable, read-only GGSQL query");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("complete executable read-only GGSQL query");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("query_warehouse");
   });
 
-  it("keeps explanation turns non-mutating and selection-aware", () => {
+  it("keeps explanation entry points selection-aware without constraining intent", () => {
     const instructions = chartizeTurnInstructions("chart", "explain");
     expect(instructions).toContain("selected visual range");
-    expect(instructions).toContain("Do not change the current query or draft");
+    expect(instructions).toContain("still update the visualization if their actual words ask");
   });
 
   it("allows useful historical hypotheses without turning caveats into the answer", () => {
@@ -22,8 +23,8 @@ describe("Chartize AI prompt contract", () => {
   });
 
   it("translates response-profile toggles into turn instructions", () => {
-    const enabled = chartizePreferenceInstructions({ hypothesize: true, concise: true, challenge: false, technical: false });
-    const disabled = chartizePreferenceInstructions({ hypothesize: false, concise: false, challenge: true, technical: true });
+    const enabled = chartizePreferenceInstructions({ hypothesize: true, webSearch: true, dataAccess: true, concise: true, challenge: false, technical: false });
+    const disabled = chartizePreferenceInstructions({ hypothesize: false, webSearch: false, dataAccess: false, concise: false, challenge: true, technical: true });
     expect(enabled).toContain("outside-context hypotheses");
     expect(enabled).toContain("one to three short paragraphs");
     expect(disabled).toContain("do not add outside-context hypotheses");
@@ -41,7 +42,8 @@ describe("Chartize AI prompt contract", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)");
   });
 
-  it("gives unused smoothing adjustments a valid structured-output sentinel", () => {
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("use 1 when smoothing adjustment is not relevant");
+  it("keeps the model contract query-authoritative instead of emitting duplicate builder state", () => {
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("reconstructs its visual-builder state from the GGSQL");
+    expect(CHARTIZE_AI_INSTRUCTIONS).not.toContain("draft.scenarioDeltas");
   });
 });

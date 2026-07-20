@@ -113,6 +113,12 @@ struct QueryRequest {
     ggsql: String,
 }
 
+#[derive(Deserialize)]
+struct AiDataQueryRequest {
+    sql: String,
+    limit: Option<usize>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct QueryValidation {
@@ -149,6 +155,15 @@ struct TablePreview {
     total_rows: u64,
     offset: usize,
     limit: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiDataQueryResult {
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+    returned_rows: usize,
+    truncated: bool,
 }
 
 #[derive(Default)]
@@ -199,6 +214,7 @@ async fn main() {
         .route("/api/datasets/{slug}/preview", get(dataset_preview))
         .route("/api/validate", post(validate_query))
         .route("/api/query", post(query))
+        .route("/api/ai/query-data", post(ai_data_query))
         .route("/api/admin/imports", post(import_dataset))
         .route("/api/admin/datasets/{slug}/rollback", post(rollback))
         .layer(DefaultBodyLimit::max(state.max_import_bytes))
@@ -473,6 +489,22 @@ async fn query(
         .map(Json)
 }
 
+async fn ai_data_query(
+    State(state): State<AppState>,
+    Json(body): Json<AiDataQueryRequest>,
+) -> Result<Json<AiDataQueryResult>, ApiError> {
+    if body.sql.len() > 20_000 {
+        return Err(ApiError::BadRequest(
+            "AI data query exceeds the 20 KB limit.".into(),
+        ));
+    }
+    let limit = body.limit.unwrap_or(50).clamp(1, 100);
+    tokio::task::spawn_blocking(move || execute_ai_data_query(&state, &body.sql, limit))
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .map(Json)
+}
+
 async fn validate_query(Json(body): Json<QueryRequest>) -> Result<Json<QueryValidation>, ApiError> {
     if body.ggsql.len() > 100_000 {
         return Err(ApiError::BadRequest(
@@ -594,6 +626,82 @@ fn execute_query(state: &AppState, query: &str) -> Result<QueryResult, ApiError>
     })
 }
 
+fn execute_ai_data_query(
+    state: &AppState,
+    sql: &str,
+    limit: usize,
+) -> Result<AiDataQueryResult, ApiError> {
+    enforce_read_only(sql)?;
+    let sql = sql.trim().trim_end_matches(';').trim();
+    let connection = open_connection(state)?;
+    connection.execute_batch("SET memory_limit='1GB'; SET threads=2;")?;
+    if uses_spatial_functions(sql) {
+        connection.execute_batch("LOAD spatial;")?;
+    }
+
+    let columns = {
+        let mut statement = connection.prepare(&format!(
+            "SELECT * FROM ({sql}) AS chartize_ai_result LIMIT 0"
+        ))?;
+        {
+            let mut rows = statement.query([])?;
+            while rows.next()?.is_some() {}
+        }
+        statement.column_names()
+    };
+    if columns.len() > 100 {
+        return Err(ApiError::BadRequest(
+            "AI data queries may return at most 100 columns.".into(),
+        ));
+    }
+    if columns.is_empty() {
+        return Ok(AiDataQueryResult {
+            columns,
+            rows: vec![],
+            returned_rows: 0,
+            truncated: false,
+        });
+    }
+
+    let selections = columns
+        .iter()
+        .map(|column| {
+            let identifier = quote_ident(column);
+            if column.eq_ignore_ascii_case("geometry") {
+                format!(
+                    "CASE WHEN {identifier} IS NULL THEN '' ELSE '[geometry]' END AS {identifier}"
+                )
+            } else {
+                format!("LEFT(COALESCE(CAST({identifier} AS VARCHAR), ''), 2000) AS {identifier}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut statement = connection.prepare(&format!(
+        "SELECT {selections} FROM ({sql}) AS chartize_ai_result LIMIT {}",
+        limit + 1
+    ))?;
+    let column_count = columns.len();
+    let mapped = statement.query_map([], move |row| {
+        (0..column_count)
+            .map(|index| {
+                row.get::<_, Option<String>>(index)
+                    .map(|value| value.unwrap_or_default())
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+    let mut rows = mapped.collect::<Result<Vec<_>, _>>()?;
+    let truncated = rows.len() > limit;
+    rows.truncate(limit);
+    let returned_rows = rows.len();
+    Ok(AiDataQueryResult {
+        columns,
+        rows,
+        returned_rows,
+        truncated,
+    })
+}
+
 fn enforce_read_only(sql: &str) -> Result<(), ApiError> {
     let trimmed = sql.trim_start();
     let upper = trimmed.to_ascii_uppercase();
@@ -617,12 +725,24 @@ fn enforce_read_only(sql: &str) -> Result<(), ApiError> {
         " DELETE ",
         " EXPORT ",
         " IMPORT ",
-        " READ_CSV",
-        " READ_JSON",
-        " READ_PARQUET",
+        " READ_",
+        "_SCAN",
+        " GLOB",
+        " SNIFF_CSV",
+        " PARQUET_METADATA",
+        " PARQUET_FILE_METADATA",
+        " PARQUET_SCHEMA",
+        " QUERY_TABLE",
         " ST_READ",
         " HTTPFS",
+        " HTTP_GET",
+        " HTTP_POST",
         " DUCKDB_EXTENSIONS",
+        " WAREHOUSE_VERSIONS",
+        " DUCKDB_",
+        " SQLITE_",
+        " PG_",
+        " INFORMATION_SCHEMA",
     ];
     let padded = format!(" {upper} ");
     if let Some(keyword) = blocked.iter().find(|keyword| padded.contains(*keyword)) {
@@ -810,7 +930,15 @@ fn create_normalized_table(
     spatial: bool,
 ) -> Result<(), ApiError> {
     let source = quote_literal_path(path);
+    let source_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_ascii_uppercase();
     let select = match ext {
+        "csv" if source_name.starts_with("CAINC") || source_name.starts_with("CAGDP") => format!(
+            "SELECT * FROM read_csv({source}, HEADER=true, DELIM=',', QUOTE='\"', SAMPLE_SIZE=-1, STRICT_MODE=false, NULL_PADDING=true, IGNORE_ERRORS=true) WHERE regexp_matches(trim(CAST(\"GeoFIPS\" AS VARCHAR)), '^[0-9]{{5}}$')"
+        ),
         "csv" => format!("SELECT * FROM read_csv_auto({source}, SAMPLE_SIZE=-1, HEADER=true)"),
         "tsv" => format!(
             "SELECT * FROM read_csv_auto({source}, SAMPLE_SIZE=-1, HEADER=true, DELIM='\\t')"
@@ -1021,7 +1149,8 @@ fn extract_zip(bytes: &[u8], target: &Path) -> Result<PathBuf, ApiError> {
         .map_err(|error| ApiError::BadRequest(error.to_string()))?;
     let unpacked = target.join("unpacked");
     fs::create_dir_all(&unpacked)?;
-    let mut candidates = Vec::new();
+    let mut shapefiles = Vec::new();
+    let mut tabular_files = Vec::new();
     for index in 0..archive.len() {
         let mut item = archive
             .by_index(index)
@@ -1040,18 +1169,32 @@ fn extract_zip(bytes: &[u8], target: &Path) -> Result<PathBuf, ApiError> {
         let mut content = Vec::new();
         item.read_to_end(&mut content)?;
         fs::write(&output, content)?;
-        if extension(
-            output
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(""),
-        ) == "shp"
-        {
-            candidates.push(output);
+        let name = output
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        match extension(name).as_str() {
+            "shp" => shapefiles.push(output),
+            "csv" | "tsv" | "json" | "ndjson" | "parquet" | "geoparquet" => {
+                tabular_files.push(output)
+            }
+            _ => {}
         }
     }
-    candidates.into_iter().next().ok_or_else(|| {
-        ApiError::BadRequest("ZIP imports must contain a Shapefile (.shp plus sidecars).".into())
+    if let Some(path) = shapefiles.into_iter().next() {
+        return Ok(path);
+    }
+    tabular_files.sort_by_key(|path| {
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        (!name.contains("__ALL_AREAS"), name.len(), name.to_owned())
+    });
+    tabular_files.into_iter().next().ok_or_else(|| {
+        ApiError::BadRequest(
+            "ZIP imports must contain a Shapefile or a supported tabular data file.".into(),
+        )
     })
 }
 
@@ -1075,7 +1218,36 @@ mod tests {
         assert!(enforce_read_only("WITH totals AS (SELECT 1) SELECT * FROM totals").is_ok());
         assert!(enforce_read_only("DELETE FROM county_population").is_err());
         assert!(enforce_read_only("SELECT * FROM read_parquet('/etc/passwd')").is_err());
+        assert!(enforce_read_only("SELECT * FROM read_text('/etc/passwd')").is_err());
+        assert!(enforce_read_only("SELECT * FROM parquet_scan('/tmp/a')").is_err());
+        assert!(enforce_read_only("SELECT * FROM query_table('warehouse_versions')").is_err());
         assert!(enforce_read_only("SELECT 1; DROP TABLE warehouse_versions").is_err());
+        assert!(enforce_read_only("SELECT * FROM warehouse_versions").is_err());
+        assert!(enforce_read_only("SELECT * FROM duckdb_tables()").is_err());
+    }
+
+    #[test]
+    fn ai_data_queries_are_stringified_and_row_bounded() {
+        let root = env::temp_dir().join(format!("chartize-ai-query-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let state = AppState {
+            db_uri: format!("duckdb://{}", root.join("warehouse.duckdb").display()),
+            root: root.clone(),
+            admin_token: "test".into(),
+            max_import_bytes: 1_000_000,
+        };
+        initialize(&state).unwrap();
+        let result = execute_ai_data_query(
+            &state,
+            "SELECT value FROM (VALUES (1), (2), (3)) AS values_table(value) ORDER BY value",
+            2,
+        )
+        .unwrap();
+        assert_eq!(result.columns, vec!["value"]);
+        assert_eq!(result.rows, vec![vec!["1"], vec!["2"]]);
+        assert_eq!(result.returned_rows, 2);
+        assert!(result.truncated);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

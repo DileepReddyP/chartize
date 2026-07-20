@@ -1,46 +1,87 @@
-import {
-  AiSuggestionSchema,
-  GgsqlDraftSchema,
-  VisualizationLayerSchema,
-} from "@chartize/contracts";
+import { GgsqlDraftSchema } from "@chartize/contracts";
 import { z } from "zod";
+import { sourcesFromQuery, visualLayersFromQuery, visualPointState, visualScalesFromQuery } from "../ggsql/query-context";
+import { makeBlankDraft } from "../ggsql/serialize";
 
-// Structured-output models often use zero as an "unused" numeric sentinel.
-// Accept that at the model boundary, then restore the workspace's semantic
-// default before validating the result used by the application.
-const ModelLayerSchema = VisualizationLayerSchema.extend({
-  smoothAdjust: z.number().nonnegative(),
-});
-
-const ModelScaleSchema = z.object({
-  aesthetic: z.enum(["x", "y", "colour", "fill", "size", "opacity"]),
-  type: z.enum(["", "continuous", "discrete", "binned", "ordinal", "identity"]),
-  palette: z.string(),
-  transform: z.enum(["date", "datetime", "time", "linear", "integer", "log10", "sqrt"]).nullable(),
-  labelFormat: z.string().nullable(),
-});
-
-export const ModelSuggestionSchema = AiSuggestionSchema.omit({ sources: true, researched: true }).extend({
-  draft: GgsqlDraftSchema.extend({
-    layers: z.array(ModelLayerSchema).min(1),
-    scales: z.array(ModelScaleSchema),
-  }),
-});
-
-export const ModelExplanationSchema = z.object({
+// A single conversation can answer, inspect, and edit without the UI deciding
+// the turn type first. The action discriminator keeps edits explicit so the
+// route can validate them before applying anything to the workspace.
+export const ModelAgentResponseSchema = z.object({
+  action: z.enum(["answer", "update_visualization"]),
+  query: z.string(),
   explanation: z.string(),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
 });
 
-export type ModelSuggestion = z.infer<typeof ModelSuggestionSchema>;
-export type ModelExplanation = z.infer<typeof ModelExplanationSchema>;
+export type ModelAgentResponse = z.infer<typeof ModelAgentResponseSchema>;
+
+export function draftFromGgsql(query: string, allowedSources: string[], fallbackSource = "") {
+  const referenced = sourcesFromQuery(query);
+  const source = referenced.find((candidate) => allowedSources.includes(candidate))
+    || (allowedSources.includes(fallbackSource) ? fallbackSource : "")
+    || allowedSources[0]
+    || "";
+  const visual = visualPointState(query);
+  const layers = visualLayersFromQuery(query);
+  const draft = makeBlankDraft(source);
+  draft.layers = layers.length ? layers : draft.layers;
+  draft.scales = visualScalesFromQuery(query);
+  draft.title = visual.title;
+  draft.subtitle = visual.subtitle;
+  draft.projection = visual.project === "crs" ? visual.projectTarget : visual.project;
+  draft.axisLabels = {
+    x: visual.labelX,
+    y: visual.labelY,
+    colour: visual.labelColor,
+    fill: visual.labelFill,
+    size: visual.labelSize,
+    shape: visual.labelShape,
+    linetype: visual.labelLinetype,
+    linewidth: visual.labelLinewidth,
+    opacity: visual.labelOpacity,
+  };
+  const limit = /\bLIMIT\s+(\d+)\b/i.exec(query)?.[1];
+  if (limit) draft.limit = Math.max(1, Math.min(100_000, Number(limit)));
+  return GgsqlDraftSchema.parse(draft);
+}
+
+const UNAVAILABLE_RESEARCH_SENTENCE = /(?:I|we)\s+(?:could\s+not|couldn't|cannot|can't|was\s+not\s+able\s+to|were\s+not\s+able\s+to)\s+(?:conduct|complete|perform|retrieve|access|use|find)[^.\n]*(?:live\s+)?(?:web|research|source|citation|lookup)[^.\n]*[.!]?/gi;
+const UNAVAILABLE_RESEARCH_WARNING = /(?:could\s+not|couldn't|cannot|can't|unavailable|no\s+(?:usable\s+)?sources?|without\s+(?:live\s+)?(?:web|research|sources?|citations?))/i;
+
+/**
+ * Source metadata is authoritative. A model response must not tell the user
+ * that research was unavailable after the provider completed a web search and
+ * returned links. Keep this at the response boundary rather than relying only
+ * on prompt wording.
+ */
+export function reconcileGroundedResponse(
+  explanation: string,
+  warnings: string[],
+  metadata: { researched: boolean; sources: Array<{ title: string; url: string }> },
+) {
+  if (!metadata.researched || metadata.sources.length === 0) return { explanation, warnings };
+
+  const reconciled = explanation
+    .replace(UNAVAILABLE_RESEARCH_SENTENCE, "Source links supporting the researched claims are attached below.")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return {
+    explanation: reconciled,
+    warnings: warnings.filter((warning) => !UNAVAILABLE_RESEARCH_WARNING.test(warning)),
+  };
+}
 
 const VISUAL_CLAUSE = /^\s*(DRAW|PLACE|SCALE|FACET|LABEL|PROJECT)\b/i;
 const LABEL_ENTRY = /^\s*(title|subtitle|x|y|colour|color|fill|size|shape|linetype|linewidth|opacity)\s*=>/i;
 
 export function normalizeModelGgsql(query: string) {
-  const lines = query.split("\n");
+  let modelQuery = query.trim();
+  const fenced = /^```(?:ggsql|sql)?\s*\n?([\s\S]*?)\n?```$/i.exec(modelQuery);
+  if (fenced?.[1]) modelQuery = fenced[1].trim();
+  modelQuery = modelQuery.replace(/^(?:ggsql|query)\s*:\s*/i, "").trim();
+
+  const lines = modelQuery.split("\n");
   let inLabel = false;
   for (let index = 0; index < lines.length; index += 1) {
     const clause = VISUAL_CLAUSE.exec(lines[index] ?? "")?.[1]?.toLocaleUpperCase();
@@ -74,31 +115,6 @@ export function normalizeModelGgsql(query: string) {
     .replace(/\bTO\s+'([a-z][\w-]*)'(?![\w-])/gi, (_match, palette: string) => `TO ${palette}`)
     .replace(/\b(PROJECT\s+TO\s+[a-z][\w-]*)\s+WITH\s+SETTING\b/gi, "$1\n  SETTING")
     .trim();
-}
-
-export function normalizeModelSuggestion(
-  modelResult: ModelSuggestion,
-  metadata: { sources?: Array<{ title: string; url: string }>; researched?: boolean } = {},
-) {
-  return AiSuggestionSchema.parse({
-    ...modelResult,
-    query: normalizeModelGgsql(modelResult.query),
-    explanation: modelResult.explanation.replaceAll("?utm_source=openai", ""),
-    draft: {
-      ...modelResult.draft,
-      layers: modelResult.draft.layers.map((layer) => ({
-        ...layer,
-        smoothAdjust: layer.smoothAdjust > 0 ? layer.smoothAdjust : 1,
-      })),
-      scales: modelResult.draft.scales.map((scale) => ({
-        ...scale,
-        transform: scale.transform ?? undefined,
-        labelFormat: scale.labelFormat ?? undefined,
-      })),
-    },
-    sources: metadata.sources ?? [],
-    researched: metadata.researched ?? false,
-  });
 }
 
 export function publicAiError(error: unknown) {
