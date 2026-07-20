@@ -4,6 +4,7 @@ import {
   geometryUsesLongitudeLatitude,
   robustGeometryFit,
   robustPlanarGeometryFit,
+  type MapPointFields,
   type MapViewport,
 } from "./geo-fit";
 
@@ -67,6 +68,21 @@ function withOrdinalDateLabels(channel: unknown) {
   };
 }
 
+function withSignedDivergingMidpoint(channel: unknown) {
+  if (!channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
+  const value = channel as Record<string, unknown>;
+  const scale = value.scale;
+  if (!scale || typeof scale !== "object" || Array.isArray(scale)) return channel;
+  const scaleValue = scale as Record<string, unknown>;
+  const domain = scaleValue.domain;
+  const range = scaleValue.range;
+  if (!Array.isArray(domain) || domain.length < 2 || !domain.every((item) => typeof item === "number")) return channel;
+  if (!Array.isArray(range) || !range.some((item) => typeof item === "string" && item.toLocaleLowerCase() === "#ffffbf")) return channel;
+  const numbers = domain as number[];
+  if (Math.min(...numbers) >= 0 || Math.max(...numbers) <= 0) return channel;
+  return { ...value, scale: { ...scaleValue, domainMid: 0 } };
+}
+
 function makeThresholdStroke(y: { scale?: { domain?: unknown } }, threshold: ChartThreshold) {
   const domain = y.scale?.domain;
   if (!Array.isArray(domain) || domain.length < 2 || !domain.every((value) => typeof value === "number")) {
@@ -116,7 +132,7 @@ function styleSpecNode(node: Record<string, unknown>, threshold?: ChartThreshold
           x: withDomain(withOrdinalDateLabels(encoding.x), domains?.x),
           y: withDomain(encoding.y, domains?.y),
           color: replaceDefaultBlack(encoding.color, chartColors.tealDark),
-          fill: replaceDefaultBlack(encoding.fill, chartColors.teal),
+          fill: withSignedDivergingMidpoint(replaceDefaultBlack(encoding.fill, chartColors.teal)),
           stroke: thresholdStroke ?? replaceDefaultBlack(withoutDuplicateTextStroke(encoding), chartColors.tealDark),
         },
       }
@@ -132,6 +148,30 @@ function styleSpecNode(node: Record<string, unknown>, threshold?: ChartThreshold
     styled.spec = styleSpecNode(styled.spec as Record<string, unknown>, threshold, domains);
   }
   return styled;
+}
+
+function mapPointFields(node: Record<string, unknown>, fields = new Map<string, MapPointFields>()) {
+  const encoding = node.encoding;
+  if (encoding && typeof encoding === "object" && !Array.isArray(encoding)) {
+    const channels = encoding as Record<string, unknown>;
+    const longitude = channels.longitude as { field?: unknown } | undefined;
+    const latitude = channels.latitude as { field?: unknown } | undefined;
+    if (typeof longitude?.field === "string" && typeof latitude?.field === "string") {
+      fields.set(`${longitude.field}\u0000${latitude.field}`, { x: longitude.field, y: latitude.field });
+    }
+  }
+  for (const key of ["layer", "concat", "hconcat", "vconcat"] as const) {
+    const children = node[key];
+    if (Array.isArray(children)) {
+      children.forEach((child) => {
+        if (child && typeof child === "object") mapPointFields(child as Record<string, unknown>, fields);
+      });
+    }
+  }
+  if (node.spec && typeof node.spec === "object" && !Array.isArray(node.spec)) {
+    mapPointFields(node.spec as Record<string, unknown>, fields);
+  }
+  return [...fields.values()];
 }
 
 function withChartizePresentation(spec: Record<string, unknown>, threshold?: ChartThreshold, domains?: ChartDomains) {
@@ -179,18 +219,35 @@ export function presentChartSpec(
     const geometry = value.geometry as { type?: string; coordinates?: unknown } | undefined;
     return Boolean(geometry?.type && geometry.coordinates);
   });
-  const projection = spec.projection as { type?: string } | undefined;
+  const projection = spec.projection as { type?: string; scale?: unknown; translate?: unknown } | undefined;
   if (!hasGeometry || (projection?.type && projection.type !== "identity")) return spec;
   const layers = Array.isArray(spec.layer)
     ? spec.layer.filter((layer) => !(layer && typeof layer === "object" && (layer as { description?: unknown }).description === "background"))
     : spec.layer;
   const values = data?.values ?? [];
   const rawGeoJson = geometryUsesLongitudeLatitude(values);
+  const pointFields = mapPointFields(spec);
+  const valuesWithViewport = applyMapViewport(values, geometryFeatureCollection(values), mapViewport, pointFields);
+
+  // GGSQL emits a responsive identity projection for already-projected map
+  // data. Preserve that camera: replacing it with Vega-Lite's inferred `fit`
+  // can leave geoshape paths at the embed's initial translation while
+  // longitude/latitude text marks move to the resized pane. The result is a
+  // constant label offset even though every point lies inside its polygon.
+  if (!rawGeoJson && projection?.scale !== undefined && projection.translate !== undefined) {
+    return {
+      ...spec,
+      data: { ...data, values: valuesWithViewport },
+      layer: layers,
+      padding: spec.padding ?? 16,
+    };
+  }
+
   const robustFit = rawGeoJson ? robustGeometryFit(values) : robustPlanarGeometryFit(values);
   const fit = robustFit ?? geometryFeatureCollection(values);
   return {
     ...spec,
-    data: { ...data, values: applyMapViewport(values, fit, mapViewport) },
+    data: { ...data, values: applyMapViewport(values, fit, mapViewport, pointFields) },
     layer: layers,
     padding: spec.padding ?? 16,
     projection: rawGeoJson

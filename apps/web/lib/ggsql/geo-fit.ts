@@ -6,6 +6,11 @@ export interface MapViewport {
   panY: number;
 }
 
+export interface MapPointFields {
+  x: string;
+  y: string;
+}
+
 interface GeometryCenter {
   geometry: GeoGeometry;
   longitude: number;
@@ -116,6 +121,7 @@ export function applyMapViewport(
   values: Array<Record<string, unknown>>,
   focus: ReturnType<typeof featureCollection>,
   viewport: MapViewport,
+  pointFields: readonly MapPointFields[] = [],
 ) {
   if (viewport.zoom === 1 && viewport.panX === 0 && viewport.panY === 0) return values;
   const bounds = collectionBounds(focus);
@@ -132,11 +138,22 @@ export function applyMapViewport(
   ];
   return values.map((value) => {
     const geometry = value.geometry as GeoGeometry | undefined;
-    if (!geometry?.coordinates) return value;
-    return {
-      ...value,
-      geometry: { ...geometry, coordinates: transformCoordinates(geometry.coordinates, transform) },
-    };
+    let changed = false;
+    const next = { ...value };
+    if (geometry?.coordinates) {
+      next.geometry = { ...geometry, coordinates: transformCoordinates(geometry.coordinates, transform) };
+      changed = true;
+    }
+    for (const fields of pointFields) {
+      const x = value[fields.x];
+      const y = value[fields.y];
+      if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) continue;
+      const [nextX, nextY] = transform(x, y);
+      next[fields.x] = nextX;
+      next[fields.y] = nextY;
+      changed = true;
+    }
+    return changed ? next : value;
   });
 }
 

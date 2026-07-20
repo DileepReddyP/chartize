@@ -38,4 +38,40 @@ describe("Chartize Vega presentation", () => {
     const layer = (spec.layer as Array<{ encoding: { stroke: { value: unknown } } }>)[0]!;
     expect(layer.encoding.stroke.value).toBeNull();
   });
+
+  it("centers a red-yellow-green scale on zero for signed map values", () => {
+    const spec = presentChartSpec({
+      mark: "rect",
+      encoding: {
+        fill: {
+          field: "change",
+          scale: { domain: [-100, 2_000], range: ["#a50026", "#ffffbf", "#006837"] },
+        },
+      },
+    });
+    expect((spec.encoding as { fill: { scale: { domainMid: number } } }).fill.scale.domainMid).toBe(0);
+  });
+
+  it("preserves GGSQL's projected camera so text and geoshapes share one translation", () => {
+    const projection = {
+      type: "identity",
+      reflectY: true,
+      scale: { expr: "min(width / 100, height / 100)" },
+      translate: { expr: "[width / 2, height / 2]" },
+    };
+    const spec = presentChartSpec({
+      data: { values: [
+        { geometry: { type: "Polygon", coordinates: [[[1_000, 1_000], [1_200, 1_000], [1_200, 1_200], [1_000, 1_000]]] } },
+        { label_x: 1_100, label_y: 1_100, label: "A" },
+      ] },
+      projection,
+      layer: [
+        { description: "background", mark: "geoshape" },
+        { mark: "geoshape", encoding: { shape: { field: "geometry" } } },
+        { mark: "text", encoding: { longitude: { field: "label_x" }, latitude: { field: "label_y" }, text: { field: "label" } } },
+      ],
+    });
+    expect(spec.projection).toEqual(projection);
+    expect(spec.layer).toHaveLength(2);
+  });
 });

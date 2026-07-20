@@ -53,11 +53,16 @@ describe("geometry projection fitting", () => {
   });
 
   it("applies viewport movement without changing the fit geometry", () => {
-    const values = [feature(-100, 40), feature(-90, 45)];
+    const values = [
+      { ...feature(-100, 40), label_x: -99.9, label_y: 40.1 },
+      { ...feature(-90, 45), label_x: -89.9, label_y: 45.1 },
+    ];
     const focus = geometryFeatureCollection(values);
-    const moved = applyMapViewport(values, focus, { zoom: 2, panX: 0.1, panY: 0 });
+    const moved = applyMapViewport(values, focus, { zoom: 2, panX: 0.1, panY: 0 }, [{ x: "label_x", y: "label_y" }]);
     expect(moved).not.toBe(values);
     expect((moved[0]!.geometry as TestGeometry).coordinates[0]![0]![0]).toBeLessThan(-100);
+    expect(moved[0]!.label_x).toBeLessThan(-99.9);
+    expect(moved[0]!.label_y).not.toBe(40.1);
     expect((focus.features[0]!.geometry as TestGeometry).coordinates[0]![0]![0]).toBe(-100);
   });
 });
