@@ -1,4 +1,4 @@
-# Recommended warehouse datasets
+# Recommended Chartize datasets
 
 `recommended.json` is the acquisition manifest. It separates a small automatic starter pack from larger or credentialed datasets.
 
@@ -47,8 +47,8 @@ Use `pnpm data:seed -- --all` to additionally publish CDC PLACES plus the offici
 ADMIN_TOKEN=local-dev-token pnpm data:seed -- cdc_places_county_2025
 ```
 
-The current all-automatic warehouse contains nine published sources: the six-table starter pack, CDC PLACES county health estimates, BEA county personal income, and BEA county GDP. MIT county presidential returns are CC0 but Harvard Dataverse now requires a guestbook response before it issues a download URL; complete that interaction at the DOI and import the resulting TSV through Admin. ACS API calls require a Census key, so the profile remains a curated manual follow-up rather than pretending an unauthenticated seed is reliable.
+The current automatic catalog contains nine published sources: the six-table starter pack, CDC PLACES county health estimates, BEA county personal income, and BEA county GDP. MIT county presidential returns are CC0 but Harvard Dataverse now requires a guestbook response before it issues a download URL; complete that interaction at the DOI and import the resulting TSV through Admin. ACS API calls require a Census key, so the profile remains a curated manual follow-up rather than pretending an unauthenticated seed is reliable.
 
-The command skips slugs that are already published. Add `--force` when you intentionally want to download current upstream data and create a new warehouse version.
+The command skips slugs that are already published. Add `--force` when you intentionally want to download current upstream data and publish a new canonical version.
 
 Read each manifest entry’s notes before automating redistribution. Keep ACS margins of error, PLACES confidence limits, exact election-data versions, and the original source metadata rather than flattening those distinctions away.

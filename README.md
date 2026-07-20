@@ -1,34 +1,38 @@
 # Chartize
 
-A self-hosted data warehouse and GGSQL visualization workspace. It combines a native DuckDB/GGSQL service for published data with a browser-local GGSQL WASM path for private files.
+Chartize is a self-hosted, local-first GGSQL visualization studio for civic, polling, Census, election, economic, and geographic data.
 
-The explorer—not a promotional homepage—is the product surface. It is a cursor-led DWIM workspace: Monaco GGSQL stays primary, while sources, fields, visual parameters, table ranges, and chart ranges expose contextual controls at the selection. The raw source stream, query result, and chart remain visible in three resizable panes. It also supports Vega-Lite rendering, PNG/SVG/share-card export, local workspace persistence, warehouse queries, and opt-in AI assistance.
+The explorer is the product surface. Monaco GGSQL stays primary while sources, fields, visualization parameters, table ranges, chart ranges, and map features expose contextual controls around the current selection. The code, source table, and rendered result live in three resizable panes.
 
 ![Chartize workspace with GGSQL, source data, and a linked chart](./docs/images/chartize-workspace.webp)
 
-## Execution boundary
+## Local-first execution
 
-| Input | Where it is stored | Where GGSQL runs |
+| Input | Storage | Execution |
 | --- | --- | --- |
-| Published Census, polling, election, or geographic datasets | Versioned Parquet plus provenance files on the VPS | Native Rust GGSQL + DuckDB on the VPS |
-| Visitor CSV, TSV, JSON/NDJSON, Parquet, GeoJSON, or zipped Shapefile | Browser memory; IndexedDB only after **Save local** | GGSQL WASM in a Web Worker |
-| AI query generation | Only schema by default; up to 20 preview rows after opt-in | Next.js server route using OpenAI or Azure OpenAI |
-| Multimodal chart critique | Rendered chart and query after a confirmation dialog | Next.js server route |
+| Published datasets | Canonical, versioned Parquet on the VPS; exact artifact bytes retained by worker-owned Dexie/IndexedDB | `ggsql-wasm` in a Web Worker |
+| Visitor CSV, TSV, JSON/NDJSON, Parquet, GeoJSON, or zipped Shapefile | Worker-owned Dexie/IndexedDB, private to this browser | The same browser worker |
+| Derived tables and mutations | An isolated, mutable engine context for each workspace | The same browser worker |
+| AI visualization or analysis request | One conversation per workspace; schema and enabled context are relayed to the model | Any requested data query runs in the browser, then its bounded result returns to the AI relay |
 
-The server is not merely a file API. It executes shared queries, enforces read-only policy, owns catalog metadata, profiles imports, publishes stable views, and rolls datasets back between immutable versions.
+React and Zustand do not know that IndexedDB or the data service exists. They send typed commands to one browser worker. When GGSQL first references `chartize:<slug>`, that worker resolves the catalog version, checks Dexie, downloads the exact Parquet artifact only when missing, stores it, and registers a copy in the active workspace's engine context. Subsequent workspaces and sessions reuse the canonical bytes locally. A workspace may freely create, update, rename, or derive local tables without changing that baseline or another workspace.
 
-Chartize AI is one workspace-scoped Terra conversation, not a separate generator bolted onto each pane. Cursor ranges, selected rows, and individual geographic features can become its active context; with permission it can query bounded warehouse data or use grounded web search.
+The Rust service has a deliberately small public surface: catalog metadata, exact dataset-version downloads, and steward-only ingestion and rollback. It never accepts arbitrary SQL from the browser or from Chartize AI.
 
-![Chartize AI comparing a selected county with its statewide peers](./docs/images/chartize-ai-county-context.webp)
+Chartize AI is a workspace-scoped Terra conversation. It receives the active query, chart description, catalog schemas, and user-enabled selection context. If it needs exact values, it emits a bounded data request; the worker runs it in the same workspace engine and continues the model turn. Generated GGSQL is tried locally, and an engine diagnostic can trigger up to two bounded repair passes.
+
+![Chartize AI explaining a county population-change map with browser-grounded statistics](./docs/images/chartize-ai-county-context.webp)
 
 ## Stack
 
-- Frontend: Next.js 16, React 19, Monaco, Vega/Vega-Lite, `ggsql-wasm`, and a Zod-inferred Zustand workspace store
-- Browser conversion: `hyparquet-writer`, a GeoJSON-to-WKB encoder, and `shpjs`
-- Warehouse API: Rust, Axum, GGSQL 0.4.1, DuckDB
-- Storage: one DuckDB catalog plus Zstd-compressed Parquet and original provenance files under `data/`
-- AI: one Responses API conversation per workspace, using `gpt-5.6-terra`; optional Azure OpenAI deployment
-- Deployment: Docker Compose and Caddy on a single VPS
+- Next.js 16, React 19, Monaco, Vega/Vega-Lite, Vanilla Extract
+- Zod-validated Zustand workspace documents and actions
+- `ggsql-wasm` plus an in-browser SQL engine in a Web Worker
+- Dexie/IndexedDB, owned only by the worker, for canonical Parquet bytes, local uploads, catalog metadata, and saved workspace documents
+- Rust and Axum for catalog, typed Parquet delivery, imports, profiling, and rollback
+- DuckDB only inside the steward service for ingestion/catalog metadata; normalized datasets are Parquet
+- OpenAI Responses API with `gpt-5.6-terra`
+- Docker Compose with Caddy, or host Nginx with Basic Auth, on one VPS
 
 ## Run locally
 
@@ -41,69 +45,59 @@ pnpm fetch:spatialite
 ADMIN_TOKEN=local-dev-token pnpm dev
 ```
 
-Open `http://localhost:3000/explore`. The engine listens on `127.0.0.1:8787`; use `local-dev-token` on `/admin`. The built-in penguins source works without importing data or configuring AI.
+Open `http://localhost:3000/explore`. The data service listens on `127.0.0.1:8787`; use `local-dev-token` on `/admin`.
 
-In a second terminal, publish the six-dataset starter warehouse:
+In a second terminal, publish the starter datasets:
 
 ```bash
 ADMIN_TOKEN=local-dev-token pnpm data:seed
 ```
 
-The penguins entry is an embedded GGSQL engine smoke test, not warehouse data. The full prioritized acquisition list and refresh notes are in [`datasets/README.md`](./datasets/README.md).
+The embedded penguins table is an engine smoke test, not a published dataset. The acquisition list and refresh notes are in [`datasets/README.md`](./datasets/README.md).
 
-For AI, put `OPENAI_API_KEY` in the environment used by Next.js. For Azure set `AI_PROVIDER=azure` and supply the Azure endpoint, key, deployment name, and supported API version. A deployment name is not a universal model entitlement: confirm the model is available in the Azure region/subscription before depending on student credits.
+For AI, set `OPENAI_API_KEY` in the environment used by Next.js. The key remains server-side. The browser receives only the structured AI result; the AI route receives bounded browser query results only when the enabled data-access option permits them.
 
-## VPS deployment
+## VPS preview
 
 ```bash
 cp .env.example .env
-# Set a long random ADMIN_TOKEN, SITE_ADDRESS, and optionally an AI provider key.
+# Set a long ADMIN_TOKEN, SITE_ADDRESS, and OPENAI_API_KEY.
 docker compose up --build -d
 ```
 
-Set `SITE_ADDRESS=studio.example.com` for automatic HTTPS. Only Caddy is public; the warehouse engine remains inside the Compose network and the web server proxies `/engine/*` at runtime.
+Set `SITE_ADDRESS=studio.example.com` for Caddy-managed HTTPS. For host Nginx and Basic Auth, follow [`docs/VPS_DEPLOYMENT.md`](./docs/VPS_DEPLOYMENT.md).
 
-For a preview subdomain behind host Nginx and Basic Auth, use [`docs/VPS_DEPLOYMENT.md`](./docs/VPS_DEPLOYMENT.md). It includes the archive/copy flow, private Compose services, one-shot warehouse seeding, TLS, credentials, backups, and updates.
-
-The default 70 GB VPS layout is deliberately simple:
+The storage layout fits a single 70 GB VPS:
 
 ```text
 data/
-  warehouse.duckdb
+  chartize.duckdb
   datasets/<slug>/<version>/
     <original upload>
     data.parquet
 ```
 
-Back up `data/` as one unit. Imports refuse to begin unless there is room for the upload, normalized copy, and a 500 MB reserve. Set `MAX_IMPORT_BYTES` below your reverse-proxy limit.
+Back up `data/` as one unit. Imports retain the original, normalize a canonical version to Parquet, profile it, and atomically activate that version. Rollback reactivates the previous version without deleting either copy. These published files are baselines; browser workspaces remain independently mutable.
 
-## Steward workflow
+## Security boundary
 
-1. Visit `/admin` and enter `ADMIN_TOKEN`.
-2. Upload CSV/TSV, JSON/NDJSON, Parquet, GeoJSON, GeoPackage, FlatGeobuf, KML, Shapefile, or a Shapefile ZIP.
-3. Add title, stable lowercase slug, source, license, and attribution.
-4. The service saves the original, normalizes a version to Parquet, profiles its schema and row count, and atomically points the stable view at it.
-5. **Rollback** moves the view to the most recent inactive version without deleting either version.
-
-Geo formats are read with DuckDB Spatial and published with WKB geometry so GGSQL can safely move the data through Arrow.
-
-## Query and privacy safeguards
-
-- Warehouse requests must validate as GGSQL, contain a visualization, and use a single `SELECT`/`WITH` statement.
-- DDL/DML, extension loading, file readers, remote URLs, attach/copy/export operations, and pragmas are blocked in public queries.
-- The browser worker has a 100 MB per-file safety limit; the VPS limit is separately configurable.
-- AI calls use `store: false`. Row samples are omitted unless the user checks the consent control; chart images require an additional confirmation.
-- Admin imports require `x-admin-token`, entered at the steward screen and never stored by the app.
+- Public browser code can request only a catalog entry or an exact `{slug, version}` Parquet artifact.
+- `/api/query`, `/api/validate`, and `/api/ai/query-data` do not exist on the Rust service.
+- SQL and GGSQL execute in the browser worker; local derived tables and mutations cannot modify VPS data.
+- Only the worker can access Dexie or request catalog/data artifacts. React and Zustand cannot issue data-service requests.
+- The browser worker has a 100 MB per-file import guard; steward import limits are configured separately.
+- AI calls use `store: false`. Sample rows are omitted unless the user enables them.
+- Steward imports require `x-admin-token`, entered on `/admin` and not persisted by the application.
 
 ## Verification
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm build
-cargo check --manifest-path services/engine/Cargo.toml
+pnpm --filter @chartize/web typecheck
+pnpm --filter @chartize/web test
+pnpm --filter @chartize/web build
+cargo test --manifest-path services/engine/Cargo.toml
 ```
 
-The `.cargo/config.toml` uses the generated parser included with `tree-sitter-ggsql`, so a global Tree-sitter CLI is not required.
+The browser acceptance pass covers cold and warm `chartize:` loads, workspace mutation isolation, and a local CSV upload that Chartize AI cleans into a derived table before source deletion resets that workspace. The CSV path performs no catalog or dataset-artifact request.
 
-The post-pivot architecture review, resolved hazards, and remaining extraction seams are documented in [`docs/CODE_AUDIT.md`](./docs/CODE_AUDIT.md).
+The post-pivot boundary review is in [`docs/CODE_AUDIT.md`](./docs/CODE_AUDIT.md).

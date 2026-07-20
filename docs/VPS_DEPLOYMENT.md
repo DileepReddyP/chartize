@@ -1,6 +1,6 @@
 # VPS preview deployment
 
-This path keeps Nginx and TLS on the host, publishes only Next.js on `127.0.0.1:3000`, and leaves the Rust warehouse engine private inside Docker. The `data/` directory holds the DuckDB catalog, original source artifacts, and versioned Parquet tables.
+This path keeps Nginx and TLS on the host, publishes only Next.js on `127.0.0.1:3000`, and leaves the Rust catalog/data service private inside Docker. The `data/` directory holds catalog metadata, original source artifacts, and versioned Parquet tables.
 
 ## 1. Package and copy
 
@@ -33,7 +33,7 @@ curl --fail http://127.0.0.1:3000/explore >/dev/null
 
 Do not start the `caddy` service when host Nginx owns ports 80 and 443.
 
-## 3. Seed the warehouse
+## 3. Seed the dataset catalog
 
 The Compose tool profile runs the acquisition manifest inside the same private network:
 
@@ -67,7 +67,7 @@ docker compose up --build -d engine web
 docker image prune -f
 ```
 
-Back up the warehouse as one unit while the engine is stopped or from a filesystem snapshot:
+Back up Chartize data as one unit while the service is stopped or from a filesystem snapshot:
 
 ```bash
 docker compose stop engine
