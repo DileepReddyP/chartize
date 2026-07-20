@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assertReadOnlyGgsql } from "./query-context";
-import { VISUALIZATION_EXAMPLES } from "./examples";
+import { EXAMPLE_CATEGORIES, VISUALIZATION_EXAMPLES } from "./examples";
 
 describe("visualization examples", () => {
   it("keeps every example unique, read-only, and complete", () => {
@@ -15,6 +15,14 @@ describe("visualization examples", () => {
   it("includes maps, uncertainty, regression, and scenario compositions", () => {
     const tags = new Set(VISUALIZATION_EXAMPLES.flatMap((example) => example.tags));
     expect([...tags]).toEqual(expect.arrayContaining(["map", "ribbon", "regression", "scenario"]));
+  });
+
+  it("keeps every visible category named and populated", () => {
+    for (const category of EXAMPLE_CATEGORIES) {
+      expect(category.title.trim()).not.toBe("");
+      expect(category.description.trim()).not.toBe("");
+      expect(VISUALIZATION_EXAMPLES.some((example) => example.category === category.id)).toBe(true);
+    }
   });
 
   it("centers contiguous-U.S. Albers examples on the data", () => {

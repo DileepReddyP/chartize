@@ -120,6 +120,14 @@ function makeThresholdStroke(y: { scale?: { domain?: unknown } }, threshold: Cha
   };
 }
 
+function hasIntentionalStroke(channel: unknown) {
+  if (!channel || typeof channel !== "object" || Array.isArray(channel)) return false;
+  const value = channel as { field?: unknown; value?: unknown };
+  if (typeof value.field === "string") return true;
+  if (typeof value.value !== "string") return value.value !== undefined;
+  return !["black", "#000000", "#747474"].includes(value.value.toLocaleLowerCase());
+}
+
 function withLegendTitle(channel: unknown, title: string | undefined, genericNames: readonly string[]) {
   if (!title?.trim() || !channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
   const value = channel as Record<string, unknown>;
@@ -140,9 +148,14 @@ function styleSpecNode(
   const encoding = node.encoding as Record<string, unknown> | undefined;
   const mark = typeof node.mark === "string" ? node.mark : (node.mark as { type?: string } | undefined)?.type;
   const y = encoding?.y as { field?: unknown; title?: unknown; scale?: { domain?: unknown } } | undefined;
+  const yField = typeof y?.field === "string" ? y.field : "";
   const yTitle = typeof y?.title === "string" ? y.title : "";
   const thresholdStroke = threshold && mark === "line" && typeof y?.field === "string"
-    && threshold.fieldTitles.some((title) => title.toLocaleLowerCase() === yTitle.toLocaleLowerCase())
+    && threshold.fieldTitles.some((title) => {
+      const normalized = title.toLocaleLowerCase();
+      return normalized === yField.toLocaleLowerCase() || normalized === yTitle.toLocaleLowerCase();
+    })
+    && !hasIntentionalStroke(encoding?.stroke)
     ? makeThresholdStroke(y, threshold)
     : undefined;
   const withDomain = (channel: unknown, domain: [unknown, unknown] | undefined) => {

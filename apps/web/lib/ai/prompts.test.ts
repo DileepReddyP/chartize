@@ -7,6 +7,8 @@ describe("Chartize AI prompt contract", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("Continue as one conversation");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("complete executable read-only GGSQL query");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("query_warehouse");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("get_visualization_tips");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("Any request to label line endpoints must consult endpoint-labels");
   });
 
   it("keeps explanation entry points selection-aware without constraining intent", () => {

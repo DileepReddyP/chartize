@@ -19,9 +19,35 @@ describe("Chartize Vega presentation", () => {
     const spec = presentChartSpec({
       mark: "line",
       encoding: { y: { field: "approve", title: "Approval", scale: { domain: [40, 60] } } },
-    }, { fieldTitles: ["Approval"], value: 50, below: "#ee4266", above: "#147d76" });
+    }, { fieldTitles: ["approve", "Approval"], value: 50, below: "#ee4266", above: "#147d76" });
     const stroke = (spec.encoding as { stroke: { value: { stops: Array<{ color: string }> } } }).stroke;
     expect(stroke.value.stops.map(({ color }) => color)).toEqual(["#ee4266", "#ee4266", "#147d76", "#147d76"]);
+  });
+
+  it("preserves explicit colours and does not threshold derived approval scenarios", () => {
+    const threshold = { fieldTitles: ["approve", "Approval"], value: 50, below: "#ee4266", above: "#147d76" };
+    const spec = presentChartSpec({
+      layer: [
+        {
+          mark: "line",
+          encoding: {
+            y: { field: "approve", title: "Approval", scale: { domain: [35, 55] } },
+            stroke: { value: "#173f5f" },
+          },
+        },
+        {
+          mark: "line",
+          encoding: {
+            y: { field: "approve_plus_3", title: "Approval", scale: { domain: [35, 55] } },
+            stroke: { value: "#16877d" },
+          },
+        },
+      ],
+    }, threshold);
+    const layers = spec.layer as Array<{ encoding: { stroke: { value: string } } }>;
+
+    expect(layers[0]?.encoding.stroke.value).toBe("#173f5f");
+    expect(layers[1]?.encoding.stroke.value).toBe("#16877d");
   });
 
   it("removes a duplicate text stroke that makes dense labels illegible", () => {

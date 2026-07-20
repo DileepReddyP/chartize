@@ -1,5 +1,10 @@
 import { z } from "zod";
 import type { StructuredFunctionTool } from "./provider";
+import {
+  VISUALIZATION_TIP_TOPICS,
+  VisualizationTipsArgumentsSchema,
+  visualizationTipsFor,
+} from "./visualization-tips";
 
 const QueryWarehouseArgumentsSchema = z.object({
   sql: z.string().min(1).max(20_000),
@@ -22,7 +27,28 @@ export interface WorkspaceToolContext {
 
 export function createWorkspaceFunctionTools(context: WorkspaceToolContext): StructuredFunctionTool[] {
   const queryableSources = context.availableSourceIds.filter((source) => source.startsWith("chartize:"));
-  const tools: StructuredFunctionTool[] = [];
+  const tools: StructuredFunctionTool[] = [{
+    name: "get_visualization_tips",
+    description: "Retrieve Chartize's compact GGSQL 0.4.1 drawing cookbook for the visual techniques needed in this turn. Call this before writing or repairing text labels, endpoint labels, event annotations, dense or layered charts, maps, uncertainty, facets, scales, or statistical layers. The returned rules include row-cardinality invariants and executable patterns that are intentionally not all repeated in the base prompt.",
+    parameters: {
+      type: "object",
+      properties: {
+        topics: {
+          type: "array",
+          items: { type: "string", enum: [...VISUALIZATION_TIP_TOPICS] },
+          minItems: 1,
+          maxItems: 4,
+          description: "One to four techniques relevant to the requested visualization edit.",
+        },
+      },
+      required: ["topics"],
+      additionalProperties: false,
+    },
+    execute: async (argumentsValue) => {
+      const { topics } = VisualizationTipsArgumentsSchema.parse(argumentsValue);
+      return visualizationTipsFor(topics);
+    },
+  }];
 
   if (context.allowDataQueries && queryableSources.length) {
     tools.unshift({

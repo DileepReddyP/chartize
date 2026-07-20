@@ -123,7 +123,7 @@ export async function POST(request: Request) {
       sourceSelection: researchRequired && researchTarget > 1 ? "all" : "cited",
       reasoningEffort: complexRequest ? "medium" : "low",
       maxOutputTokens: 9_000,
-      cacheKey: "chartize:agent:v4",
+      cacheKey: "chartize:agent:v5",
       functionTools,
       // A required web search occupies the first response round. Complex
       // edits may then need a warehouse query, one corrected query after an
