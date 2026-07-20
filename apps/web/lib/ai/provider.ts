@@ -7,7 +7,6 @@ import type { ResponseInput } from "openai/resources/responses/responses";
 import type { z } from "zod";
 
 type ResponsesClient = OpenAI | AzureOpenAI;
-export type AiModelTier = "default" | "complex";
 type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // Live research is intentionally limited to primary civic/economic sources,
@@ -26,13 +25,11 @@ const CIVIC_RESEARCH_DOMAINS = [
   "oecd.org", "worldbank.org", "imf.org", "un.org", "ec.europa.eu", "who.int",
 ] as const;
 
-function clientAndModel(tier: AiModelTier): { client: ResponsesClient; model: string; promptCaching: boolean } {
+function clientAndModel(): { client: ResponsesClient; model: string; promptCaching: boolean } {
   if ((process.env.AI_PROVIDER ?? "openai").toLowerCase() === "azure") {
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deployment = tier === "complex"
-      ? process.env.AZURE_OPENAI_COMPLEX_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT
-      : process.env.AZURE_OPENAI_DEPLOYMENT;
+    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
     if (!apiKey || !endpoint || !deployment) {
       throw new Error("Azure OpenAI is selected, but its API key, endpoint, or deployment is missing.");
     }
@@ -51,9 +48,7 @@ function clientAndModel(tier: AiModelTier): { client: ResponsesClient; model: st
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
-  const model = tier === "complex"
-    ? process.env.AI_COMPLEX_MODEL ?? "gpt-5.6-sol"
-    : process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.6-terra";
+  const model = process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.6-terra";
   return {
     client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
     model,
@@ -67,12 +62,11 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   instructions: string;
   input: string | ResponseInput;
   webSearch?: boolean;
-  tier?: AiModelTier;
   reasoningEffort?: ReasoningEffort;
   maxOutputTokens?: number;
   cacheKey: string;
 }): Promise<{ output: z.infer<Schema>; sources: Array<{ title: string; url: string }>; researched: boolean; usage: AiUsage }> {
-  const { client, model, promptCaching } = clientAndModel(options.tier ?? "default");
+  const { client, model, promptCaching } = clientAndModel();
   const response = await client.responses.parse({
     model,
     store: false,
