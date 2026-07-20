@@ -1,4 +1,5 @@
 import {
+  AiUsageSchema,
   DatasetManifestSchema,
   FieldMetadataSchema,
   GgsqlDraftSchema,
@@ -7,6 +8,7 @@ import {
   type FieldMetadata,
   type GgsqlDraft,
   type TablePreview,
+  type AiUsage,
 } from "@chartize/contracts";
 import { z } from "zod";
 import { create } from "zustand";
@@ -116,6 +118,7 @@ export const WorkspaceSnapshotSchema = z.object({
   aiBusy: z.boolean(),
   aiMessage: z.string(),
   aiHistory: z.array(AiMessageSchema),
+  aiUsage: AiUsageSchema.nullable(),
   includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
   leftPaneRatio: LeftPaneRatioSchema,
@@ -203,6 +206,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   setAiBusy: (value: boolean) => void;
   setAiMessage: (value: string) => void;
   setAiHistory: (value: Updater<AiConversationMessage[]>) => void;
+  setAiUsage: (value: AiUsage | null) => void;
   setIncludeSamples: (value: boolean) => void;
   setAiPreferences: (value: AiResponsePreferences) => void;
   setLeftPaneRatio: (value: number) => void;
@@ -252,6 +256,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   aiBusy: false,
   aiMessage: "",
   aiHistory: [],
+  aiUsage: null,
   includeSamples: false,
   aiPreferences: { hypothesize: true, concise: true, challenge: false, technical: false },
   leftPaneRatio: 0.44,
@@ -324,6 +329,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set) => ({
   setAiBusy: (aiBusy) => set({ aiBusy }),
   setAiMessage: (aiMessage) => set({ aiMessage }),
   setAiHistory: (next) => set((state) => ({ aiHistory: resolve(next, state.aiHistory) })),
+  setAiUsage: (aiUsage) => set({ aiUsage: aiUsage ? AiUsageSchema.parse(aiUsage) : null }),
   setIncludeSamples: (includeSamples) => set({ includeSamples }),
   setAiPreferences: (aiPreferences) => set({ aiPreferences: AiResponsePreferencesSchema.parse(aiPreferences) }),
   setLeftPaneRatio: (leftPaneRatio) => set({ leftPaneRatio: LeftPaneRatioSchema.parse(leftPaneRatio) }),
@@ -363,6 +369,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set) => ({
       aiBusy: false,
       aiMessage: "",
       aiHistory: [],
+      aiUsage: null,
     });
   },
   closeAi: () => set({ aiOpen: false, aiPhase: "idle" }),

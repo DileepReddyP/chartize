@@ -208,6 +208,37 @@ export const AiSuggestionSchema = z.object({
   researched: z.boolean(),
 });
 
+export const AiUsageSchema = z.object({
+  models: z.array(z.string()).min(1),
+  calls: z.number().int().positive(),
+  inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  reasoningTokens: z.number().int().nonnegative(),
+  totalTokens: z.number().int().nonnegative(),
+});
+
+export const AiExplanationResponseSchema = z.object({
+  kind: z.literal("explanation"),
+  explanation: z.string(),
+  assumptions: z.array(z.string()),
+  warnings: z.array(z.string()),
+  sources: z.array(AiCitationSchema),
+  researched: z.boolean(),
+  usage: AiUsageSchema,
+});
+
+export const AiVisualizationResponseSchema = AiSuggestionSchema.extend({
+  kind: z.literal("visualization"),
+  usage: AiUsageSchema,
+});
+
+export const AiResponseSchema = z.discriminatedUnion("kind", [
+  AiExplanationResponseSchema,
+  AiVisualizationResponseSchema,
+]);
+
 export type FieldMetadata = z.infer<typeof FieldMetadataSchema>;
 export type JoinHint = z.infer<typeof JoinHintSchema>;
 export type DatasetManifest = z.infer<typeof DatasetManifestSchema>;
@@ -221,3 +252,7 @@ export type QueryResult = z.infer<typeof QueryResultSchema>;
 export type TablePreview = z.infer<typeof TablePreviewSchema>;
 export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
 export type AiCitation = z.infer<typeof AiCitationSchema>;
+export type AiUsage = z.infer<typeof AiUsageSchema>;
+export type AiExplanationResponse = z.infer<typeof AiExplanationResponseSchema>;
+export type AiVisualizationResponse = z.infer<typeof AiVisualizationResponseSchema>;
+export type AiResponse = z.infer<typeof AiResponseSchema>;

@@ -1,9 +1,14 @@
-import { FieldMetadataSchema } from "@chartize/contracts";
+import {
+  AiExplanationResponseSchema,
+  AiVisualizationResponseSchema,
+  FieldMetadataSchema,
+} from "@chartize/contracts";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ModelSuggestionSchema, normalizeModelSuggestion, publicAiError } from "@/lib/ai/model-output";
-import { CHARTIZE_AI_INSTRUCTIONS, chartizePreferenceInstructions, chartizeTurnInstructions, schemaContext } from "@/lib/ai/prompts";
-import { structuredResponse } from "@/lib/ai/provider";
+import { compactAiContext, compactHistory, isComplexVisualizationRequest, isExplanationRequest, shouldResearch } from "@/lib/ai/context";
+import { ModelExplanationSchema, ModelSuggestionSchema, normalizeModelSuggestion, publicAiError } from "@/lib/ai/model-output";
+import { CHARTIZE_AI_INSTRUCTIONS, CHARTIZE_EXPLAIN_INSTRUCTIONS, chartizePreferenceInstructions, chartizeTurnInstructions } from "@/lib/ai/prompts";
+import { aggregateAiUsage, structuredResponse } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
 
@@ -58,34 +63,75 @@ export async function POST(request: Request) {
       : [{ id: source || "ggsql:penguins", title: source || "GGSQL sample · Penguins", description: "Current source", fields: body.schema }];
     const allowedSources = availableSources.map((candidate) => candidate.id);
     const hasCurrentQuery = Boolean(body.currentQuery.trim());
+    const explanationOnly = body.task === "explain" || isExplanationRequest(body.request);
+    const compactContext = compactAiContext({
+      sources: availableSources,
+      activeSource: source,
+      currentQuery: body.currentQuery,
+      request: body.request,
+      contextNote: body.contextNote,
+      view: body.view,
+    });
     const sampleNotice = body.sampleData
       ? `The user explicitly consented to include this labeled data sample (${body.sampleData.rows.length} rows). Columns and row values are aligned by position:\n${JSON.stringify(body.sampleData)}`
       : "No row values were shared. Work only from field metadata.";
-    const researchEnabled = body.preferences.hypothesize && Boolean(body.sampleData?.rows.length);
+    const researchEnabled = shouldResearch(
+      [body.request, body.contextNote, body.view?.title, body.view?.subtitle].filter(Boolean).join(" "),
+      body.preferences.hypothesize,
+      explanationOnly,
+    );
     const workspaceTurn = [
       `User request: ${body.request}`,
       `Active workspace context: ${body.contextNote || "No narrower cursor or selection context."}`,
       `Rendered view: ${JSON.stringify(body.view ?? { title: "", subtitle: "", sources: [] })}`,
       `Current date: ${new Date().toISOString().slice(0, 10)}`,
-      `Active dataset schema: ${hasCurrentQuery ? schemaContext(source, body.schema) : "No active dataset; choose from the source catalog."}`,
-      `Available source catalog: ${JSON.stringify(availableSources)}`,
+      `Available source index: ${JSON.stringify(compactContext.sourceIndex)}`,
+      `Relevant source schemas: ${JSON.stringify(compactContext.sourceSchemas)}`,
       `Current GGSQL:\n${body.currentQuery || "(none)"}`,
       sampleNotice,
     ].join("\n\n");
     const input = [
-      ...body.history.map((message) => ({ role: message.role, content: message.text })),
+      ...compactHistory(body.history).map((message) => ({ role: message.role, content: message.text })),
       { role: "user" as const, content: workspaceTurn },
     ];
 
-    const instructions = `${CHARTIZE_AI_INSTRUCTIONS}\n\n${chartizeTurnInstructions(body.context, body.task)}\n${chartizePreferenceInstructions(body.preferences)}\n${researchEnabled ? "LIVE RESEARCH: Web search is required for this turn. Research the subject and exact selected period before answering factual or causal questions. Name concrete dated developments supported by sources; distinguish them from what the chart itself proves. Do not pad the answer with generic possibilities." : "LIVE RESEARCH: unavailable for this turn. Do not imply that you searched the web."}\n${hasCurrentQuery ? "Keep the active source unless the user asks to discover or use different data." : "BLANK WORKSPACE: There is no active query or source. Select every source needed from the catalog and return a complete executable visualization in one turn. Do not inherit the previous workspace's subject, source, title, or fields."}\nThe draft source must be one of these exact IDs: ${JSON.stringify(allowedSources)}.`;
+    if (explanationOnly) {
+      const explanationResponse = await structuredResponse({
+        name: "chartize_explanation",
+        schema: ModelExplanationSchema,
+        instructions: `${CHARTIZE_EXPLAIN_INSTRUCTIONS}\n\n${chartizeTurnInstructions(body.context, "explain")}\n${chartizePreferenceInstructions(body.preferences)}\n${researchEnabled ? "LIVE RESEARCH: Required. Search the exact subject and selected period before answering, then give concrete dated context rather than generic possibilities." : "LIVE RESEARCH: Not needed for this turn. Do not imply that you searched."}`,
+        input,
+        webSearch: researchEnabled,
+        tier: "default",
+        reasoningEffort: researchEnabled ? "low" : "none",
+        maxOutputTokens: 3_500,
+        cacheKey: "chartize:explanation:v2",
+      });
+      return NextResponse.json(AiExplanationResponseSchema.parse({
+        kind: "explanation",
+        ...explanationResponse.output,
+        explanation: explanationResponse.output.explanation.replaceAll("?utm_source=openai", ""),
+        sources: explanationResponse.sources,
+        researched: explanationResponse.researched,
+        usage: explanationResponse.usage,
+      }));
+    }
+
+    const complexRequest = isComplexVisualizationRequest(body.request, body.currentQuery, body.task);
+    const instructions = `${CHARTIZE_AI_INSTRUCTIONS}\n\n${chartizeTurnInstructions(body.context, body.task)}\n${chartizePreferenceInstructions(body.preferences)}\nLIVE RESEARCH: Not needed for this visualization turn. Do not imply that you searched.\n${hasCurrentQuery ? "Keep the active source unless the user asks to discover or use different data." : "BLANK WORKSPACE: There is no active query or source. Select every source needed from the catalog and return a complete executable visualization in one turn. Do not inherit the previous workspace's subject, source, title, or fields."}\nThe draft source must be one of these exact IDs: ${JSON.stringify(allowedSources)}.`;
     const modelResponse = await structuredResponse({
       name: "ggsql_suggestion",
       schema: ModelSuggestionSchema,
       instructions,
       input,
-      webSearch: researchEnabled,
+      webSearch: false,
+      tier: complexRequest ? "complex" : "default",
+      reasoningEffort: complexRequest ? "medium" : "low",
+      maxOutputTokens: 9_000,
+      cacheKey: "chartize:visualization:v2",
     });
     let result = normalizeModelSuggestion(modelResponse.output, modelResponse);
+    let usage = modelResponse.usage;
     let validation = await validateGeneratedQuery(result.query);
     if (!validation.valid) {
       const repairResponse = await structuredResponse({
@@ -98,8 +144,13 @@ export async function POST(request: Request) {
           { role: "user" as const, content: `The GGSQL validator returned these errors:\n${validation.errors.join("\n")}\n\nReturn the corrected response now.` },
         ],
         webSearch: false,
+        tier: "complex",
+        reasoningEffort: "medium",
+        maxOutputTokens: 9_000,
+        cacheKey: "chartize:repair:v2",
       });
-      result = normalizeModelSuggestion(repairResponse.output, modelResponse);
+      result = normalizeModelSuggestion(repairResponse.output, repairResponse);
+      usage = aggregateAiUsage(usage, repairResponse.usage);
       validation = await validateGeneratedQuery(result.query);
     }
     if (!validation.valid) {
@@ -108,7 +159,11 @@ export async function POST(request: Request) {
     if (!allowedSources.includes(result.draft.source)) {
       throw new Error(`The model selected an unavailable source: ${result.draft.source}`);
     }
-    return NextResponse.json(result);
+    return NextResponse.json(AiVisualizationResponseSchema.parse({
+      kind: "visualization",
+      ...result,
+      usage,
+    }));
   } catch (error) {
     return NextResponse.json(
       { error: publicAiError(error) },

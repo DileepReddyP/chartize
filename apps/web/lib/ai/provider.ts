@@ -2,10 +2,13 @@ import "server-only";
 
 import OpenAI, { AzureOpenAI } from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
+import type { AiUsage } from "@chartize/contracts";
 import type { ResponseInput } from "openai/resources/responses/responses";
 import type { z } from "zod";
 
 type ResponsesClient = OpenAI | AzureOpenAI;
+export type AiModelTier = "default" | "complex";
+type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 // Live research is intentionally limited to primary civic/economic sources,
 // established pollsters, research institutions, and major original reporting.
@@ -23,11 +26,13 @@ const CIVIC_RESEARCH_DOMAINS = [
   "oecd.org", "worldbank.org", "imf.org", "un.org", "ec.europa.eu", "who.int",
 ] as const;
 
-function clientAndModel(): { client: ResponsesClient; model: string } {
+function clientAndModel(tier: AiModelTier): { client: ResponsesClient; model: string; promptCaching: boolean } {
   if ((process.env.AI_PROVIDER ?? "openai").toLowerCase() === "azure") {
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT;
+    const deployment = tier === "complex"
+      ? process.env.AZURE_OPENAI_COMPLEX_DEPLOYMENT ?? process.env.AZURE_OPENAI_DEPLOYMENT
+      : process.env.AZURE_OPENAI_DEPLOYMENT;
     if (!apiKey || !endpoint || !deployment) {
       throw new Error("Azure OpenAI is selected, but its API key, endpoint, or deployment is missing.");
     }
@@ -39,15 +44,20 @@ function clientAndModel(): { client: ResponsesClient; model: string } {
         apiVersion: process.env.AZURE_OPENAI_API_VERSION ?? "2025-04-01-preview",
       }),
       model: deployment,
+      promptCaching: false,
     };
   }
 
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
+  const model = tier === "complex"
+    ? process.env.AI_COMPLEX_MODEL ?? "gpt-5.6-sol"
+    : process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.6-terra";
   return {
     client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
-    model: process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.6-terra",
+    model,
+    promptCaching: model.startsWith("gpt-5.6"),
   };
 }
 
@@ -57,15 +67,24 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   instructions: string;
   input: string | ResponseInput;
   webSearch?: boolean;
-}): Promise<{ output: z.infer<Schema>; sources: Array<{ title: string; url: string }>; researched: boolean }> {
-  const { client, model } = clientAndModel();
+  tier?: AiModelTier;
+  reasoningEffort?: ReasoningEffort;
+  maxOutputTokens?: number;
+  cacheKey: string;
+}): Promise<{ output: z.infer<Schema>; sources: Array<{ title: string; url: string }>; researched: boolean; usage: AiUsage }> {
+  const { client, model, promptCaching } = clientAndModel(options.tier ?? "default");
   const response = await client.responses.parse({
     model,
     store: false,
-    reasoning: { effort: "low" },
+    reasoning: { effort: options.reasoningEffort ?? "low" },
     instructions: options.instructions,
     input: options.input,
     text: { format: zodTextFormat(options.schema, options.name) },
+    max_output_tokens: options.maxOutputTokens,
+    ...(promptCaching ? {
+      prompt_cache_key: options.cacheKey,
+      prompt_cache_options: { mode: "implicit" as const, ttl: "30m" as const },
+    } : {}),
     ...(options.webSearch ? {
       tools: [{
         type: "web_search" as const,
@@ -113,6 +132,29 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
     output: options.schema.parse(response.output_parsed),
     sources: sources.slice(0, 6),
     researched,
+    usage: {
+      models: [model],
+      calls: 1,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      cachedInputTokens: response.usage?.input_tokens_details.cached_tokens ?? 0,
+      cacheWriteTokens: response.usage?.input_tokens_details.cache_write_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+      reasoningTokens: response.usage?.output_tokens_details.reasoning_tokens ?? 0,
+      totalTokens: response.usage?.total_tokens ?? 0,
+    },
+  };
+}
+
+export function aggregateAiUsage(...values: AiUsage[]): AiUsage {
+  return {
+    models: [...new Set(values.flatMap((value) => value.models))],
+    calls: values.reduce((total, value) => total + value.calls, 0),
+    inputTokens: values.reduce((total, value) => total + value.inputTokens, 0),
+    cachedInputTokens: values.reduce((total, value) => total + value.cachedInputTokens, 0),
+    cacheWriteTokens: values.reduce((total, value) => total + value.cacheWriteTokens, 0),
+    outputTokens: values.reduce((total, value) => total + value.outputTokens, 0),
+    reasoningTokens: values.reduce((total, value) => total + value.reasoningTokens, 0),
+    totalTokens: values.reduce((total, value) => total + value.totalTokens, 0),
   };
 }
 

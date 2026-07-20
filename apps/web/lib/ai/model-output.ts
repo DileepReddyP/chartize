@@ -27,7 +27,14 @@ export const ModelSuggestionSchema = AiSuggestionSchema.omit({ sources: true, re
   }),
 });
 
+export const ModelExplanationSchema = z.object({
+  explanation: z.string(),
+  assumptions: z.array(z.string()),
+  warnings: z.array(z.string()),
+});
+
 export type ModelSuggestion = z.infer<typeof ModelSuggestionSchema>;
+export type ModelExplanation = z.infer<typeof ModelExplanationSchema>;
 
 const VISUAL_CLAUSE = /^\s*(DRAW|PLACE|SCALE|FACET|LABEL|PROJECT)\b/i;
 const LABEL_ENTRY = /^\s*(title|subtitle|x|y|colour|color|fill|size|shape|linetype|linewidth|opacity)\s*=>/i;

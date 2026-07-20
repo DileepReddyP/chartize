@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import type { AiUsage } from "@chartize/contracts";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AiContext, AiConversationMessage, AiPlacement, AiResponsePreferences } from "@/lib/workspace/store";
 
 export type { AiConversationMessage } from "@/lib/workspace/store";
@@ -15,6 +18,7 @@ interface AiAssistantProps {
   ready: boolean;
   status: string;
   history: AiConversationMessage[];
+  usage: AiUsage | null;
   includeSamples: boolean;
   preferences: AiResponsePreferences;
   leftPaneRatio: number;
@@ -22,7 +26,7 @@ interface AiAssistantProps {
   onPrompt: (value: string) => void;
   onIncludeSamples: (value: boolean) => void;
   onPreferences: (value: AiResponsePreferences) => void;
-  onAsk: (task: "generate" | "repair" | "explain") => void;
+  onAsk: (task: "generate" | "repair" | "explain", request?: string) => void;
 }
 
 const contextCopy: Record<AiContext, {
@@ -43,28 +47,29 @@ const contextCopy: Record<AiContext, {
   },
 };
 
-function inlineMessage(text: string): ReactNode[] {
-  return text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
-    const link = /^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/.exec(part);
-    if (link) return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>;
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return <code key={index}>{part.slice(1, -1)}</code>;
-    }
-    return part;
-  });
-}
-
 function MessageBody({ text }: { text: string }) {
   return (
     <div className="ai-message-body">
-      {text.split(/\n{2,}/).filter(Boolean).map((paragraph, index) => (
-        <p key={index}>{inlineMessage(paragraph)}</p>
-      ))}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        skipHtml
+        components={{
+          a: ({ children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a>,
+        }}
+      >{text}</ReactMarkdown>
     </div>
   );
+}
+
+function compactTokenCount(value: number) {
+  if (value < 1_000) return String(value);
+  return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)}k`;
+}
+
+function usageLabel(usage: AiUsage | null) {
+  if (!usage) return "";
+  const models = usage.models.map((model) => model.replace(/^gpt-5\.6-/, "")).join(" + ");
+  return `${models} · ${compactTokenCount(usage.totalTokens)} tokens`;
 }
 
 function RoleIcon({ role }: { role: AiConversationMessage["role"] }) {
@@ -88,6 +93,7 @@ export function AiAssistant({
   ready,
   status,
   history,
+  usage,
   includeSamples,
   preferences,
   leftPaneRatio,
@@ -104,6 +110,7 @@ export function AiAssistant({
       : "Ask what changed in this selected range, or why…"
     : copy.placeholder;
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [composerMode, setComposerMode] = useState<"write" | "preview">("write");
 
   useEffect(() => {
     const focusFrame = requestAnimationFrame(() => {
@@ -127,6 +134,22 @@ export function AiAssistant({
     };
   }, [context, onClose]);
 
+  useEffect(() => {
+    if (prompt) return;
+    setComposerMode("write");
+  }, [prompt]);
+
+  useEffect(() => {
+    if (composerMode !== "write") return;
+    const frame = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [composerMode]);
+
+  const usageSummary = usageLabel(usage);
+  const usageTitle = usage
+    ? `${usage.calls} API call${usage.calls === 1 ? "" : "s"} · ${usage.inputTokens.toLocaleString()} input · ${usage.cachedInputTokens.toLocaleString()} cached · ${usage.outputTokens.toLocaleString()} output · ${usage.reasoningTokens.toLocaleString()} reasoning`
+    : undefined;
+
   return createPortal(
     <div
       className={`ai-overlay context-${context} placement-${placement}`}
@@ -137,7 +160,7 @@ export function AiAssistant({
         <header className="ai-surface-header">
           <div className="ai-title-lockup">
             <span className="ai-spark" aria-hidden="true">ai</span>
-            <div><h2>chartize ai</h2><small>{copy.mode}</small></div>
+            <div><h2>chartize ai</h2><small title={usageTitle}>{copy.mode}{usageSummary ? ` · ${usageSummary}` : ""}</small></div>
           </div>
           <button type="button" title="Close" aria-label="Close AI conversation" onClick={onClose}>×</button>
         </header>
@@ -158,26 +181,37 @@ export function AiAssistant({
         <div className="ai-compose-area">
           {status && <p className="ai-status">{status}</p>}
           <div className="ai-composer">
-            <header className="ai-composer-heading"><span>02</span><b>ask or direct</b><small>⌘↵</small></header>
-            <textarea
-              ref={inputRef}
-              id={`chartize-ai-${context}`}
-              name={`chartize-ai-${context}`}
-              autoFocus
-              value={prompt}
-              placeholder={placeholder}
-              onChange={(event) => onPrompt(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && prompt.trim() && !busy && ready) {
-                  event.preventDefault();
-                  onAsk("generate");
-                }
-              }}
-            />
+            <header className="ai-composer-heading">
+              <span>02</span><b>ask or direct</b>
+              <div className="ai-composer-mode" role="group" aria-label="Composer display">
+                <button type="button" className={composerMode === "write" ? "active" : ""} onClick={() => setComposerMode("write")}>write</button>
+                <button type="button" className={composerMode === "preview" ? "active" : ""} disabled={!prompt.trim()} onClick={() => setComposerMode("preview")}>preview</button>
+              </div>
+            </header>
+            {composerMode === "write" ? (
+              <textarea
+                ref={inputRef}
+                id={`chartize-ai-${context}`}
+                name={`chartize-ai-${context}`}
+                autoFocus
+                value={prompt}
+                placeholder={placeholder}
+                onChange={(event) => onPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey && event.currentTarget.value.trim() && !busy && ready) {
+                    event.preventDefault();
+                    onAsk("generate", event.currentTarget.value);
+                  }
+                }}
+              />
+            ) : (
+              <div className="ai-composer-preview" aria-label="Markdown preview">
+                <MessageBody text={prompt} />
+              </div>
+            )}
             <div className="ai-composer-footer">
               <div className="ai-composer-tools">
                 {!ready && <span className="ai-catalog-loading">loading data catalog…</span>}
-                {includeSamples && preferences.hypothesize && <span className="ai-research-ready"><i aria-hidden="true" />live research</span>}
               </div>
               <div className="ai-send-cluster">
                 <details className="ai-settings" data-dismiss-on-outside>
@@ -193,7 +227,7 @@ export function AiAssistant({
                     <label className="ai-data-setting"><input name="include-preview-rows" type="checkbox" checked={includeSamples} onChange={(event) => onIncludeSamples(event.target.checked)} /><span><b>send selected data</b><small>share column names and up to 20 selected or preview rows</small></span></label>
                   </div>
                 </details>
-                <button className="ai-send-button" type="button" disabled={busy || !prompt.trim() || !ready} onClick={() => onAsk("generate")}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
+                <button className="ai-send-button" type="button" title="Send (Enter) · new line (Shift+Enter)" disabled={busy || !prompt.trim() || !ready} onClick={() => onAsk("generate", prompt)}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
               </div>
             </div>
           </div>

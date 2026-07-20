@@ -2,9 +2,9 @@
 
 import Editor, { type OnMount } from "@monaco-editor/react";
 import {
+  AiResponseSchema,
   GgsqlDraftSchema,
   QueryResultSchema,
-  type AiSuggestion,
   type DatasetManifest,
   type FieldMetadata,
   type TablePreview,
@@ -172,13 +172,13 @@ export function Explorer() {
     showLoadingMask, error, duration, editorContext, dwimStatus, inlineAnchors,
     gridSelection, selectionOrigin, chartSelection, chartDomains, chartDomainHistory, mapViewport, resultStatus,
     aiOpen, aiPlacement, aiContext, aiContextNote, aiPrompt, aiBusy, aiMessage,
-    aiHistory, includeSamples, aiPreferences, leftPaneRatio, codePaneRatio,
+    aiHistory, aiUsage, includeSamples, aiPreferences, leftPaneRatio, codePaneRatio,
     setEngineState, setCatalogLoaded, setMode, setLocalDatasets, setWarehouseDatasets,
     setDraft, setQuery, setSpec, setSelectedData, setFullData, setResultTab, setFullSort,
     setDockSource, setRunning, setFullLoading, setShowLoadingMask, setError, setDuration,
     setEditorContext, setDwimStatus, setInlineAnchors, setGridSelection, setSelectionOrigin,
     setChartSelection, zoomChart, zoomChartOut, resetChartZoom, zoomMap, panMap, resetMapViewport, setResultStatus, setFocusArea, setAiOpen,
-    setAiPlacement, setAiContext, setAiContextNote, setAiPrompt, setAiBusy, setAiMessage, setAiHistory,
+    setAiPlacement, setAiContext, setAiContextNote, setAiPrompt, setAiBusy, setAiMessage, setAiHistory, setAiUsage,
     setIncludeSamples, setAiPreferences, setLeftPaneRatio, setCodePaneRatio, startNewVisualization,
   } = workspace;
   const clientRef = useRef<LocalEngineClient | null>(null);
@@ -821,16 +821,16 @@ export function Explorer() {
     toggleColumn(dockSource, field, true);
   }, [baseSources, dockSource, toggleColumn]);
 
-  const askAi = useCallback(async (task: "generate" | "repair" | "explain") => {
+  const askAi = useCallback(async (task: "generate" | "repair" | "explain", requestOverride?: string) => {
     if (aiBusy) return;
     if (!catalogLoaded) {
       setAiMessage("The data catalog is still loading.");
       return;
     }
-    const request = aiPrompt.trim() || (task === "explain"
+    const request = requestOverride?.trim() || aiPrompt.trim() || (task === "explain"
       ? aiContext === "code" ? "Explain the current GGSQL, including how its VISUALISE clauses produce this chart." : "Explain the current chart and the GGSQL that produces it."
       : "Repair the current query.");
-    const history = aiHistory.slice(-20);
+    const history = aiHistory.slice(-12);
     const contextualData = gridSelection
       ? { columns: gridSelection.columns, rows: gridSelection.rows }
       : chartSelectionDetails.rows.length
@@ -859,15 +859,19 @@ export function Explorer() {
           history,
         }),
       });
-      const body = await response.json() as AiSuggestion | { error: string };
-      if (!response.ok || "error" in body) throw new Error("error" in body ? body.error : "AI request failed.");
+      const responseBody: unknown = await response.json();
+      if (!response.ok || (typeof responseBody === "object" && responseBody !== null && "error" in responseBody)) {
+        throw new Error(typeof responseBody === "object" && responseBody !== null && "error" in responseBody && typeof responseBody.error === "string" ? responseBody.error : "AI request failed.");
+      }
+      const body = AiResponseSchema.parse(responseBody);
+      setAiUsage(body.usage);
       const reply = [
         body.explanation.trim(),
         aiPreferences.technical && body.assumptions.length ? `Assumptions: ${body.assumptions.join(" ")}` : "",
         (aiPreferences.technical || aiPreferences.challenge) && body.warnings.length ? `Check: ${body.warnings.join(" ")}` : "",
         body.sources.length ? `Sources: ${body.sources.map((source) => `[${source.title}](${source.url})`).join(" · ")}` : "",
       ].filter(Boolean).join("\n\n");
-      if (task !== "explain") {
+      if (body.kind === "visualization") {
         assertReadOnlyGgsql(body.query);
         resetMapViewport();
         const runResult = await runQuery(body.query);
@@ -886,7 +890,7 @@ export function Explorer() {
     } finally {
       setAiBusy(false);
     }
-  }, [activeFields, activeSource, aiBusy, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, catalogLoaded, chartSelectionData.columns, chartSelectionDetails.rows, gridSelection, includeSamples, resetMapViewport, runQuery, selectedData.columns, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setDraft, setQuery]);
+  }, [activeFields, activeSource, aiBusy, aiContext, aiContextNote, aiHistory, aiPreferences, aiPrompt, aiView, baseSources, catalogLoaded, chartSelectionData.columns, chartSelectionDetails.rows, gridSelection, includeSamples, resetMapViewport, runQuery, selectedData.columns, selectedData.rows, setAiBusy, setAiHistory, setAiMessage, setAiPrompt, setAiUsage, setDraft, setQuery]);
 
   const saveLocal = useCallback(async () => {
     await saveWorkspace({ id: "current", title: draftRef.current.title, query: queryRef.current, draft: draftRef.current, files: storedFilesRef.current, savedAt: new Date().toISOString() });
@@ -1201,6 +1205,7 @@ export function Explorer() {
           ready={catalogLoaded}
           status={aiMessage}
           history={aiHistory}
+          usage={aiUsage}
           includeSamples={includeSamples}
           preferences={aiPreferences}
           leftPaneRatio={leftPaneRatio}
@@ -1208,7 +1213,7 @@ export function Explorer() {
           onPrompt={setAiPrompt}
           onIncludeSamples={setIncludeSamples}
           onPreferences={setAiPreferences}
-          onAsk={(task) => void askAi(task)}
+          onAsk={(task, request) => void askAi(task, request)}
         />
       )}
     </main>
