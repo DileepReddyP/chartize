@@ -5,6 +5,7 @@ import {
   executeWorkspaceGgsql,
   executeWorkspaceSqlRaw,
   registerWorkspaceSource,
+  releaseWorkspaceEngine,
   resetWorkspacesContainingSource,
 } from "./workspace-engine";
 
@@ -171,5 +172,23 @@ LABEL title => 'Value by City and Year', x => 'City', y => 'Value', fill => 'Yea
 
     expect(resetWorkspacesContainingSource("upload")).toContain(workspaceId);
     await expect(executeWorkspaceSqlRaw(workspaceId, "SELECT value FROM derived")).rejects.toThrow("no such table");
+  });
+
+  it("releases registered and derived tables when a workspace closes", async () => {
+    const workspaceId = `closed-${crypto.randomUUID()}`;
+    await registerWorkspaceSource(
+      workspaceId,
+      "sample",
+      "csv",
+      new TextEncoder().encode("value\n1\n").buffer,
+      "v1",
+    );
+    await executeWorkspaceSqlRaw(workspaceId, "CREATE TEMP TABLE derived AS SELECT value + 1 AS value FROM sample");
+
+    releaseWorkspaceEngine(workspaceId);
+
+    await expect(executeWorkspaceSqlRaw(workspaceId, "SELECT value FROM sample")).rejects.toThrow("no such table");
+    await expect(executeWorkspaceSqlRaw(workspaceId, "SELECT value FROM derived")).rejects.toThrow("no such table");
+    releaseWorkspaceEngine(workspaceId);
   });
 });

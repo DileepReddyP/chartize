@@ -12,7 +12,6 @@ export function WorkspaceAiOverlay() {
     catalogLoaded: workspace.catalogLoaded,
     selectedData: workspace.selectedData,
     gridSelection: workspace.gridSelection,
-    mapFeatureSelection: workspace.mapFeatureSelection,
     aiOpen: workspace.aiOpen,
     aiPlacement: workspace.aiPlacement,
     aiContext: workspace.aiContext,
@@ -30,20 +29,22 @@ export function WorkspaceAiOverlay() {
     setAiPrompt: workspace.setAiPrompt,
     setIncludeSamples: workspace.setIncludeSamples,
     setAiPreferences: workspace.setAiPreferences,
+    addLocalFiles: workspace.addLocalFiles,
     submitAiTurn: workspace.submitAiTurn,
     closeAi: workspace.closeAi,
   })));
 
   useEffect(() => {
     if (!state.aiOpen || state.aiBusy || state.aiContext !== "general") return;
+    if (state.aiContextNote.startsWith("New browser-local source")) return;
     state.setAiContextNote(`${view.aiViewNote} Current query and source catalog are attached.`);
-  }, [state.aiBusy, state.aiContext, state.aiOpen, state.setAiContextNote, view.aiViewNote]);
+  }, [state.aiBusy, state.aiContext, state.aiContextNote, state.aiOpen, state.setAiContextNote, view.aiViewNote]);
 
   if (!state.aiOpen) return null;
 
   const submit = (task: "generate" | "repair" | "explain", requestOverride?: string, retryAssistantIndex?: number) => {
-    const contextualData = state.mapFeatureSelection
-      ? { columns: state.mapFeatureSelection.values.map(({ field }) => field), rows: [state.mapFeatureSelection.values.map(({ value }) => value)] }
+    const contextualData = view.mapSelectedData
+      ? { columns: view.mapSelectedData.columns, rows: view.mapSelectedData.rows }
       : state.gridSelection
         ? { columns: state.gridSelection.columns, rows: state.gridSelection.rows }
         : view.chartSelectionDetails.rows.length
@@ -82,6 +83,14 @@ export function WorkspaceAiOverlay() {
       onPrompt={state.setAiPrompt}
       onIncludeSamples={state.setIncludeSamples}
       onPreferences={state.setAiPreferences}
+      onFiles={async (files) => {
+        const imported = await state.addLocalFiles(files);
+        if (!imported.length) return;
+        const sources = imported.map((dataset) => `user:${dataset.tableName}`);
+        state.setAiContextNote(`New browser-local source${sources.length === 1 ? "" : "s"}: ${sources.join(", ")}. The raw uploads remain unchanged; their schemas, preview, and current GGSQL are attached.`);
+        const suggestion = `Profile ${sources.join(" and ")}, summarize likely data-quality issues, and propose a cleaning plan. Preview transformations without mutating the raw source until I explicitly approve them.`;
+        state.setAiPrompt(state.aiPrompt.trim() ? `${state.aiPrompt.trim()}\n\n${suggestion}` : suggestion);
+      }}
       onAsk={(task, request) => void submit(task, request)}
       onRetry={(assistantMessageIndex) => void submit("generate", undefined, assistantMessageIndex)}
     />

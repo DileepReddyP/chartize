@@ -8,6 +8,7 @@ import {
   prefetchWorkerSources,
   prepareWorkerQuery,
   registerWorkerLocalSource,
+  releaseWorkerWorkspace,
   removeWorkerLocalSource,
 } from "@/lib/local/worker-source-registry";
 import {
@@ -69,6 +70,9 @@ async function handle(request: LocalWorkerRequest): Promise<unknown> {
         workspace: await loadStoredWorkspace(request.workspaceId),
         localDatasets: await listLocalDatasets(),
       });
+    case "close-workspace":
+      releaseWorkerWorkspace(request.workspaceId);
+      return { released: true };
     case "remove-local-source":
       return removeWorkerLocalSource(request.name);
     case "ai":

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centeredDomain, describeChartExtent, describeChartSelection, mapFeatureSelectionFromDatum, presentationFromSpec, previewFromSpec, selectionTableFromSpec, shiftedDomain, visualFieldsFromPreview } from "./chart-data";
+import { centeredDomain, describeChartExtent, describeChartSelection, mapFeatureSelectionFromDatum, presentationFromSpec, previewFromSpec, selectionTableFromSpec, shiftedDomain, tableFromMapFeatureSelections, visualFieldsFromPreview } from "./chart-data";
 
 describe("chart workspace data", () => {
   it("zooms numeric and temporal domains around their center", () => {
@@ -61,6 +61,7 @@ describe("chart workspace data", () => {
       __ggsql_aes_fill__: -1.2345,
       label_lon: -87.7,
     }, { x: 240, y: 180 })).toEqual({
+      key: "NAMELSAD:Cook County|STATEFP:17|change_pct:-1.235|POPESTIMATE2025:5,182,617",
       pixels: { x: 240, y: 180 },
       title: "Cook County",
       values: [
@@ -69,6 +70,25 @@ describe("chart workspace data", () => {
         { field: "change_pct", value: "-1.235" },
         { field: "POPESTIMATE2025", value: "5,182,617" },
       ],
+    });
+  });
+
+  it("hydrates map clicks from the rendered relation and combines multi-selection rows", () => {
+    const first = mapFeatureSelectionFromDatum(
+      { __ggsql_row_index__: "1", geometry: new Uint8Array([1]) },
+      { x: 100, y: 120 },
+      { columns: ["county_name", "population"], rows: [["Cook County", "5,182,617"], ["Teton County", "24,000"]] },
+    )!;
+    const second = mapFeatureSelectionFromDatum(
+      { county_name: "Albany County", population: 38_000 },
+      { x: 180, y: 90 },
+    )!;
+
+    expect(first).toMatchObject({ key: "row:1", title: "Teton County", rowIndex: 1 });
+    expect(tableFromMapFeatureSelections([first, second])).toMatchObject({
+      columns: ["county_name", "population"],
+      rows: [["Teton County", "24,000"], ["Albany County", "38,000"]],
+      totalRows: 2,
     });
   });
 

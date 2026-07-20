@@ -92,6 +92,10 @@ export function loadBrowserWorkspace(workspaceId = "current") {
   return engine().loadWorkspace(WorkspaceIdSchema.parse(workspaceId));
 }
 
+export function releaseBrowserWorkspace(workspaceId: string) {
+  return engine().closeWorkspace(WorkspaceIdSchema.parse(workspaceId));
+}
+
 export function removeBrowserSource(name: string) {
   return engine().removeLocalSource(SourceNameSchema.parse(name));
 }

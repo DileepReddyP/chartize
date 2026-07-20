@@ -220,10 +220,10 @@ function InspectorSectionHeading({ index, title, value }: { index: string; title
 
 export function DwimPanel(props: DwimPanelProps) {
   const copy = props.section === "selection"
-    ? { title: "selected code", placeholder: "Change or explain this selection…" }
+    ? { index: "03", eyebrow: "selected range", title: "selected code", placeholder: "Change or explain this selection…" }
     : props.section === "visual"
-      ? { title: "visualise at point", placeholder: "Describe the visual change you mean…" }
-      : { title: "sql at point", placeholder: "Describe the data operation you mean…" };
+      ? { index: "02", eyebrow: "visual context", title: "visualise at point", placeholder: "Describe the visual change you mean…" }
+      : { index: "01", eyebrow: "data context", title: "sql at point", placeholder: "Describe the data operation you mean…" };
   const style = { "--dwim-left": `${props.position.left}px`, "--dwim-top": `${props.position.top}px` } as CSSProperties;
   const primaryAesthetic = ["spatial", "bar", "area", "polygon", "tile"].includes(props.visual.mark)
     ? "fill"
@@ -243,8 +243,8 @@ export function DwimPanel(props: DwimPanelProps) {
 
   return (
     <aside className={`dwim-panel section-${props.section}`} style={style} aria-label={`${copy.title} actions`}>
-      <header className="dwim-heading">
-        <h2>{copy.title}</h2>
+      <header className="dwim-heading" data-index={copy.index}>
+        <div><span>{copy.eyebrow}</span><h2>{copy.title}</h2></div>
         <button type="button" onClick={props.onClose} aria-label="Close contextual actions">×</button>
       </header>
 
@@ -306,15 +306,17 @@ export function DwimPanel(props: DwimPanelProps) {
                 {secondaryMarks.map((mark) => <button key={mark} type="button" className={props.visual.mark === mark ? "active" : ""} onClick={() => chooseMark(mark)}>{mark}</button>)}
               </div>
             </details>
-            <div className={`visual-requirement ${guidance.tone}`}>
-              <span aria-hidden="true">{guidance.tone === "ready" ? "✓" : "!"}</span>
-              <div><b>{guidance.summary}</b><p>{guidance.detail}</p></div>
-              {guidance.patch && guidance.action && <button type="button" onClick={() => props.onVisual(guidance.patch!)}>{guidance.action}</button>}
-            </div>
+            {(guidance.tone === "attention" || guidance.summary !== "channels use SQL output") && (
+              <div className={`visual-requirement ${guidance.tone}`}>
+                <span aria-hidden="true">{guidance.tone === "ready" ? "✓" : "!"}</span>
+                <div><b>{guidance.summary}</b><p>{guidance.detail}</p></div>
+                {guidance.patch && guidance.action && <button type="button" onClick={() => props.onVisual(guidance.patch!)}>{guidance.action}</button>}
+              </div>
+            )}
           </section>
 
           <section className="visual-primary-section">
-            <InspectorSectionHeading index="03" title="channels" value={props.visual.mark === "spatial" ? "geometry → fill" : `${props.visual.x || "x"} → ${props.visual.y || props.visual.yMin || "y"}`} />
+            <InspectorSectionHeading index="03" title="channels" value="source columns here taken from sql query" />
             <div className="visual-primary-grid visual-channel-grid">
               {props.visual.mark === "spatial" ? (
                 <>

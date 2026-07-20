@@ -2,12 +2,11 @@ import type { FieldMetadata, TablePreview } from "@chartize/contracts";
 import { z } from "zod";
 
 export const MapFeatureSelectionSchema = z.object({
+  key: z.string().min(1).max(1000),
   pixels: z.object({ x: z.number().nonnegative(), y: z.number().nonnegative() }),
   title: z.string().min(1).max(500),
   values: z.array(z.object({ field: z.string().min(1).max(300), value: z.string().max(1000) })).max(16),
   rowIndex: z.number().int().nonnegative().optional(),
-  pending: z.boolean().optional(),
-  error: z.string().max(500).optional(),
 });
 
 export type MapFeatureSelection = z.infer<typeof MapFeatureSelectionSchema>;
@@ -63,6 +62,9 @@ function recordSelection(
     ?? candidates.find((entry) => !/^\d+(?:\.\d+)?$/.test(entry.value))?.value
     ?? "selected map feature";
   return MapFeatureSelectionSchema.parse({
+    key: rowIndex === undefined
+      ? candidates.map(({ field, value }) => `${field}:${value}`).join("|").slice(0, 1000)
+      : `row:${rowIndex}`,
     pixels,
     title,
     values: candidates,
@@ -91,8 +93,11 @@ export function mapFeatureSelectionFromDatum(
     datum = datum.datum as Record<string, unknown>;
   }
   const rawRowIndex = datum.__ggsql_row_index__;
-  const rowIndex = typeof rawRowIndex === "number" && Number.isInteger(rawRowIndex) && rawRowIndex >= 0
-    ? rawRowIndex
+  const parsedRowIndex = typeof rawRowIndex === "string" && /^\d+$/.test(rawRowIndex)
+    ? Number(rawRowIndex)
+    : rawRowIndex;
+  const rowIndex = typeof parsedRowIndex === "number" && Number.isInteger(parsedRowIndex) && parsedRowIndex >= 0
+    ? parsedRowIndex
     : undefined;
   if (rowIndex !== undefined && table?.rows[rowIndex]) {
     const hydrated = mapFeatureSelectionFromTableRow(table.columns, table.rows[rowIndex]!, pixels, rowIndex);
@@ -100,14 +105,23 @@ export function mapFeatureSelectionFromDatum(
   }
   const direct = recordSelection(datum, pixels, rowIndex);
   if (direct) return direct;
-  if (rowIndex === undefined) return null;
-  return MapFeatureSelectionSchema.parse({
-    pixels,
-    title: "loading place details…",
-    values: [],
-    rowIndex,
-    pending: true,
-  });
+  return null;
+}
+
+/** The selected map rows are already present in the rendered relation. */
+export function tableFromMapFeatureSelections(selections: MapFeatureSelection[]): TablePreview | null {
+  if (!selections.length) return null;
+  const columns = [...new Set(selections.flatMap((selection) => selection.values.map(({ field }) => field)))];
+  return {
+    columns,
+    rows: selections.map((selection) => {
+      const values = new Map(selection.values.map(({ field, value }) => [field, value]));
+      return columns.map((column) => values.get(column) ?? "");
+    }),
+    totalRows: selections.length,
+    offset: 0,
+    limit: selections.length,
+  };
 }
 
 function labelText(value: unknown) {

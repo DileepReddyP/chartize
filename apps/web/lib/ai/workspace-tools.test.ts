@@ -43,4 +43,14 @@ describe("createVisualizationFunctionTools", () => {
     expect(serialized).toContain("CASE WHEN date_field = last_date");
     expect(serialized).toContain("endpoint_x AS x");
   });
+
+  it("teaches cleanup as a non-mutating CTE by default", async () => {
+    const [cookbook] = createVisualizationFunctionTools();
+    const result = await cookbook?.execute({ topics: ["local-data-cleanup"] });
+    const serialized = JSON.stringify(result);
+
+    expect(serialized).toContain("Default to a non-mutating WITH/SELECT pipeline");
+    expect(serialized).toContain("only when the current user explicitly asks");
+    expect(serialized).toContain("WITH RECURSIVE source_rows");
+  });
 });

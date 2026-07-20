@@ -119,6 +119,10 @@ export class LocalEngineClient {
       .then((value) => BrowserWorkspaceLoadSchema.parse(value));
   }
 
+  closeWorkspace(workspaceId: string) {
+    return this.request<unknown>({ type: "close-workspace", workspaceId }, QUICK_TIMEOUT_MS);
+  }
+
   removeLocalSource(name: string) {
     return this.request<unknown>({ type: "remove-local-source", name }, QUICK_TIMEOUT_MS)
       .then((value) => BrowserLocalDatasetListSchema.parse(value));

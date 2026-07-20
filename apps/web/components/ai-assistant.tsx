@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AiContext, AiConversationMessage, AiPlacement, AiResponsePreferences } from "@/lib/workspace/store";
+import { AttachmentIcon, DATA_FILE_ACCEPT, filesFromDrop } from "./data-upload-control";
 
 export type { AiConversationMessage } from "@/lib/workspace/store";
 
@@ -27,6 +28,7 @@ interface AiAssistantProps {
   onPrompt: (value: string) => void;
   onIncludeSamples: (value: boolean) => void;
   onPreferences: (value: AiResponsePreferences) => void;
+  onFiles: (files: File[]) => Promise<void> | void;
   onAsk: (task: "generate" | "repair" | "explain", request?: string) => void;
   onRetry: (assistantMessageIndex: number) => void;
 }
@@ -104,6 +106,7 @@ export function AiAssistant({
   onPrompt,
   onIncludeSamples,
   onPreferences,
+  onFiles,
   onAsk,
   onRetry,
 }: AiAssistantProps) {
@@ -118,6 +121,7 @@ export function AiAssistant({
   const conversationEndRef = useRef<HTMLDivElement>(null);
   const [composerMode, setComposerMode] = useState<"write" | "preview">("write");
   const [thinkingStep, setThinkingStep] = useState(0);
+  const [fileDropActive, setFileDropActive] = useState(false);
 
   const scrollToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
     const conversation = conversationRef.current;
@@ -201,8 +205,13 @@ export function AiAssistant({
       className={`ai-overlay context-${context} placement-${placement}`}
       style={{ "--ai-left-width": `${leftPaneRatio * 100}vw` } as CSSProperties}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onDragEnter={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); setFileDropActive(true); } }}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
+      onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFileDropActive(false); }}
+      onDrop={(event) => { event.preventDefault(); setFileDropActive(false); void onFiles(filesFromDrop(event)); }}
     >
       <section className="ai-surface" role="dialog" aria-label="Chartize AI conversation">
+        {fileDropActive && <div className="ai-file-drop-overlay"><AttachmentIcon /><b>drop data into this conversation</b><small>chartize will open the raw table and help you profile it</small></div>}
         <header className="ai-surface-header">
           <div className="ai-title-lockup">
             <span className="ai-spark" aria-hidden="true">ai</span>
@@ -277,6 +286,10 @@ export function AiAssistant({
             )}
             <div className="ai-composer-footer">
               <div className="ai-composer-tools">
+                <label className="ai-attach-data" title="Attach browser-local data">
+                  <AttachmentIcon /><span>attach data</span>
+                  <input aria-label="Attach data files to this conversation" type="file" multiple accept={DATA_FILE_ACCEPT} onChange={(event) => { void onFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
+                </label>
                 {!ready && <span className="ai-catalog-loading">loading data catalog…</span>}
               </div>
               <div className="ai-send-cluster">

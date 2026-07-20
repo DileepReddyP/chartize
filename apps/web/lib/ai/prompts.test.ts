@@ -51,4 +51,11 @@ describe("Chartize AI prompt contract", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("reconstructs its visual-builder state from the result");
     expect(CHARTIZE_AI_INSTRUCTIONS).not.toContain("draft.scenarioDeltas");
   });
+
+  it("keeps browser-local mutation explicitly user-authorized", () => {
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("By default, return exactly one non-mutating SQL statement beginning with SELECT or WITH");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("only when the user's current message explicitly asks");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("does not authorize mutation");
+    expect(chartizeTurnInstructions("code", "repair")).toContain("collapse an accidental multi-statement program into one WITH/SELECT query");
+  });
 });

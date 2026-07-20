@@ -30,14 +30,30 @@ describe("Chartize workspace store", () => {
   it("validates map compass movement and zoom", () => {
     const store = useChartizeWorkspace.getState();
     store.resetMapViewport();
-    store.setMapFeatureSelection({ pixels: { x: 10, y: 12 }, title: "Cook County", values: [{ field: "population", value: "5,182,617" }] });
+    store.selectMapFeature({ key: "cook", pixels: { x: 10, y: 12 }, title: "Cook County", values: [{ field: "population", value: "5,182,617" }] });
+    store.selectMapFeature({ key: "teton", pixels: { x: 20, y: 22 }, title: "Teton County", values: [{ field: "population", value: "24,000" }] }, true);
+    expect(useChartizeWorkspace.getState().mapFeatureSelections.map(({ title }) => title)).toEqual(["Cook County", "Teton County"]);
+    store.selectMapFeature({ key: "cook", pixels: { x: 10, y: 12 }, title: "Cook County", values: [{ field: "population", value: "5,182,617" }] }, true);
+    expect(useChartizeWorkspace.getState().mapFeatureSelections.map(({ title }) => title)).toEqual(["Teton County"]);
     store.zoomMap(1.5);
-    expect(useChartizeWorkspace.getState().mapFeatureSelection).toBeNull();
+    expect(useChartizeWorkspace.getState().mapFeatureSelections).toEqual([]);
     useChartizeWorkspace.getState().panMap(0.12, -0.12);
     expect(useChartizeWorkspace.getState().mapViewport).toEqual({ zoom: 1.5, panX: 0.08, panY: -0.08 });
     useChartizeWorkspace.getState().resetMapViewport();
     expect(useChartizeWorkspace.getState().mapViewport).toEqual({ zoom: 1, panX: 0, panY: 0 });
     expect(WorkspaceSnapshotSchema.safeParse(useChartizeWorkspace.getState()).success).toBe(true);
+  });
+
+  it("routes graph region selection through one Zustand action", () => {
+    const store = useChartizeWorkspace.getState();
+    store.selectMapFeature({ key: "cook", pixels: { x: 10, y: 12 }, title: "Cook County", values: [{ field: "population", value: "5,182,617" }] });
+    store.selectChartRegion({ pixels: { x0: 10, y0: 12, x1: 100, y1: 120 }, x: [1, 5], y: [40, 50] });
+    expect(useChartizeWorkspace.getState()).toMatchObject({
+      selectionOrigin: "result",
+      gridSelection: null,
+      mapFeatureSelections: [],
+      chartSelection: { pixels: { x0: 10, y0: 12, x1: 100, y1: 120 }, x: [1, 5], y: [40, 50] },
+    });
   });
 
   it("starts a genuinely empty visualization workspace", () => {
@@ -53,6 +69,31 @@ describe("Chartize workspace store", () => {
     expect(state.fullData.rows).toEqual([]);
     expect(state.aiHistory).toEqual([]);
     expect(WorkspaceSnapshotSchema.safeParse(state).success).toBe(true);
+  });
+
+  it("invalidates the raw-table page when a different dataset is applied", () => {
+    useChartizeWorkspace.setState({
+      fullData: { columns: ["old"], rows: [["stale"]], totalRows: 1, offset: 0, limit: 100 },
+      fullLoading: true,
+      fullSort: { column: "old", direction: "asc" },
+    });
+
+    useChartizeWorkspace.getState().applyDataset("user:uploaded", {
+      id: "uploaded",
+      tableName: "uploaded",
+      title: "Uploaded data",
+      description: "Browser-local test source",
+      spatial: false,
+      fields: [{ name: "city", dataType: "VARCHAR", nullable: true }],
+    }, false);
+
+    expect(useChartizeWorkspace.getState()).toMatchObject({
+      dockSource: "user:uploaded",
+      fullLoading: false,
+      fullSort: null,
+      fullData: { columns: [], rows: [], totalRows: 0 },
+    });
+    expect(WorkspaceSnapshotSchema.safeParse(useChartizeWorkspace.getState()).success).toBe(true);
   });
 
   it("keeps query and AI conversation independent between workspaces", () => {

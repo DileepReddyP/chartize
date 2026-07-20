@@ -7,7 +7,7 @@ import {
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { compactAiContext, compactHistory, isComplexVisualizationRequest, isExplanationRequest, requestedResearchItemCount, shouldResearch } from "@/lib/ai/context";
-import { ModelAgentResponseSchema, draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse } from "@/lib/ai/model-output";
+import { ModelAgentResponseSchema, draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse, sanitizeModelText } from "@/lib/ai/model-output";
 import { CHARTIZE_AGENT_INSTRUCTIONS, CHARTIZE_AI_INSTRUCTIONS, chartizePreferenceInstructions, chartizeTurnInstructions } from "@/lib/ai/prompts";
 import { structuredResponse } from "@/lib/ai/provider";
 import { createVisualizationFunctionTools } from "@/lib/ai/workspace-tools";
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
         : "Browser data requests are disabled for this turn.";
     // Decide whether citations are mandatory from the user's words, not from
     // boilerplate such as “current query is attached” in the context note.
-    // The web tool can still be available for Terra to use when helpful.
+    // The web tool can still be available for the model to use when helpful.
     const researchRequired = shouldResearch(body.request, body.preferences.webSearch);
     const researchTarget = requestedResearchItemCount(body.request);
     const workspaceTurn = [
@@ -84,9 +84,9 @@ export async function POST(request: Request) {
       // addition to inline citations. Structured JSON can otherwise retain a
       // single citation even when the web tool consulted several pages.
       sourceSelection: researchRequired && researchTarget > 1 ? "all" : "cited",
-      reasoningEffort: complexRequest ? "medium" : "low",
+      reasoningEffort: "low",
       maxOutputTokens: 9_000,
-      cacheKey: "chartize:agent:v5",
+      cacheKey: "chartize:agent:v6",
       functionTools,
       // A required web search can occupy the first response round. Complex
       // drawing work may then consult the compact visualization cookbook.
@@ -107,6 +107,7 @@ export async function POST(request: Request) {
     const turnSources = modelResponse.sources;
     const turnResearched = modelResponse.researched;
     const initialUsage = modelResponse.usage;
+    const assumptions = modelResponse.output.assumptions.map(sanitizeModelText).filter(Boolean);
     const grounded = reconcileGroundedResponse(
       modelResponse.output.explanation,
       modelResponse.output.warnings,
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
       return NextResponse.json(AiExplanationResponseSchema.parse({
         kind: "explanation",
         explanation: grounded.explanation.replaceAll("?utm_source=openai", ""),
-        assumptions: modelResponse.output.assumptions,
+        assumptions,
         warnings: grounded.warnings,
         sources: turnSources,
         researched: turnResearched,
@@ -129,7 +130,6 @@ export async function POST(request: Request) {
 
     const generatedQuery = normalizeModelGgsql(modelResponse.output.query);
     const explanation = grounded.explanation;
-    const assumptions = modelResponse.output.assumptions;
     const warnings = grounded.warnings;
     const usage = initialUsage;
     const resultDraft = draftFromGgsql(generatedQuery, allowedSources, source);

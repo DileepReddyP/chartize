@@ -49,13 +49,22 @@ export const BrowserRegistrationResultSchema = z.object({
 });
 export const BrowserVisualizationSpecSchema = z.record(z.string(), z.unknown());
 
-export const BrowserStoredWorkspaceSchema = z.object({
+const LegacyBrowserStoredWorkspaceSchema = z.object({
   id: z.string().min(1),
   title: z.string(),
   query: z.string().max(100_000),
   draft: GgsqlDraftSchema,
   savedAt: z.string(),
 });
+export const BrowserWorkspaceSessionRecordSchema = z.object({
+  id: z.literal("session"),
+  payload: z.string().max(20_000_000),
+  savedAt: z.string(),
+});
+export const BrowserStoredWorkspaceSchema = z.union([
+  BrowserWorkspaceSessionRecordSchema,
+  LegacyBrowserStoredWorkspaceSchema,
+]);
 export const BrowserWorkspaceLoadSchema = z.object({
   workspace: BrowserStoredWorkspaceSchema.nullable(),
   localDatasets: z.array(BrowserLocalDatasetSchema),
@@ -110,6 +119,7 @@ export const LocalWorkerRequestSchema = z.discriminatedUnion("type", [
   z.object({ ...WorkerRequestBase, type: z.literal("describe"), workspaceId: WorkerWorkspaceIdSchema, name: WorkerSourceNameSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("save-workspace"), workspace: BrowserStoredWorkspaceSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("load-workspace"), workspaceId: WorkerWorkspaceIdSchema }),
+  z.object({ ...WorkerRequestBase, type: z.literal("close-workspace"), workspaceId: WorkerWorkspaceIdSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("remove-local-source"), name: WorkerSourceNameSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("ai"), workspaceId: WorkerWorkspaceIdSchema, request: AiTurnRequestSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("prefetch"), workspaceId: WorkerWorkspaceIdSchema, sources: z.array(z.string().min(1).max(300)).max(10) }),

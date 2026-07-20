@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse } from "./model-output";
+import { draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse, sanitizeModelText } from "./model-output";
 
 describe("Chartize AI model output", () => {
   it("does not expose raw Zod issue arrays in the UI", () => {
@@ -54,6 +54,16 @@ LABEL title => 'Population change'
       explanation: "Three dates were added. Source links supporting the researched claims are attached below.",
       warnings: ["The chart is descriptive."],
     });
+  });
+
+  it("removes provider citation control tokens without flattening Markdown", () => {
+    expect(sanitizeModelText("Teton is an outlier. citeturn0search1\n\n- **Reason:** leverage"))
+      .toBe("Teton is an outlier.\n\n- **Reason:** leverage");
+    expect(reconcileGroundedResponse(
+      "Grounded answer citeturn0search0turn0search1",
+      ["Check this citeturn0search0"],
+      { researched: false, sources: [] },
+    )).toEqual({ explanation: "Grounded answer", warnings: ["Check this"] });
   });
 
   it("reconstructs editable builder state from authoritative layered GGSQL", () => {

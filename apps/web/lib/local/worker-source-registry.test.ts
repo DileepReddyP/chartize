@@ -18,6 +18,16 @@ const dataset = DatasetManifestSchema.parse({
   fields: [{ name: "value", dataType: "BIGINT", nullable: false, semanticType: "measure" }],
 });
 
+const freshDataset = DatasetManifestSchema.parse({
+  id: "fresh-v1",
+  slug: "fresh_values",
+  title: "Fresh values",
+  version: "20260720160000",
+  tableName: "fresh_values",
+  publishedAt: "2026-07-20T16:00:00Z",
+  fields: [{ name: "value", dataType: "BIGINT", nullable: false, semanticType: "measure" }],
+});
+
 describe("worker source hydration", () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
@@ -49,5 +59,36 @@ describe("worker source hydration", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(firstQuery).not.toContain("chartize:");
     expect(secondQuery).not.toContain("chartize:");
+  });
+
+  it("refreshes the cached catalog only when a requested canonical source is missing", async () => {
+    const bytes = rowsToParquet([{ value: 9 }]);
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "/engine/api/catalog") {
+        return Response.json([dataset, freshDataset]);
+      }
+      return new Response(Uint8Array.from(bytes).buffer, { headers: {
+        "content-type": "application/vnd.apache.parquet",
+        "content-length": String(bytes.byteLength),
+        etag: `"${freshDataset.version}"`,
+      } });
+    });
+    vi.stubGlobal("fetch", fetcher);
+
+    const query = await prepareWorkerQuery(
+      "catalog-miss-workspace",
+      "SELECT value FROM chartize:fresh_values",
+      "catalog-miss",
+      vi.fn(),
+    );
+    const result = await executeWorkspaceSqlRaw("catalog-miss-workspace", query);
+
+    expect(result.rows).toEqual([["9"]]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+      "/engine/api/catalog",
+      expect.stringContaining("/engine/api/datasets/fresh_values/parquet"),
+    ]);
   });
 });

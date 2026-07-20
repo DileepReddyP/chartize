@@ -200,15 +200,14 @@ DRAW smooth
     topic: "local-data-cleanup",
     rules: [
       "The browser engine uses a compact SQLite-like SQL dialect. Do not use INITCAP, TRY_CAST, CREATE OR REPLACE TABLE, regexp functions, filesystem readers, or DuckDB-only helpers.",
-      "Make a repeatable workspace copy with DROP TABLE IF EXISTS name; followed by CREATE TEMP TABLE name AS .... The user: or chartize: source remains the untouched canonical input.",
+      "Default to a non-mutating WITH/SELECT pipeline. Preview cleanup, imputation, scoring, and modeling in CTEs without creating or dropping a table.",
+      "Use DROP/CREATE TEMP TABLE, INSERT, UPDATE, or DELETE only when the current user explicitly asks to persist or modify a browser-local workspace copy. Building a chart or model alone is not permission to mutate.",
       "For nullable numeric text, use CAST(NULLIF(NULLIF(LOWER(TRIM(CAST(value AS VARCHAR))), 'null'), '') AS DOUBLE). Inspect values first when an invalid non-null token may exist.",
       "For multi-word title casing, use a recursive character CTE with UPPER(SUBSTR(...)) after position 1, a space, or a hyphen. INITCAP is unavailable; do not add a quote-literal branch unless the source values actually require it.",
       "Stage window calculations in their own CTE, then COALESCE their aliases in the following SELECT. This parser rejects window expressions such as AVG(value) OVER (...) when they are written directly inside COALESCE.",
       "End the SQL program with the SELECT that should feed VISUALISE. Keep every mapped visual field in that final projection.",
     ],
-    recipe: `DROP TABLE IF EXISTS cleaned;
-CREATE TEMP TABLE cleaned AS
-WITH RECURSIVE source_rows AS (
+    recipe: `WITH RECURSIVE source_rows AS (
   SELECT ROW_NUMBER() OVER () AS row_id,
     LOWER(TRIM(CAST(name AS VARCHAR))) AS name_key,
     CAST(NULLIF(NULLIF(LOWER(TRIM(CAST(value AS VARCHAR))), 'null'), '') AS DOUBLE) AS value
@@ -235,9 +234,7 @@ with_means AS (
   FROM normalized
 )
 SELECT *, COALESCE(value, group_average, overall_average) AS clean_value
-FROM with_means;
-
-SELECT clean_name, clean_value FROM cleaned`,
+FROM with_means`,
   },
 };
 

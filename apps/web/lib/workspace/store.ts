@@ -40,6 +40,7 @@ import {
   initializeBrowserRuntime,
   loadBrowserWorkspace,
   registerBrowserSource as runtimeRegisterBrowserSource,
+  releaseBrowserWorkspace,
   removeBrowserSource,
   requestBrowserAiTurn,
   runWorkspaceGgsql,
@@ -50,7 +51,6 @@ import { detectFormat, tableNameFromFile } from "../local/file-format";
 import type { BrowserAiCompletedResponse, BrowserSqlResult } from "../local/worker-protocol";
 import {
   MapFeatureSelectionSchema,
-  mapFeatureSelectionFromTableRow,
   presentationFromSpec,
   previewFromSpec,
   type MapFeatureSelection,
@@ -130,7 +130,7 @@ export const WorkspaceDocumentSchema = z.object({
   chartDomains: ChartDomainsSchema,
   chartDomainHistory: z.array(ChartDomainsSchema).max(20),
   mapViewport: MapViewportSchema,
-  mapFeatureSelection: MapFeatureSelectionSchema.nullable().default(null),
+  mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(24).default([]),
   focusArea: FocusAreaSchema,
   editorFontSize: EditorFontSizeSchema,
   aiPlacement: z.enum(["left", "right"]),
@@ -143,6 +143,18 @@ export const WorkspaceDocumentSchema = z.object({
   includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
   runtimeErrors: z.array(AiRuntimeErrorSchema).max(8).default([]),
+});
+
+export const WorkspaceSessionSchema = z.object({
+  version: z.literal(1),
+  activeWorkspaceId: z.string().min(1),
+  workspaceDocuments: z.array(WorkspaceDocumentSchema).min(1).max(40),
+  leftPaneRatio: LeftPaneRatioSchema,
+  codePaneRatio: CodePaneRatioSchema,
+}).superRefine((session, context) => {
+  if (!session.workspaceDocuments.some((document) => document.id === session.activeWorkspaceId)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "The active workspace is missing from the saved session.", path: ["activeWorkspaceId"] });
+  }
 });
 
 export type LocalDataset = z.infer<typeof LocalDatasetSchema>;
@@ -216,6 +228,7 @@ export const WorkspaceSnapshotSchema = z.object({
   query: z.string(),
   spec: z.record(z.string(), z.unknown()).nullable(),
   selectedData: TablePreviewSchema,
+  resultRelation: TablePreviewSchema,
   fullData: TablePreviewSchema,
   resultTab: z.enum(["chart", "selected"]),
   fullSort: z.object({ column: z.string(), direction: z.enum(["asc", "desc"]) }).nullable(),
@@ -234,7 +247,7 @@ export const WorkspaceSnapshotSchema = z.object({
   chartDomains: ChartDomainsSchema,
   chartDomainHistory: z.array(ChartDomainsSchema).max(20),
   mapViewport: MapViewportSchema,
-  mapFeatureSelection: MapFeatureSelectionSchema.nullable().default(null),
+  mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(24).default([]),
   resultStatus: z.string(),
   focusArea: FocusAreaSchema,
   editorFontSize: EditorFontSizeSchema,
@@ -260,6 +273,8 @@ export const WorkspaceSnapshotSchema = z.object({
 export type WorkspaceSnapshot = z.infer<typeof WorkspaceSnapshotSchema>;
 
 export const EMPTY_TABLE: TablePreview = { columns: [], rows: [], totalRows: 0, offset: 0, limit: 100 };
+const RESULT_RELATION_LIMIT = 10_000;
+const EMPTY_RESULT_RELATION: TablePreview = { ...EMPTY_TABLE, limit: RESULT_RELATION_LIMIT };
 
 const BUILTIN_FIELDS: FieldMetadata[] = [
   { name: "species", dataType: "VARCHAR", nullable: false, semanticType: "dimension" },
@@ -300,8 +315,9 @@ let browserRunSequence = 0;
 let scheduledRun: ReturnType<typeof setTimeout> | null = null;
 let loadingMaskTimer: ReturnType<typeof setTimeout> | null = null;
 let fullTableSequence = 0;
-let mapFeatureSequence = 0;
+let lastPersistedSession = "";
 const fullTableCache = new Map<string, TablePreview>();
+const RESULT_RELATION_PAGE_SIZE = 100;
 
 function addRuntimeError(current: AiRuntimeError[], next: AiRuntimeError) {
   const parsed = AiRuntimeErrorSchema.parse(next);
@@ -399,7 +415,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   runEditorQuery: (query: string) => Promise<WorkspaceRunResult>;
   applyDataset: (source: string, dataset: LocalDataset | DatasetManifest, autoRun?: boolean) => void;
   toggleSource: (source: string, enabled: boolean) => void;
-  addLocalFiles: (files: File[]) => Promise<void>;
+  addLocalFiles: (files: File[]) => Promise<LocalDataset[]>;
   removeLocalSource: (tableName: string) => Promise<void>;
   updateQueryImmediately: (query: string) => void;
   toggleColumn: (source: string, field: FieldMetadata, enabled: boolean) => void;
@@ -410,11 +426,12 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   sortFullTable: (column: string) => void;
   loadMoreFullTable: () => Promise<void>;
   addColumnFromTable: (column: string) => void;
-  selectMapFeature: (selection: MapFeatureSelectionState | null) => Promise<void>;
+  selectChartRegion: (selection: ChartSelectionState | null) => void;
+  selectMapFeature: (selection: MapFeatureSelectionState | null, additive?: boolean) => void;
   requestAiTurn: (request: AiTurnRequest) => Promise<AiCompletedResponse>;
   submitAiTurn: (submission: AiSubmission) => Promise<void>;
-  saveLocalWorkspace: () => Promise<void>;
-  restoreLocalWorkspace: () => Promise<void>;
+  persistWorkspaceSession: () => Promise<void>;
+  restoreWorkspaceSession: () => Promise<boolean>;
   shareWorkspace: () => Promise<void>;
   openWorkspace: (input?: NewWorkspaceInput) => void;
   switchWorkspace: (id: string) => void;
@@ -438,7 +455,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   zoomMap: (factor: number) => void;
   panMap: (horizontal: number, vertical: number) => void;
   resetMapViewport: () => void;
-  setMapFeatureSelection: (value: MapFeatureSelectionState | null) => void;
+  setMapFeatureSelections: (value: MapFeatureSelectionState[]) => void;
   setResultStatus: (value: string) => void;
   setFocusArea: (value: FocusArea) => void;
   setEditorFontSize: (value: number) => void;
@@ -479,7 +496,7 @@ const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   chartDomains: {},
   chartDomainHistory: [],
   mapViewport: { zoom: 1, panX: 0, panY: 0 },
-  mapFeatureSelection: null,
+  mapFeatureSelections: [],
   focusArea: "chart",
   editorFontSize: 13,
   aiPlacement: "left",
@@ -505,6 +522,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   query: initialQuery,
   spec: null,
   selectedData: { ...EMPTY_TABLE, limit: 200 },
+  resultRelation: EMPTY_RESULT_RELATION,
   fullData: EMPTY_TABLE,
   resultTab: "chart",
   fullSort: null,
@@ -523,7 +541,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   chartDomains: {},
   chartDomainHistory: [],
   mapViewport: { zoom: 1, panX: 0, panY: 0 },
-  mapFeatureSelection: null,
+  mapFeatureSelections: [],
   resultStatus: "",
   focusArea: "chart",
   editorFontSize: 13,
@@ -563,7 +581,7 @@ function captureWorkspaceDocument(state: WorkspaceSnapshot): WorkspaceDocument {
     chartDomains: state.chartDomains,
     chartDomainHistory: state.chartDomainHistory,
     mapViewport: state.mapViewport,
-    mapFeatureSelection: state.mapFeatureSelection,
+    mapFeatureSelections: state.mapFeatureSelections,
     focusArea: state.focusArea,
     editorFontSize: state.editorFontSize,
     aiPlacement: state.aiPlacement,
@@ -585,6 +603,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     query: document.query,
     spec: null,
     selectedData: { ...EMPTY_TABLE, limit: 200 },
+    resultRelation: EMPTY_RESULT_RELATION,
     fullData: EMPTY_TABLE,
     resultTab: document.resultTab,
     fullSort: document.fullSort,
@@ -603,7 +622,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     chartDomains: document.chartDomains,
     chartDomainHistory: document.chartDomainHistory,
     mapViewport: document.mapViewport,
-    mapFeatureSelection: document.mapFeatureSelection,
+    mapFeatureSelections: document.mapFeatureSelections,
     resultStatus: "",
     focusArea: document.focusArea,
     editorFontSize: document.editorFontSize,
@@ -643,7 +662,7 @@ function newWorkspaceDocument(input: NewWorkspaceInput = {}): WorkspaceDocument 
     chartDomains: {},
     chartDomainHistory: [],
     mapViewport: { zoom: 1, panX: 0, panY: 0 },
-    mapFeatureSelection: null,
+    mapFeatureSelections: [],
     focusArea: "code",
     editorFontSize: 13,
     aiPlacement: "left",
@@ -664,10 +683,19 @@ function replaceCapturedWorkspace(state: WorkspaceSnapshot) {
   return state.workspaceDocuments.map((document) => document.id === captured.id ? captured : document);
 }
 
+function captureWorkspaceSession(state: WorkspaceSnapshot) {
+  return WorkspaceSessionSchema.parse({
+    version: 1,
+    activeWorkspaceId: state.activeWorkspaceId,
+    workspaceDocuments: replaceCapturedWorkspace(state),
+    leftPaneRatio: state.leftPaneRatio,
+    codePaneRatio: state.codePaneRatio,
+  });
+}
+
 function workspaceActivated(get: () => ChartizeWorkspaceState) {
   browserRunSequence += 1;
   fullTableSequence += 1;
-  mapFeatureSequence += 1;
   if (scheduledRun) {
     clearTimeout(scheduledRun);
     scheduledRun = null;
@@ -724,6 +752,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       set((state) => ({
         spec: null,
         selectedData: { ...EMPTY_TABLE, limit: 200 },
+        resultRelation: EMPTY_RESULT_RELATION,
         error: "",
         duration: 0,
         gridSelection: null,
@@ -740,12 +769,12 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const displaySources = sourcesFromQuery(displayQuery);
     const displaySource = displaySources[0] ?? sourceFromQuery(displayQuery, get().draft.source);
     const started = performance.now();
-    mapFeatureSequence += 1;
     get().setRunning(true);
-    set({ error: "", mapFeatureSelection: null });
+    set({ error: "", mapFeatureSelections: [], resultRelation: EMPTY_RESULT_RELATION });
     try {
       const spec = await runWorkspaceGgsql(workspaceId, displayQuery);
       let selectedData = previewFromSpec(spec);
+      let resultRelation = selectedData;
       const sql = splitGgsql(displayQuery).sql.trim().replace(/;$/, "");
       const resultSql = finalSqlStatement(sql);
       if (isResultSqlStatement(resultSql)) {
@@ -753,13 +782,39 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           const table = await runtimeExecuteWorkspaceSql(workspaceId, `SELECT * FROM (${resultSql}) AS chartize_selected LIMIT 200`);
           const count = await runtimeExecuteWorkspaceSql(workspaceId, `SELECT COUNT(*) AS total FROM (${resultSql}) AS chartize_selected`);
           const totalRows = Number(count.rows[0]?.[0] ?? table.rows.length);
+          const compactIndexes = table.columns.flatMap((column, index) =>
+            /^(?:geometry|geom|wkb|geojson)$/i.test(column) ? [] : [index]);
+          const compactColumns = compactIndexes.map((index) => table.columns[index]!);
+          const compactRows = table.rows.map((row) => compactIndexes.map((index) => row[index] ?? ""));
           selectedData = {
-            columns: table.columns,
-            rows: table.rows,
+            columns: compactColumns,
+            rows: compactRows,
             totalRows: Number.isFinite(totalRows) ? totalRows : table.rows.length,
             offset: 0,
             limit: 200,
           };
+          resultRelation = selectedData;
+          if (compactColumns.length && selectedData.totalRows > selectedData.rows.length) {
+            const relationRows = [...compactRows];
+            const relationLimit = Math.min(selectedData.totalRows, RESULT_RELATION_LIMIT);
+            while (relationRows.length < relationLimit) {
+              if (runId !== browserRunSequence) return { ok: false, error: "A newer query replaced this run." };
+              const page = await runtimeExecuteWorkspaceSql(
+                workspaceId,
+                `SELECT ${compactColumns.map(quoteIdentifier).join(", ")} FROM (${resultSql}) AS chartize_result_relation LIMIT ${RESULT_RELATION_PAGE_SIZE} OFFSET ${relationRows.length}`,
+              );
+              if (!page.rows.length) break;
+              relationRows.push(...page.rows.slice(0, relationLimit - relationRows.length));
+            }
+            resultRelation = {
+              columns: compactColumns,
+              rows: relationRows,
+              totalRows: selectedData.totalRows,
+              offset: 0,
+              limit: RESULT_RELATION_LIMIT,
+            };
+            selectedData = { ...selectedData, rows: relationRows.slice(0, 200) };
+          }
         } catch {
           // The visualization is still useful if an engine-specific terminal
           // statement cannot be wrapped for the selected-data preview.
@@ -770,6 +825,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       set((state) => ({
         spec,
         selectedData,
+        resultRelation,
         duration: Math.round(performance.now() - started),
         gridSelection: null,
         chartSelection: null,
@@ -806,8 +862,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   editQuery: (queryInput) => {
     const query = WorkspaceQuerySchema.parse(queryInput);
     if (query.trim()) {
-      mapFeatureSequence += 1;
-      set({ query, dwimStatus: "", mapFeatureSelection: null });
+      set({ query, dwimStatus: "", mapFeatureSelections: [] });
       return;
     }
     browserRunSequence += 1;
@@ -822,6 +877,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       draft: makeBlankDraft(),
       spec: null,
       selectedData: { ...EMPTY_TABLE, limit: 200 },
+      resultRelation: EMPTY_RESULT_RELATION,
       fullData: EMPTY_TABLE,
       dockSource: "",
       fullSort: null,
@@ -833,7 +889,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       chartSelection: null,
       chartDomains: {},
       chartDomainHistory: [],
-      mapFeatureSelection: null,
+      mapFeatureSelections: [],
     });
   },
   runEditorQuery: async (queryToRun) => {
@@ -848,15 +904,18 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   applyDataset: (source, dataset, autoRun = true) => {
     const nextDraft = draftForDataset(source, dataset);
     const nextQuery = serializeDraft(nextDraft);
+    fullTableSequence += 1;
     set({
       draft: nextDraft,
       query: nextQuery,
+      fullData: EMPTY_TABLE,
+      fullLoading: false,
       fullSort: null,
       dockSource: z.string().min(1).max(300).parse(source),
       editorContext: null,
       mapViewport: { zoom: 1, panX: 0, panY: 0 },
       chartSelection: null,
-      mapFeatureSelection: null,
+      mapFeatureSelections: [],
     });
     if (autoRun) get().scheduleQueryRun(nextQuery);
   },
@@ -885,6 +944,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   },
   addLocalFiles: async (inputFiles) => {
     const files = z.array(BrowserFileSchema).min(1).max(20).parse(inputFiles);
+    const imported: LocalDataset[] = [];
     for (const file of files) {
       try {
         if (file.size > 100 * 1024 * 1024) throw new Error(`${file.name} exceeds the 100 MB browser safety limit.`);
@@ -901,6 +961,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           { name: file.name, type: file.type, size: file.size },
         );
         const dataset = LocalDatasetSchema.parse(registration.dataset);
+        imported.push(dataset);
         set((state) => ({ localDatasets: [...state.localDatasets.filter((item) => item.tableName !== tableName), dataset] }));
         fullTableCache.clear();
         get().applyDataset(`user:${tableName}`, dataset);
@@ -914,6 +975,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         get().setRunning(false);
       }
     }
+    return imported;
   },
   removeLocalSource: async (tableNameInput) => {
     const tableName = z.string().min(1).max(200).parse(tableNameInput);
@@ -1040,37 +1102,42 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       ?? { name: column, dataType: "VARCHAR", nullable: true };
     get().toggleColumn(state.dockSource, field, true);
   },
-  selectMapFeature: async (selectionInput) => {
+  selectChartRegion: (selectionInput) => {
+    const chartSelection = selectionInput ? ChartSelectionSchema.parse(selectionInput) : null;
+    set({
+      selectionOrigin: "result",
+      gridSelection: null,
+      mapFeatureSelections: [],
+      chartSelection,
+    });
+  },
+  selectMapFeature: (selectionInput, additive = false) => {
     const selection = selectionInput ? MapFeatureSelectionSchema.parse(selectionInput) : null;
-    const requestId = ++mapFeatureSequence;
-    set({ selectionOrigin: "result", gridSelection: null, chartSelection: null, mapFeatureSelection: selection });
-    if (!selection?.pending || selection.rowIndex === undefined) return;
-    const rowIndex = selection.rowIndex;
-    const selectedQuery = get().query;
-    try {
-      const sql = splitGgsql(selectedQuery).sql.trim().replace(/;$/, "");
-      if (!sql) throw new Error("The active map has no query to inspect.");
-      const row = await get().executeWorkspaceSql(`SELECT * FROM (${sql}) AS chartize_selected_feature LIMIT 1 OFFSET ${rowIndex}`);
-      if (!row.rows[0]) throw new Error("No feature details were returned.");
-      const hydrated = mapFeatureSelectionFromTableRow(row.columns, row.rows[0], selection.pixels, rowIndex);
-      if (!hydrated) throw new Error("This feature has no readable attributes.");
-      if (mapFeatureSequence === requestId && get().query === selectedQuery) set((state) => ({
-        mapFeatureSelection: hydrated,
+    set((state) => {
+      if (!selection) return {
+        selectionOrigin: "result" as const,
+        gridSelection: null,
+        chartSelection: null,
+        mapFeatureSelections: [],
+      };
+      if (!additive) return {
+        selectionOrigin: "result" as const,
+        gridSelection: null,
+        chartSelection: null,
+        mapFeatureSelections: [selection],
         runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "map"),
-      }));
-    } catch (cause) {
-      if (mapFeatureSequence !== requestId || get().query !== selectedQuery) return;
-      const message = cause instanceof Error ? cause.message : "Feature details could not be loaded.";
-      set((state) => ({
-        mapFeatureSelection: {
-          ...selection,
-          title: `map feature ${rowIndex + 1}`,
-          pending: false,
-          error: message,
-        },
-        runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "map", message, failedQuery: selectedQuery }),
-      }));
-    }
+      };
+      const exists = state.mapFeatureSelections.some((candidate) => candidate.key === selection.key);
+      return {
+        selectionOrigin: "result" as const,
+        gridSelection: null,
+        chartSelection: null,
+        mapFeatureSelections: exists
+          ? state.mapFeatureSelections.filter((candidate) => candidate.key !== selection.key)
+          : [...state.mapFeatureSelections, selection].slice(-24),
+        runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "map"),
+      };
+    });
   },
   requestAiTurn: async (input) => {
     const request = AiTurnRequestSchema.parse(input);
@@ -1185,30 +1252,33 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       if (get().activeWorkspaceId === startedWorkspace) set({ aiBusy: false });
     }
   },
-  saveLocalWorkspace: async () => {
-    const state = get();
-    await saveBrowserWorkspace({
-      id: "current",
-      title: state.draft.title,
-      query: state.query,
-      draft: state.draft,
-      savedAt: new Date().toISOString(),
-    });
-    set({ aiMessage: "Workspace saved in this browser." });
+  persistWorkspaceSession: async () => {
+    const payload = JSON.stringify(captureWorkspaceSession(get()));
+    if (payload === lastPersistedSession) return;
+    await saveBrowserWorkspace({ id: "session", payload, savedAt: new Date().toISOString() });
+    lastPersistedSession = payload;
   },
-  restoreLocalWorkspace: async () => {
-    const restored = await loadBrowserWorkspace();
-    if (!restored.workspace) {
-      set({ aiMessage: "No saved browser workspace was found." });
-      return;
-    }
-    set({
-      localDatasets: [...BUILTIN_DATASETS, ...restored.localDatasets.map((dataset) => LocalDatasetSchema.parse(dataset))],
-      draft: GgsqlDraftSchema.parse(restored.workspace.draft),
-      query: WorkspaceQuerySchema.parse(restored.workspace.query),
-    });
-    await get().runQuery(restored.workspace.query);
-    set({ aiMessage: "Browser workspace restored." });
+  restoreWorkspaceSession: async () => {
+    const restored = await loadBrowserWorkspace("session");
+    const record = restored.workspace;
+    if (!record || !("payload" in record)) return false;
+    const session = WorkspaceSessionSchema.parse(JSON.parse(record.payload));
+    const document = session.workspaceDocuments.find((candidate) => candidate.id === session.activeWorkspaceId)!;
+    lastPersistedSession = JSON.stringify(session);
+    set((state) => ({
+      ...activatedWorkspaceState(document, state.aiFocusVersion + 1),
+      activeWorkspaceId: session.activeWorkspaceId,
+      workspaceDocuments: session.workspaceDocuments,
+      localDatasets: [
+        ...BUILTIN_DATASETS,
+        ...restored.localDatasets
+          .map((dataset) => LocalDatasetSchema.parse(dataset))
+          .filter((dataset) => !BUILTIN_DATASETS.some((builtin) => builtin.tableName === dataset.tableName)),
+      ],
+      leftPaneRatio: session.leftPaneRatio,
+      codePaneRatio: session.codePaneRatio,
+    }));
+    return true;
   },
   shareWorkspace: async () => {
     if (typeof window === "undefined") throw new Error("Sharing is available in the browser.");
@@ -1247,9 +1317,12 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   closeWorkspace: (id) => {
     const wasActive = id === get().activeWorkspaceId;
     let activated = false;
+    let closed = false;
     set((state) => {
       if (state.workspaceDocuments.length <= 1) return state;
       const documents = replaceCapturedWorkspace(state).filter((document) => document.id !== id);
+      if (documents.length === state.workspaceDocuments.length) return state;
+      closed = true;
       if (!wasActive) return { workspaceDocuments: documents };
       const document = documents.at(-1)!;
       activated = true;
@@ -1259,6 +1332,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         workspaceDocuments: documents,
       };
     });
+    if (closed) void releaseBrowserWorkspace(id).catch(() => undefined);
     if (activated) workspaceActivated(get);
   },
 
@@ -1316,7 +1390,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       zoom: Math.min(8, Math.max(0.5, state.mapViewport.zoom * factor)),
     }),
     chartSelection: null,
-    mapFeatureSelection: null,
+    mapFeatureSelections: [],
   })),
   panMap: (horizontal, vertical) => set((state) => ({
     mapViewport: MapViewportSchema.parse({
@@ -1325,10 +1399,10 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       panY: Math.min(4, Math.max(-4, state.mapViewport.panY + vertical / state.mapViewport.zoom)),
     }),
     chartSelection: null,
-    mapFeatureSelection: null,
+    mapFeatureSelections: [],
   })),
-  resetMapViewport: () => set({ mapViewport: { zoom: 1, panX: 0, panY: 0 }, chartSelection: null, mapFeatureSelection: null }),
-  setMapFeatureSelection: (mapFeatureSelection) => set({ mapFeatureSelection: mapFeatureSelection ? MapFeatureSelectionSchema.parse(mapFeatureSelection) : null }),
+  resetMapViewport: () => set({ mapViewport: { zoom: 1, panX: 0, panY: 0 }, chartSelection: null, mapFeatureSelections: [] }),
+  setMapFeatureSelections: (mapFeatureSelections) => set({ mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(24).parse(mapFeatureSelections) }),
   setResultStatus: (resultStatus) => set({ resultStatus }),
   setFocusArea: (focusArea) => set({ focusArea }),
   setEditorFontSize: (editorFontSize) => set({ editorFontSize: EditorFontSizeSchema.parse(editorFontSize) }),

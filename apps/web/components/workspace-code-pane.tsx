@@ -23,6 +23,7 @@ export type PromoteAi = (
 export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
   const view = useWorkspaceViewModel();
   const state = useChartizeWorkspace(useShallow((workspace) => ({
+    activeWorkspaceId: workspace.activeWorkspaceId,
     engineState: workspace.engineState,
     catalogLoaded: workspace.catalogLoaded,
     query: workspace.query,
@@ -30,6 +31,7 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
     error: workspace.error,
     inlineAnchors: workspace.inlineAnchors,
     editorContext: workspace.editorContext,
+    aiOpen: workspace.aiOpen,
     dwimStatus: workspace.dwimStatus,
     editorFontSize: workspace.editorFontSize,
     editorFocusVersion: workspace.editorFocusVersion,
@@ -49,6 +51,25 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
   })));
   const rootRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const refreshInlineControlsRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    state.setInlineAnchors(null);
+    state.setEditorContext(null);
+    if (!editor) return;
+    editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 });
+    editor.setPosition({ lineNumber: 1, column: 1 });
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      editor.layout();
+      secondFrame = window.requestAnimationFrame(() => refreshInlineControlsRef.current?.());
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [state.activeWorkspaceId, state.setEditorContext, state.setInlineAnchors]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -92,6 +113,7 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
       editorInput.name = "chartize-ggsql-editor";
     }
     let userActivated = false;
+    let controlsFrame: number | null = null;
     const decorations = editor.createDecorationsCollection();
     const refreshDirectControls = () => {
       const model = editor.getModel();
@@ -113,7 +135,12 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
       const locateOffset = (offset: number) => {
         const visible = editor.getScrolledVisiblePosition(model.getPositionAt(offset));
         const bounds = editor.getDomNode()?.getBoundingClientRect();
-        return visible && bounds
+        const insideViewport = visible && bounds
+          && visible.top >= 0
+          && visible.top + visible.height <= bounds.height
+          && visible.left >= 0
+          && visible.left <= bounds.width;
+        return insideViewport
           ? { left: bounds.left + visible.left + 8, top: bounds.top + visible.top + visible.height / 2 }
           : null;
       };
@@ -121,6 +148,15 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
       const from = locateOffset(offsets.from);
       actions.setInlineAnchors(select && from ? { select, from } : null);
     };
+    const scheduleDirectControls = () => {
+      actions.setInlineAnchors(null);
+      if (controlsFrame !== null) window.cancelAnimationFrame(controlsFrame);
+      controlsFrame = window.requestAnimationFrame(() => {
+        controlsFrame = null;
+        refreshDirectControls();
+      });
+    };
+    refreshInlineControlsRef.current = scheduleDirectControls;
     const locate = () => {
       const model = editor.getModel();
       const selection = editor.getSelection();
@@ -144,19 +180,24 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
       actions.setFocusArea("code");
       requestAnimationFrame(locate);
     };
-    const locateAfterActivation = () => { if (userActivated) locate(); };
+    const locateAfterActivation = () => {
+      const workspace = useChartizeWorkspace.getState();
+      if (userActivated && editor.hasTextFocus() && !workspace.aiOpen) locate();
+    };
     const disposables = [
       editor.onMouseDown(activate),
       editor.onKeyDown(activate),
       editor.onDidChangeCursorPosition(locateAfterActivation),
       editor.onDidChangeCursorSelection(locateAfterActivation),
-      editor.onDidChangeModelContent(refreshDirectControls),
+      editor.onDidChangeModelContent(scheduleDirectControls),
       editor.onDidScrollChange(() => { refreshDirectControls(); locateAfterActivation(); }),
-      editor.onDidLayoutChange(refreshDirectControls),
+      editor.onDidLayoutChange(scheduleDirectControls),
     ];
     editor.addCommand(monaco.KeyCode.Escape, () => actions.setEditorContext(null));
-    requestAnimationFrame(refreshDirectControls);
+    scheduleDirectControls();
     return () => {
+      if (controlsFrame !== null) window.cancelAnimationFrame(controlsFrame);
+      if (refreshInlineControlsRef.current === scheduleDirectControls) refreshInlineControlsRef.current = null;
       decorations.clear();
       disposables.forEach((disposable) => disposable.dispose());
     };
@@ -188,7 +229,7 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
           onChange={(value) => state.editQuery(value ?? "")}
         />
         {state.inlineAnchors && <InlineQueryControls anchors={state.inlineAnchors as InlineControlAnchors} sources={view.sources} activeSources={view.activeSources} selectedFields={view.selectedFieldNames} catalogLoading={!state.catalogLoaded} onSource={state.toggleSource} onColumn={state.toggleColumn} />}
-        {editorContext && (
+        {editorContext && !state.aiOpen && (
           <DwimPanel
             section={editorContext.section}
             selectedText={editorContext.selectedText}

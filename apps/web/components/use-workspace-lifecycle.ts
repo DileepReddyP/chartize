@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { serializeDraft } from "@/lib/ggsql/serialize";
 import {
@@ -20,6 +20,7 @@ function decodeShareState(value: string) {
 export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) {
   const firstDraft = useMemo(() => makeInitialWorkspaceDraft(), []);
   const initialized = useRef(false);
+  const [sessionReady, setSessionReady] = useState(false);
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     engineState: workspace.engineState,
     catalogLoaded: workspace.catalogLoaded,
@@ -29,6 +30,8 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
     applyDataset: workspace.applyDataset,
     setDraft: workspace.setDraft,
     setQuery: workspace.setQuery,
+    persistWorkspaceSession: workspace.persistWorkspaceSession,
+    restoreWorkspaceSession: workspace.restoreWorkspaceSession,
   })));
 
   useEffect(() => {
@@ -38,37 +41,72 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
   useEffect(() => {
     if (state.engineState !== "ready" || !state.catalogLoaded || initialized.current) return;
     initialized.current = true;
-    if (new URLSearchParams(window.location.search).has("workspace")) {
-      void state.runQuery();
-      return;
-    }
-    const hash = window.location.hash.match(/^#view=(.+)$/)?.[1];
-    if (hash) {
-      const shared = decodeShareState(hash);
-      const draft = shared.draft ?? firstDraft;
-      const query = shared.query ?? serializeDraft(draft);
-      state.setDraft(draft);
-      state.setQuery(query);
-      void state.runQuery(query);
-      return;
-    }
-    const featured = state.catalogDatasets.find((dataset) => dataset.slug === "presidential_approval_average") ?? state.catalogDatasets[0];
-    if (featured?.slug === "presidential_approval_average") {
-      const query = serializeDraft(firstDraft);
-      state.setDraft(firstDraft);
-      state.setQuery(query);
-      void state.runQuery(query);
-      return;
-    }
-    if (featured) {
-      state.applyDataset(`chartize:${featured.slug}`, featured, false);
-      void useChartizeWorkspace.getState().runQuery();
-      return;
-    }
-    const fallback = BUILTIN_DATASETS[0]!;
-    state.applyDataset(fallback.tableName, fallback, false);
-    void useChartizeWorkspace.getState().runQuery();
+    let cancelled = false;
+    const boot = async () => {
+      const hash = window.location.hash.match(/^#view=(.+)$/)?.[1];
+      if (hash) {
+        const shared = decodeShareState(hash);
+        const draft = shared.draft ?? firstDraft;
+        const query = shared.query ?? serializeDraft(draft);
+        state.setDraft(draft);
+        state.setQuery(query);
+        await state.runQuery(query);
+      } else if (await state.restoreWorkspaceSession()) {
+        await useChartizeWorkspace.getState().runQuery();
+      } else {
+        const featured = state.catalogDatasets.find((dataset) => dataset.slug === "presidential_approval_average") ?? state.catalogDatasets[0];
+        if (featured?.slug === "presidential_approval_average") {
+          const query = serializeDraft(firstDraft);
+          state.setDraft(firstDraft);
+          state.setQuery(query);
+          await state.runQuery(query);
+        } else if (featured) {
+          state.applyDataset(`chartize:${featured.slug}`, featured, false);
+          await useChartizeWorkspace.getState().runQuery();
+        } else {
+          const fallback = BUILTIN_DATASETS[0]!;
+          state.applyDataset(fallback.tableName, fallback, false);
+          await useChartizeWorkspace.getState().runQuery();
+        }
+      }
+      if (!cancelled) setSessionReady(true);
+    };
+    void boot().catch((cause) => {
+      if (!cancelled) {
+        useChartizeWorkspace.getState().setAiMessage(cause instanceof Error ? cause.message : String(cause));
+        setSessionReady(true);
+      }
+    });
+    return () => { cancelled = true; };
   }, [firstDraft, state]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let persistenceFailed = false;
+    const persist = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      if (persistenceFailed) return;
+      void useChartizeWorkspace.getState().persistWorkspaceSession().catch(() => {
+        persistenceFailed = true;
+        useChartizeWorkspace.getState().setAiMessage("Browser autosave is unavailable for this session.");
+      });
+    };
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(persist, 350);
+    };
+    const unsubscribe = useChartizeWorkspace.subscribe(schedule);
+    const saveWhenHidden = () => { if (document.visibilityState === "hidden") persist(); };
+    document.addEventListener("visibilitychange", saveWhenHidden);
+    schedule();
+    return () => {
+      unsubscribe();
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+      persist();
+    };
+  }, [sessionReady]);
 
   useEffect(() => {
     const dismissOnEscape = (event: KeyboardEvent) => {

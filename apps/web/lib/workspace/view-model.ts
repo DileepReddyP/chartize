@@ -15,6 +15,7 @@ import {
   describeChartExtent,
   describeChartSelection,
   selectionTableFromSpec,
+  tableFromMapFeatureSelections,
   visualFieldsFromPreview,
 } from "./chart-data";
 import { useChartizeWorkspace } from "./store";
@@ -36,7 +37,7 @@ export function useWorkspaceViewModel() {
     spec: state.spec,
     selectedData: state.selectedData,
     chartSelection: state.chartSelection,
-    mapFeatureSelection: state.mapFeatureSelection,
+    mapFeatureSelections: state.mapFeatureSelections,
     catalogDatasets: state.catalogDatasets,
     localDatasets: state.localDatasets,
   })));
@@ -105,8 +106,10 @@ export function useWorkspaceViewModel() {
       visualState.labelY,
     );
     const aiViewNote = `${titleNote}${subtitleNote}${sourceNote}${extent ? ` ${extent}.` : ""}`;
-    const mapFeatureContext = input.mapFeatureSelection
-      ? `${aiViewNote} Selected map feature: ${input.mapFeatureSelection.title}. Attached feature values: ${input.mapFeatureSelection.values.map(({ field, value }) => `${field}=${value}`).join("; ")}. Treat this one geographic feature as the active subject unless the user broadens the question.`
+    const mapSelectedData = tableFromMapFeatureSelections(input.mapFeatureSelections);
+    const activeMapFeature = input.mapFeatureSelections.at(-1) ?? null;
+    const mapFeatureContext = input.mapFeatureSelections.length
+      ? `${aiViewNote} Selected ${input.mapFeatureSelections.length === 1 ? `map feature: ${activeMapFeature!.title}` : `${input.mapFeatureSelections.length} map features: ${input.mapFeatureSelections.map(({ title }) => title).join(", ")}`}. Attached feature values: ${input.mapFeatureSelections.slice(-12).map((selection) => `[${selection.title}: ${selection.values.map(({ field, value }) => `${field}=${value}`).join("; ")}]`).join(" ")}. Treat ${input.mapFeatureSelections.length === 1 ? "this geographic feature" : "these geographic features"} as the active subject unless the user broadens the question.`.slice(0, 3900)
       : "";
 
     return {
@@ -132,6 +135,8 @@ export function useWorkspaceViewModel() {
       isMap: /\bDRAW\s+spatial\b/i.test(splitGgsql(input.query).visual),
       chartSelectionData,
       chartSelectionDetails,
+      mapSelectedData,
+      activeMapFeature,
       aiView,
       aiViewNote,
       mapFeatureContext,

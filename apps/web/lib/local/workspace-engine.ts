@@ -150,3 +150,12 @@ export function resetWorkspacesContainingSource(name: string) {
   }
   return [...workspaceIds];
 }
+
+export function releaseWorkspaceEngine(workspaceId: string) {
+  contexts.get(workspaceId)?.free();
+  contexts.delete(workspaceId);
+  contextPromises.delete(workspaceId);
+  for (const key of [...registrations.keys()]) {
+    if (key.startsWith(`${workspaceId}:`)) registrations.delete(key);
+  }
+}

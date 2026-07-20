@@ -61,7 +61,7 @@ function clientAndModel(): { client: ResponsesClient; model: string; promptCachi
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not configured.");
   }
-  const model = process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.6-terra";
+  const model = process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
   return {
     client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
     model,

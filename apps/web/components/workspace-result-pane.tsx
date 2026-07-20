@@ -32,6 +32,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
     draft: workspace.draft,
     spec: workspace.spec,
     selectedData: workspace.selectedData,
+    resultRelation: workspace.resultRelation,
     resultTab: workspace.resultTab,
     running: workspace.running,
     showLoadingMask: workspace.showLoadingMask,
@@ -40,7 +41,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
     chartDomains: workspace.chartDomains,
     chartDomainHistory: workspace.chartDomainHistory,
     mapViewport: workspace.mapViewport,
-    mapFeatureSelection: workspace.mapFeatureSelection,
+    mapFeatureSelections: workspace.mapFeatureSelections,
     aiOpen: workspace.aiOpen,
     aiContext: workspace.aiContext,
     aiContextNote: workspace.aiContextNote,
@@ -50,9 +51,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
     setError: workspace.setError,
     setSelectionOrigin: workspace.setSelectionOrigin,
     setGridSelection: workspace.setGridSelection,
-    setChartSelection: workspace.setChartSelection,
     setChartDomains: workspace.setChartDomains,
-    setMapFeatureSelection: workspace.setMapFeatureSelection,
     setResultStatus: workspace.setResultStatus,
     setAiMessage: workspace.setAiMessage,
     editChartLabel: workspace.editChartLabel,
@@ -62,12 +61,12 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
     zoomMap: workspace.zoomMap,
     panMap: workspace.panMap,
     resetMapViewport: workspace.resetMapViewport,
+    selectChartRegion: workspace.selectChartRegion,
     selectMapFeature: workspace.selectMapFeature,
-    saveLocalWorkspace: workspace.saveLocalWorkspace,
-    restoreLocalWorkspace: workspace.restoreLocalWorkspace,
     shareWorkspace: workspace.shareWorkspace,
   })));
   const chartRef = useRef<ChartViewHandle>(null);
+  const resultData = view.mapSelectedData ?? state.selectedData;
 
   const zoomToSelection = () => {
     if (!state.chartSelection?.x || !state.chartSelection.y) return;
@@ -148,19 +147,18 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
         <header className="result-toolbar">
           <nav className="result-tabs" aria-label="Result views">
             <button type="button" className={state.resultTab === "chart" ? "active" : ""} onClick={() => state.setResultTab("chart")}>chart</button>
-            <button type="button" className={state.resultTab === "selected" ? "active" : ""} onClick={() => state.setResultTab("selected")}>selected data <span>{state.selectedData.totalRows.toLocaleString()}</span></button>
+            <button type="button" className={state.resultTab === "selected" ? "active" : ""} onClick={() => state.setResultTab("selected")}>selected data <span>{resultData.totalRows.toLocaleString()}</span></button>
           </nav>
           <div className="chart-header-tools">
             <div className="preview-actions" aria-label="Result actions">
               <span className={`chart-status ${state.running ? "running" : ""}`}>{state.running ? "running" : `${state.duration} ms`}</span>
-              <button className="icon-button save-action" type="button" title="Save in this browser" aria-label="Save in this browser" onClick={() => void state.saveLocalWorkspace()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5zM8 3v6h8V3M8 14h8v7H8z" /></svg></button>
               <details className="preview-menu" data-dismiss-on-outside>
                 <summary className="icon-button download-action" title="Download" aria-label="Download"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 20h14" /></svg></summary>
                 <div><span>download</span><button onClick={() => void exportChart("png")}>chart as png</button><button onClick={() => void exportChart("svg")}>chart as svg</button><button onClick={() => void exportShareCard()}>share card</button></div>
               </details>
               <details className="preview-menu" data-dismiss-on-outside>
                 <summary className="icon-button tools-action" title="Tools" aria-label="Tools"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg></summary>
-                <div><span>view tools</span><button onClick={() => void state.restoreLocalWorkspace()}>restore browser workspace</button><button onClick={() => void state.shareWorkspace()}>copy share url</button><button onClick={state.resetChartZoom}>fit full chart</button></div>
+                <div><span>view tools</span><button onClick={() => void state.shareWorkspace()}>copy share url</button><button onClick={state.resetChartZoom}>fit full chart</button></div>
               </details>
             </div>
           </div>
@@ -181,7 +179,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
                     <div className="chart-view"><ChartView
                       ref={chartRef}
                       spec={state.spec}
-                      featureData={state.selectedData}
+                      featureData={state.resultRelation}
                       exportTitle={view.visualState.title || state.draft.title}
                       exportSubtitle={view.visualState.subtitle || state.draft.subtitle}
                       onError={state.setError}
@@ -191,18 +189,14 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
                       selection={state.chartSelection}
                       mapMode={view.isMap}
                       mapViewport={state.mapViewport}
-                      mapFeatureSelection={state.mapFeatureSelection}
+                      mapFeatureSelections={state.mapFeatureSelections}
                       mapFeatureAiActive={Boolean(state.aiOpen && state.aiContext === "chart" && state.aiContextNote === view.mapFeatureContext)}
                       onMapPan={state.panMap}
                       onMapZoom={state.zoomMap}
                       onChartZoom={gestureZoom}
                       onChartPan={gesturePan}
-                      onRegionSelect={(selection) => {
-                        state.setSelectionOrigin("result");
-                        state.setMapFeatureSelection(null);
-                        state.setChartSelection(selection);
-                      }}
-                      onMapFeatureSelect={(selection) => void state.selectMapFeature(selection)}
+                      onRegionSelect={state.selectChartRegion}
+                      onMapFeatureSelect={state.selectMapFeature}
                       onAskMapFeature={(origin) => { if (view.mapFeatureContext) promoteAi(view.mapFeatureContext, "left", "chart", origin); }}
                     /></div>
                     {view.isMap
@@ -222,7 +216,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
               )}
             </div>
           )}
-          {state.resultTab === "selected" && <div className="result-table-focus" onPointerDown={() => state.setFocusArea("table")}><DataGrid data={state.selectedData} selectedColumns={view.selectedFieldNames} onSelection={(selection) => { state.setFocusArea("table"); state.setSelectionOrigin("result"); state.setGridSelection(selection); }} /></div>}
+          {state.resultTab === "selected" && <div className="result-table-focus" onPointerDown={() => state.setFocusArea("table")}><DataGrid data={resultData} selectedColumns={view.selectedFieldNames} onSelection={(selection) => { state.setFocusArea("table"); state.setSelectionOrigin("result"); state.setGridSelection(selection); }} /></div>}
           <WorkspaceSelectionActions origin="result" view={view} promoteAi={promoteAi} onZoomSelection={zoomToSelection} />
           {state.showLoadingMask && <div className="pane-loading-mask" role="status"><div className="spinner" /><span>running query…</span></div>}
         </div>

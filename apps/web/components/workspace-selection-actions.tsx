@@ -54,7 +54,7 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
 
   return (
     <aside className={`result-context${activeAiContext ? " active-ai-context" : ""}`} aria-label="Selection actions">
-      <header><div><h2>{selectionTitle}</h2><p>{selectionSummary}</p></div><button type="button" aria-label="Close selection actions" onClick={clear}>×</button></header>
+      <header><div><span>selected region</span><h2>{selectionTitle}</h2><p>{selectionSummary}</p></div><button type="button" aria-label="Close selection actions" onClick={clear}>×</button></header>
       <label className={`result-context-ai ai-promoter${activeAiContext ? " active" : ""}`}><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={activeAiContext ? "This selection is attached to Chartize AI" : selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={(event) => promoteAi(context, "left", "chart", event.currentTarget)} /><b>{activeAiContext ? "active" : "ask"}</b></label>
       {state.resultStatus && <p className="result-context-status">{state.resultStatus}</p>}
       <div className="result-context-actions">

@@ -36,8 +36,8 @@ interface ChartViewProps {
   onMapZoom?: (factor: number) => void;
   onChartZoom?: (factor: number) => void;
   onChartPan?: (horizontal: number, vertical: number) => void;
-  mapFeatureSelection?: MapFeatureSelection | null;
-  onMapFeatureSelect?: (selection: MapFeatureSelection | null) => void;
+  mapFeatureSelections?: MapFeatureSelection[];
+  onMapFeatureSelect?: (selection: MapFeatureSelection | null, additive?: boolean) => void;
   onAskMapFeature?: (origin: HTMLElement) => void;
   mapFeatureAiActive?: boolean;
   featureData?: Pick<TablePreview, "columns" | "rows">;
@@ -82,7 +82,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
   onMapZoom,
   onChartZoom,
   onChartPan,
-  mapFeatureSelection,
+  mapFeatureSelections = [],
   onMapFeatureSelect,
   onAskMapFeature,
   mapFeatureAiActive = false,
@@ -177,10 +177,11 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
               const bounds = interaction.current?.getBoundingClientRect();
               const pointer = event as MouseEvent;
               if (!bounds || !Number.isFinite(pointer.clientX) || !Number.isFinite(pointer.clientY)) return;
-              mapFeatureSelectRef.current?.(mapFeatureSelectionFromDatum(item?.datum, {
+              const nextSelection = mapFeatureSelectionFromDatum(item?.datum, {
                 x: Math.max(0, Math.min(bounds.width, pointer.clientX - bounds.left)),
                 y: Math.max(0, Math.min(bounds.height, pointer.clientY - bounds.top)),
-              }, featureData));
+              }, featureData);
+              mapFeatureSelectRef.current?.(nextSelection, pointer.shiftKey);
             };
             featureView?.addEventListener("click", featureListener);
           }
@@ -241,7 +242,6 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       return;
     }
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* optional enhancement */ }
-    if (mapMode) onMapFeatureSelect?.(null);
     setInteractionState({ kind: "selection", pixels: { x0: x, y0: y, x1: x, y1: y } });
   };
   const moveSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -348,6 +348,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     mapGesture.current.x - mapGesture.start.x,
     mapGesture.current.y - mapGesture.start.y,
   ) > 4);
+  const activeMapFeature = mapFeatureSelections.at(-1) ?? null;
 
   return (
     <div
@@ -367,32 +368,43 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
         ref={element}
         style={mapDragging && mapGesture ? { transform: `translate(${mapGesture.current.x - mapGesture.start.x}px, ${mapGesture.current.y - mapGesture.start.y}px)` } : undefined}
       />
-      {mapMode && mapFeatureSelection && (
+      {mapMode && activeMapFeature && (
         <>
-          <span
-            className="map-feature-pin"
-            aria-hidden="true"
-            style={{ left: mapFeatureSelection.pixels.x, top: mapFeatureSelection.pixels.y }}
-          />
+          {mapFeatureSelections.map((selection) => (
+            <span
+              key={selection.key}
+              className="map-feature-pin"
+              aria-hidden="true"
+              style={{ left: selection.pixels.x, top: selection.pixels.y }}
+            />
+          ))}
           <aside
             className="map-feature-inspector"
-            aria-label={`Selected place: ${mapFeatureSelection.title}`}
+            aria-label={`${mapFeatureSelections.length} selected ${mapFeatureSelections.length === 1 ? "place" : "places"}`}
             style={{
-              "--feature-x": `${mapFeatureSelection.pixels.x + 14}px`,
-              "--feature-y": `${mapFeatureSelection.pixels.y + 14}px`,
+              "--feature-x": `${activeMapFeature.pixels.x + 14}px`,
+              "--feature-y": `${activeMapFeature.pixels.y + 14}px`,
             } as CSSProperties}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <header>
-              <div><span>selected place</span><h2>{mapFeatureSelection.title}</h2></div>
+              <div><span>{mapFeatureSelections.length === 1 ? "selected place" : `${mapFeatureSelections.length} selected places`}</span><h2>{activeMapFeature.title}</h2></div>
               <button type="button" aria-label="Close selected place" onClick={() => onMapFeatureSelect?.(null)}>×</button>
             </header>
-            {mapFeatureSelection.pending
-              ? <div className="map-feature-status" role="status"><span className="spinner" aria-hidden="true" /> loading feature details…</div>
-              : mapFeatureSelection.error
-                ? <div className="map-feature-status error" role="alert">{mapFeatureSelection.error}</div>
-                : <dl>{mapFeatureSelection.values.map(({ field, value }) => <div key={field}><dt>{field}</dt><dd>{value}</dd></div>)}</dl>}
-            <button className={`map-feature-ask${mapFeatureAiActive ? " active" : ""}`} type="button" disabled={mapFeatureSelection.pending || Boolean(mapFeatureSelection.error)} onClick={(event) => onAskMapFeature?.(event.currentTarget)}><span aria-hidden="true">✦</span> {mapFeatureAiActive ? "active in chartize ai" : "ask about this place"}</button>
+            <dl>{activeMapFeature.values.map(({ field, value }) => <div key={field}><dt>{field}</dt><dd>{value}</dd></div>)}</dl>
+            <p className="map-feature-selection-hint">shift-click another place to add or remove it</p>
+            <label className={`map-feature-ask ai-promoter${mapFeatureAiActive ? " active" : ""}`}>
+              <span aria-hidden="true">✦</span>
+              <input
+                name="map-feature-ai-prompt"
+                readOnly
+                value=""
+                placeholder={mapFeatureAiActive ? "This place is attached to Chartize AI" : mapFeatureSelections.length === 1 ? "Ask about this place…" : "Ask about these places…"}
+                aria-label={mapFeatureSelections.length === 1 ? "Ask Chartize about this place" : "Ask Chartize about these places"}
+                onFocus={(event) => onAskMapFeature?.(event.currentTarget)}
+              />
+              <b>{mapFeatureAiActive ? "active" : "ask"}</b>
+            </label>
           </aside>
         </>
       )}

@@ -21,6 +21,7 @@ import {
   describeWorkspaceSource,
   listWorkspaceTables,
   registerWorkspaceSource,
+  releaseWorkspaceEngine,
   resetWorkspacesContainingSource,
 } from "./workspace-engine";
 import {
@@ -37,6 +38,7 @@ export type WorkerProgressEmitter = (id: string, progress: BrowserEngineProgress
 
 let catalog: DatasetManifest[] | undefined;
 let catalogPromise: Promise<DatasetManifest[]> | undefined;
+let catalogRefreshPromise: Promise<DatasetManifest[]> | undefined;
 const artifactLoads = new Map<string, Promise<ArrayBuffer>>();
 const registeredSources = new Map<string, string>();
 const sourceLoads = new Map<string, Promise<string>>();
@@ -68,6 +70,28 @@ export async function loadWorkerCatalog(id: string, emit: WorkerProgressEmitter)
   } catch (error) {
     catalogPromise = undefined;
     throw error;
+  }
+}
+
+async function refreshWorkerCatalog(id: string, emit: WorkerProgressEmitter) {
+  if (!catalogRefreshPromise) {
+    catalogRefreshPromise = (async () => {
+      emit(id, { phase: "catalog", message: "checking for this source…" });
+      const response = await fetchWithDeadline(CATALOG_URL, {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+      }, FETCH_TIMEOUT_MS);
+      if (!response.ok) throw new Error(`The source catalog could not be refreshed (${response.status}).`);
+      const datasets = DatasetManifestSchema.array().parse(await response.json());
+      await writeCatalog(datasets);
+      catalog = datasets;
+      return datasets;
+    })();
+  }
+  try {
+    return await catalogRefreshPromise;
+  } finally {
+    catalogRefreshPromise = undefined;
   }
 }
 
@@ -123,8 +147,12 @@ async function ensureChartizeSource(workspaceId: string, name: string, id: strin
   const existing = sourceLoads.get(loadKey);
   if (existing) return existing;
   const operation = (async () => {
-    const datasets = await loadWorkerCatalog(id, emit);
-    const dataset = datasets.find((candidate) => candidate.slug === name || candidate.tableName === name);
+    let datasets = await loadWorkerCatalog(id, emit);
+    let dataset = datasets.find((candidate) => candidate.slug === name || candidate.tableName === name);
+    if (!dataset) {
+      datasets = await refreshWorkerCatalog(id, emit);
+      dataset = datasets.find((candidate) => candidate.slug === name || candidate.tableName === name);
+    }
     if (!dataset) throw new Error(`The source catalog does not contain chartize:${name}.`);
     const internalName = internalTableName("chartize", dataset.tableName);
     const registrationKey = `${workspaceId}:chartize:${dataset.tableName}`;
@@ -245,9 +273,20 @@ export async function prefetchWorkerSources(workspaceId: string, sources: string
   }
 }
 
+export function releaseWorkerWorkspace(workspaceId: string) {
+  releaseWorkspaceEngine(workspaceId);
+  for (const key of [...registeredSources.keys()]) {
+    if (key.startsWith(`${workspaceId}:`)) registeredSources.delete(key);
+  }
+  for (const key of [...sourceLoads.keys()]) {
+    if (key.startsWith(`${workspaceId}:`)) sourceLoads.delete(key);
+  }
+}
+
 export function resetWorkerSourceRegistryForTests() {
   catalog = undefined;
   catalogPromise = undefined;
+  catalogRefreshPromise = undefined;
   artifactLoads.clear();
   registeredSources.clear();
   sourceLoads.clear();

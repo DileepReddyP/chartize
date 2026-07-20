@@ -53,6 +53,17 @@ export function draftFromGgsql(query: string, allowedSources: string[], fallback
 
 const UNAVAILABLE_RESEARCH_SENTENCE = /(?:I|we)\s+(?:could\s+not|couldn't|cannot|can't|was\s+not\s+able\s+to|were\s+not\s+able\s+to)\s+(?:conduct|complete|perform|retrieve|access|use|find)[^.\n]*(?:live\s+)?(?:web|research|source|citation|lookup)[^.\n]*[.!]?/gi;
 const UNAVAILABLE_RESEARCH_WARNING = /(?:could\s+not|couldn't|cannot|can't|unavailable|no\s+(?:usable\s+)?sources?|without\s+(?:live\s+)?(?:web|research|sources?|citations?))/i;
+const PROVIDER_CITATION_TOKEN = /(?:cite|filecite)[^]*/g;
+
+/** Strip provider-internal citation control tokens while preserving Markdown. */
+export function sanitizeModelText(value: string) {
+  return value
+    .replace(PROVIDER_CITATION_TOKEN, "")
+    .replace(/[ \t]+([,.;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+$/gm, "")
+    .trim();
+}
 
 /**
  * Source metadata is authoritative. A model response must not tell the user
@@ -65,15 +76,19 @@ export function reconcileGroundedResponse(
   warnings: string[],
   metadata: { researched: boolean; sources: Array<{ title: string; url: string }> },
 ) {
-  if (!metadata.researched || metadata.sources.length === 0) return { explanation, warnings };
+  const cleanExplanation = sanitizeModelText(explanation);
+  const cleanWarnings = warnings.map(sanitizeModelText).filter(Boolean);
+  if (!metadata.researched || metadata.sources.length === 0) {
+    return { explanation: cleanExplanation, warnings: cleanWarnings };
+  }
 
-  const reconciled = explanation
+  const reconciled = cleanExplanation
     .replace(UNAVAILABLE_RESEARCH_SENTENCE, "Source links supporting the researched claims are attached below.")
     .replace(/\s{2,}/g, " ")
     .trim();
   return {
     explanation: reconciled,
-    warnings: warnings.filter((warning) => !UNAVAILABLE_RESEARCH_WARNING.test(warning)),
+    warnings: cleanWarnings.filter((warning) => !UNAVAILABLE_RESEARCH_WARNING.test(warning)),
   };
 }
 
