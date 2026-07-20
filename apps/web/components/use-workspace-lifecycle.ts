@@ -127,9 +127,10 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
         consume();
         return;
       }
-      if (workspace.gridSelection || workspace.chartSelection) {
+      if (workspace.gridSelection || workspace.chartSelection || workspace.mapFeatureSelections.length) {
         workspace.setGridSelection(null);
         workspace.setChartSelection(null);
+        workspace.setMapFeatureSelections([]);
         workspace.setResultStatus("");
         consume();
       }

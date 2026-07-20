@@ -1,7 +1,7 @@
 "use client";
 
 import type { AiUsage } from "@chartize/contracts";
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -76,6 +76,22 @@ function usageLabel(usage: AiUsage | null) {
   return `${models} · ${compactTokenCount(usage.totalTokens)} tokens`;
 }
 
+function ThinkingElapsed() {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    const startedAt = performance.now();
+    const update = () => setElapsedMs(Math.round(performance.now() - startedAt));
+    update();
+    const timer = window.setInterval(update, 31);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <time className="ai-thinking-elapsed" dateTime={`PT${elapsedMs / 1000}S`} aria-hidden="true">
+      {(elapsedMs / 1000).toFixed(3)} s
+    </time>
+  );
+}
+
 function RoleIcon({ role }: { role: AiConversationMessage["role"] }) {
   return (
     <span className={`ai-role-icon ${role}`} aria-hidden="true">
@@ -114,19 +130,27 @@ export function AiAssistant({
   const placeholder = context === "chart" && /selected|selection|range|point/i.test(contextNote)
     ? /map|region|county|state|feature/i.test(contextNote)
       ? "Ask about the selected places or compare them…"
-      : "Ask what changed in this selected range, or why…"
+      : /visual item|data item|data point|bar/i.test(contextNote)
+        ? "Ask about this selected data point…"
+        : "Ask what changed in this selected range, or why…"
     : copy.placeholder;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationRef = useRef<HTMLDivElement>(null);
   const conversationEndRef = useRef<HTMLDivElement>(null);
   const [composerMode, setComposerMode] = useState<"write" | "preview">("write");
-  const [thinkingStep, setThinkingStep] = useState(0);
   const [fileDropActive, setFileDropActive] = useState(false);
 
   const scrollToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
     const conversation = conversationRef.current;
     if (!conversation) return;
     conversation.scrollTo({ top: conversation.scrollHeight, behavior });
+  }, []);
+
+  // Start a reopened conversation at its latest message before the overlay
+  // paints, instead of visibly animating through the saved transcript.
+  useLayoutEffect(() => {
+    const conversation = conversationRef.current;
+    if (conversation) conversation.scrollTop = conversation.scrollHeight;
   }, []);
 
   useEffect(() => {
@@ -156,7 +180,7 @@ export function AiAssistant({
     const frame = requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.setSelectionRange(inputRef.current.value.length, inputRef.current.value.length);
-      scrollToLatest("smooth");
+      scrollToLatest("auto");
     });
     return () => cancelAnimationFrame(frame);
   }, [focusVersion, scrollToLatest]);
@@ -165,12 +189,6 @@ export function AiAssistant({
     const frame = requestAnimationFrame(() => scrollToLatest(history.length || busy ? "smooth" : "auto"));
     return () => cancelAnimationFrame(frame);
   }, [busy, history.length, scrollToLatest, status]);
-
-  useEffect(() => {
-    if (!busy) { setThinkingStep(0); return; }
-    const timer = window.setInterval(() => setThinkingStep((current) => current + 1), 1450);
-    return () => window.clearInterval(timer);
-  }, [busy]);
 
   useEffect(() => {
     if (prompt) return;
@@ -187,13 +205,6 @@ export function AiAssistant({
   const usageTitle = usage
     ? `${usage.calls} API call${usage.calls === 1 ? "" : "s"} · ${usage.inputTokens.toLocaleString()} input · ${usage.cachedInputTokens.toLocaleString()} cached · ${usage.outputTokens.toLocaleString()} output · ${usage.reasoningTokens.toLocaleString()} reasoning`
     : undefined;
-  const thinkingSteps = [
-    "reading the active workspace",
-    ...(preferences.dataAccess ? ["browser data access"] : []),
-    ...(preferences.webSearch ? ["grounding the answer"] : []),
-    "checking the visual design",
-    "shaping a useful reply",
-  ];
   const submit = () => {
     if (busy || !prompt.trim() || !ready) return;
     scrollToLatest("smooth");
@@ -217,7 +228,9 @@ export function AiAssistant({
             <span className="ai-spark" aria-hidden="true">ai</span>
             <div><h2>chartize ai</h2><small title={usageTitle}>{copy.mode}{usageSummary ? ` · ${usageSummary}` : ""}</small></div>
           </div>
-          <button type="button" title="Close" aria-label="Close AI conversation" onClick={onClose}>×</button>
+          <button type="button" title="Close" aria-label="Close AI conversation" onClick={onClose}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+          </button>
         </header>
         <div ref={conversationRef} className="ai-conversation" aria-live="polite">
           {history.map((message, index) => (
@@ -243,14 +256,15 @@ export function AiAssistant({
           {busy && (
             <div className="ai-thinking" role="status">
               <RoleIcon role="assistant" />
-              <span><i /><i /><i /></span>
-              <b>{thinkingSteps[thinkingStep % thinkingSteps.length]}…</b>
+              <span className="ai-thinking-dots"><i /><i /><i /></span>
+              <b>{status || "thinking through the request…"}</b>
+              <ThinkingElapsed />
             </div>
           )}
           <div ref={conversationEndRef} className="ai-conversation-end" />
         </div>
         <div className="ai-compose-area">
-          {status && <p className="ai-status">{status}</p>}
+          {status && !busy && <p className="ai-status">{status}</p>}
           <div key={contextNote} className="ai-active-context">
             <span className="ai-context-index">01</span>
             <div><b>active context</b><span>{contextNote}</span></div>

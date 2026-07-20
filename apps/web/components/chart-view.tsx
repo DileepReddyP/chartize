@@ -2,11 +2,16 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useReducer, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import embed, { type Result as EmbedResult, type VisualizationSpec } from "vega-embed";
+import * as vegaRuntime from "vega";
 import type { TablePreview } from "@chartize/contracts";
 import type { MapViewport } from "@/lib/ggsql/geo-fit";
 import { pngWithHeader, svgWithHeader } from "@/lib/ggsql/chart-export";
 import { presentChartSpec, type ChartLegendTitles, type ChartThreshold } from "@/lib/ggsql/vega-presentation";
-import { mapFeatureSelectionFromDatum, type MapFeatureSelection } from "@/lib/workspace/chart-data";
+import {
+  MAX_VISUAL_ITEM_SELECTIONS,
+  visualItemSelectionFromDatum,
+  type VisualItemSelection,
+} from "@/lib/workspace/chart-data";
 
 export interface ChartViewHandle {
   toPng: (includeHeader?: boolean) => Promise<string>;
@@ -36,8 +41,9 @@ interface ChartViewProps {
   onMapZoom?: (factor: number) => void;
   onChartZoom?: (factor: number) => void;
   onChartPan?: (horizontal: number, vertical: number) => void;
-  mapFeatureSelections?: MapFeatureSelection[];
-  onMapFeatureSelect?: (selection: MapFeatureSelection | null, additive?: boolean) => void;
+  mapFeatureSelections?: VisualItemSelection[];
+  onMapFeatureSelect?: (selection: VisualItemSelection | null, additive?: boolean) => void;
+  onVisualItemsSelect?: (selections: VisualItemSelection[]) => void;
   onAskMapFeature?: (origin: HTMLElement) => void;
   mapFeatureAiActive?: boolean;
   featureData?: Pick<TablePreview, "columns" | "rows">;
@@ -66,6 +72,50 @@ function normalizedPixels(pixels: SelectionPixels): SelectionPixels {
   };
 }
 
+type SceneMark = { marktype?: string; role?: string };
+type SceneItem = vegaRuntime.Item<Record<string, unknown>> & {
+  bounds?: { x1: number; y1: number; x2: number; y2: number };
+  x?: number;
+  y?: number;
+};
+
+const selectableMarkTypes = new Set(["arc", "area", "line", "path", "rect", "rule", "shape", "symbol", "trail"]);
+const sceneIntersect = (vegaRuntime as unknown as {
+  intersect: (scene: unknown, bounds: vegaRuntime.Bounds, filter: (mark: SceneMark) => boolean) => SceneItem[];
+}).intersect;
+
+function visualItemsInside(
+  embedded: EmbedResult | null,
+  pixels: SelectionPixels,
+  table: Pick<TablePreview, "columns" | "rows"> | undefined,
+  mapMode: boolean,
+) {
+  if (!embedded || typeof sceneIntersect !== "function") return [];
+  const scenegraph = embedded.view.scenegraph() as unknown as { root?: unknown };
+  if (!scenegraph.root) return [];
+  const next = normalizedPixels(pixels);
+  const [originX, originY] = embedded.view.origin();
+  const bounds = new vegaRuntime.Bounds().set(
+    next.x0 - originX,
+    next.y0 - originY,
+    next.x1 - originX,
+    next.y1 - originY,
+  );
+  const hits = sceneIntersect(scenegraph.root, bounds, (mark) => (
+    mark.role === "mark" && Boolean(mark.marktype && selectableMarkTypes.has(mark.marktype))
+  ));
+  const selections = new Map<string, VisualItemSelection>();
+  for (const item of hits) {
+    const itemBounds = item.bounds;
+    const x = originX + (itemBounds ? (itemBounds.x1 + itemBounds.x2) / 2 : (item.x ?? (next.x0 + next.x1) / 2));
+    const y = originY + (itemBounds ? (itemBounds.y1 + itemBounds.y2) / 2 : (item.y ?? (next.y0 + next.y1) / 2));
+    const selection = visualItemSelectionFromDatum(item.datum, { x, y }, table, mapMode);
+    if (selection && !selections.has(selection.key)) selections.set(selection.key, selection);
+    if (selections.size >= MAX_VISUAL_ITEM_SELECTIONS) break;
+  }
+  return [...selections.values()];
+}
+
 export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function ChartView({
   spec,
   exportTitle = "",
@@ -84,6 +134,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
   onChartPan,
   mapFeatureSelections = [],
   onMapFeatureSelect,
+  onVisualItemsSelect,
   onAskMapFeature,
   mapFeatureAiActive = false,
   featureData,
@@ -100,7 +151,6 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
   const mapGesture = interactionState.kind === "map" ? interactionState : null;
   const wheelFrame = useRef<number | null>(null);
   const wheelIntent = useRef({ x: 0, y: 0, pinch: false, shift: false });
-  const suppressFeatureClick = useRef(false);
   const mapFeatureSelectRef = useRef(onMapFeatureSelect);
 
   useEffect(() => { mapFeatureSelectRef.current = onMapFeatureSelect; }, [onMapFeatureSelect]);
@@ -155,11 +205,6 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       resize();
     });
     observer.observe(element.current);
-    let featureView: {
-      addEventListener: (type: string, handler: (event: Event, item?: { datum?: unknown }) => void) => void;
-      removeEventListener: (type: string, handler: (event: Event, item?: { datum?: unknown }) => void) => void;
-    } | null = null;
-    let featureListener: ((event: Event, item?: { datum?: unknown }) => void) | null = null;
     void embed(element.current, presentChartSpec(spec, threshold, domains, mapViewport, legendTitles) as VisualizationSpec, {
       actions: false,
       renderer: "canvas",
@@ -170,21 +215,6 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
         if (cancelled) embedded.finalize();
         else {
           result.current = embedded;
-          if (mapMode && mapFeatureSelectRef.current) {
-            featureView = embedded.view as unknown as typeof featureView;
-            featureListener = (event, item) => {
-              if (suppressFeatureClick.current) return;
-              const bounds = interaction.current?.getBoundingClientRect();
-              const pointer = event as MouseEvent;
-              if (!bounds || !Number.isFinite(pointer.clientX) || !Number.isFinite(pointer.clientY)) return;
-              const nextSelection = mapFeatureSelectionFromDatum(item?.datum, {
-                x: Math.max(0, Math.min(bounds.width, pointer.clientX - bounds.left)),
-                y: Math.max(0, Math.min(bounds.height, pointer.clientY - bounds.top)),
-              }, featureData);
-              mapFeatureSelectRef.current?.(nextSelection, pointer.shiftKey);
-            };
-            featureView?.addEventListener("click", featureListener);
-          }
           resize();
         }
       })
@@ -192,11 +222,10 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     return () => {
       cancelled = true;
       observer.disconnect();
-      if (featureView && featureListener) featureView.removeEventListener("click", featureListener);
       result.current?.finalize();
       result.current = null;
     };
-  }, [domains, featureData, legendTitles, mapMode, mapViewport, onError, spec, threshold]);
+  }, [domains, legendTitles, mapViewport, onError, spec, threshold]);
 
   const point = (event: ReactPointerEvent<HTMLElement>) => {
     const bounds = interaction.current?.getBoundingClientRect();
@@ -229,6 +258,21 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       ...(xValues.every((value) => value !== undefined) ? { x: xValues } : {}),
       ...(yValues.every((value) => value !== undefined) ? { y: yValues } : {}),
     });
+    onVisualItemsSelect?.(visualItemsInside(result.current, next, featureData, mapMode));
+  };
+  const selectVisualItemAt = (x: number, y: number, additive: boolean) => {
+    const radius = 7;
+    const hits = visualItemsInside(result.current, {
+      x0: x - radius,
+      y0: y - radius,
+      x1: x + radius,
+      y1: y + radius,
+    }, featureData, mapMode);
+    const nearest = hits.sort((left, right) => (
+      Math.hypot(left.pixels.x - x, left.pixels.y - y)
+      - Math.hypot(right.pixels.x - x, right.pixels.y - y)
+    ))[0] ?? null;
+    mapFeatureSelectRef.current?.(nearest, additive);
   };
   const startSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !spec) return;
@@ -253,8 +297,10 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     if (!gesture || gesture.handle) return;
     const { x, y } = point(event);
     const next = { ...gesture.pixels, x1: x, y1: y };
+    const moved = Math.abs(next.x1 - next.x0) >= 5 && Math.abs(next.y1 - next.y0) >= 5;
     setInteractionState({ kind: "idle" });
-    commitSelection(next);
+    if (moved) commitSelection(next);
+    else selectVisualItemAt(x, y, event.shiftKey);
   };
   const startResize = (handle: ResizeHandle, event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0 || !selection) return;
@@ -291,12 +337,10 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       const horizontal = bounds?.width ? -(current.x - mapGesture.start.x) / bounds.width : 0;
       const vertical = bounds?.height ? (current.y - mapGesture.start.y) / bounds.height : 0;
       setInteractionState({ kind: "idle" });
-      suppressFeatureClick.current = moved;
       if (moved) {
         onMapFeatureSelect?.(null);
         onMapPan?.(horizontal, vertical);
-        window.setTimeout(() => { suppressFeatureClick.current = false; }, 0);
-      }
+      } else selectVisualItemAt(current.x, current.y, event.shiftKey);
       return;
     }
     if (gesture?.handle) finishResize(event);
@@ -348,7 +392,8 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     mapGesture.current.x - mapGesture.start.x,
     mapGesture.current.y - mapGesture.start.y,
   ) > 4);
-  const activeMapFeature = mapFeatureSelections.at(-1) ?? null;
+  const activeVisualItem = mapFeatureSelections.at(-1) ?? null;
+  const itemNoun = mapMode ? "place" : "data point";
 
   return (
     <div
@@ -368,9 +413,9 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
         ref={element}
         style={mapDragging && mapGesture ? { transform: `translate(${mapGesture.current.x - mapGesture.start.x}px, ${mapGesture.current.y - mapGesture.start.y}px)` } : undefined}
       />
-      {mapMode && activeMapFeature && (
+      {activeVisualItem && (
         <>
-          {mapFeatureSelections.map((selection) => (
+          {!selection && mapFeatureSelections.slice(-80).map((selection) => (
             <span
               key={selection.key}
               className="map-feature-pin"
@@ -378,55 +423,67 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
               style={{ left: selection.pixels.x, top: selection.pixels.y }}
             />
           ))}
-          <aside
+          {!selection && <aside
             className="map-feature-inspector"
-            aria-label={`${mapFeatureSelections.length} selected ${mapFeatureSelections.length === 1 ? "place" : "places"}`}
+            aria-label={`${mapFeatureSelections.length} selected ${mapFeatureSelections.length === 1 ? itemNoun : `${itemNoun}s`}`}
             style={{
-              "--feature-x": `${activeMapFeature.pixels.x + 14}px`,
-              "--feature-y": `${activeMapFeature.pixels.y + 14}px`,
+              "--feature-x": `${activeVisualItem.pixels.x + 14}px`,
+              "--feature-y": `${activeVisualItem.pixels.y + 14}px`,
             } as CSSProperties}
             onPointerDown={(event) => event.stopPropagation()}
           >
             <header>
-              <div><span>{mapFeatureSelections.length === 1 ? "selected place" : `${mapFeatureSelections.length} selected places`}</span><h2>{activeMapFeature.title}</h2></div>
-              <button type="button" aria-label="Close selected place" onClick={() => onMapFeatureSelect?.(null)}>×</button>
+              <div><span>{mapFeatureSelections.length === 1 ? `selected ${itemNoun}` : `${mapFeatureSelections.length} selected ${itemNoun}s`}</span><h2>{activeVisualItem.title}</h2></div>
+              <button type="button" aria-label={`Close selected ${itemNoun}`} onClick={() => onMapFeatureSelect?.(null)}>×</button>
             </header>
-            <dl>{activeMapFeature.values.map(({ field, value }) => <div key={field}><dt>{field}</dt><dd>{value}</dd></div>)}</dl>
-            <p className="map-feature-selection-hint">shift-click another place to add or remove it</p>
+            <dl>{activeVisualItem.values.map(({ field, value }) => <div key={field}><dt>{field}</dt><dd>{value}</dd></div>)}</dl>
+            <p className="map-feature-selection-hint">shift-click another {itemNoun} to add or remove it</p>
             <label className={`map-feature-ask ai-promoter${mapFeatureAiActive ? " active" : ""}`}>
               <span aria-hidden="true">✦</span>
               <input
                 name="map-feature-ai-prompt"
                 readOnly
                 value=""
-                placeholder={mapFeatureAiActive ? "This place is attached to Chartize AI" : mapFeatureSelections.length === 1 ? "Ask about this place…" : "Ask about these places…"}
-                aria-label={mapFeatureSelections.length === 1 ? "Ask Chartize about this place" : "Ask Chartize about these places"}
+                placeholder={mapFeatureAiActive ? `This ${itemNoun} is attached to Chartize AI` : mapFeatureSelections.length === 1 ? `Ask about this ${itemNoun}…` : `Ask about these ${itemNoun}s…`}
+                aria-label={mapFeatureSelections.length === 1 ? `Ask Chartize about this ${itemNoun}` : `Ask Chartize about these ${itemNoun}s`}
                 onFocus={(event) => onAskMapFeature?.(event.currentTarget)}
               />
               <b>{mapFeatureAiActive ? "active" : "ask"}</b>
             </label>
-          </aside>
+          </aside>}
         </>
       )}
       {(gesture?.pixels ?? selection?.pixels) && (() => {
         const pixels = normalizedPixels((gesture?.pixels ?? selection?.pixels)!);
         const persistent = Boolean(selection && (!gesture || gesture.handle));
         return (
-        <span
-          className={`chart-brush ${persistent ? "persistent" : "draft"}`}
-          style={{ left: pixels.x0, top: pixels.y0, width: pixels.x1 - pixels.x0, height: pixels.y1 - pixels.y0 }}
-        >
-          {persistent && (["nw", "ne", "sw", "se"] as const).map((handle) => (
-            <button
-              key={handle}
-              className={`chart-brush-handle ${handle}`}
-              type="button"
-              aria-label={`Resize selection from ${handle} corner`}
-              onPointerDown={(event) => startResize(handle, event)}
-              onPointerCancel={() => setInteractionState({ kind: "idle" })}
-            />
-          ))}
-        </span>
+        <>
+          {persistent && <span
+            className="chart-selection-shade"
+            aria-hidden="true"
+            style={{
+              "--selection-left": `${pixels.x0}px`,
+              "--selection-top": `${pixels.y0}px`,
+              "--selection-right": `${pixels.x1}px`,
+              "--selection-bottom": `${pixels.y1}px`,
+            } as CSSProperties}
+          ><i /><i /><i /><i /></span>}
+          <span
+            className={`chart-brush ${persistent ? "persistent" : "draft"}`}
+            style={{ left: pixels.x0, top: pixels.y0, width: pixels.x1 - pixels.x0, height: pixels.y1 - pixels.y0 }}
+          >
+            {persistent && (["nw", "ne", "sw", "se"] as const).map((handle) => (
+              <button
+                key={handle}
+                className={`chart-brush-handle ${handle}`}
+                type="button"
+                aria-label={`Resize selection from ${handle} corner`}
+                onPointerDown={(event) => startResize(handle, event)}
+                onPointerCancel={() => setInteractionState({ kind: "idle" })}
+              />
+            ))}
+          </span>
+        </>
         );
       })()}
     </div>

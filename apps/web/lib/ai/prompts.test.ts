@@ -25,6 +25,11 @@ describe("Chartize AI prompt contract", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("offer the strongest concrete explanation first");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("actually search before answering");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("do not sound like a compliance notice");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("smallest set of distinct questions");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("queries together in one search action");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("do not search again");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("workspaceActions");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("Never place CREATE, DROP, INSERT, UPDATE, DELETE, or ALTER in the visualization query");
   });
 
   it("translates response-profile toggles into turn instructions", () => {
@@ -53,9 +58,9 @@ describe("Chartize AI prompt contract", () => {
   });
 
   it("keeps browser-local mutation explicitly user-authorized", () => {
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("By default, return exactly one non-mutating SQL statement beginning with SELECT or WITH");
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("only when the user's current message explicitly asks");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("visualization query must contain exactly one non-mutating SQL statement beginning with SELECT or WITH");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("only when the user explicitly asks");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("does not authorize mutation");
-    expect(chartizeTurnInstructions("code", "repair")).toContain("collapse an accidental multi-statement program into one WITH/SELECT query");
+    expect(chartizeTurnInstructions("code", "repair")).toContain("workspaceActions must be empty");
   });
 });

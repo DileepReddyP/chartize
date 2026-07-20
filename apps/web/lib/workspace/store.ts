@@ -3,6 +3,7 @@ import {
   AiRuntimeErrorSchema,
   AiTurnRequestSchema,
   AiUsageSchema,
+  AiWorkspaceActionSchema,
   DatasetManifestSchema,
   FieldMetadataSchema,
   GgsqlDraftSchema,
@@ -12,6 +13,7 @@ import {
   type GgsqlDraft,
   type TablePreview,
   type AiUsage,
+  type AiWorkspaceAction,
   type AiResponsePreferences,
   type AiRuntimeError,
   type AiTurnRequest,
@@ -49,7 +51,9 @@ import {
 } from "../local/browser-runtime";
 import { detectFormat, tableNameFromFile } from "../local/file-format";
 import type { BrowserAiCompletedResponse, BrowserSqlResult } from "../local/worker-protocol";
+import { separateWorkspaceProgram } from "../ai/model-output";
 import {
+  MAX_VISUAL_ITEM_SELECTIONS,
   MapFeatureSelectionSchema,
   presentationFromSpec,
   previewFromSpec,
@@ -114,6 +118,7 @@ const LeftPaneRatioSchema = z.number().min(0.3).max(0.7);
 const CodePaneRatioSchema = z.number().min(0.32).max(0.72);
 const EditorFontSizeSchema = z.number().int().min(10).max(24);
 const FocusAreaSchema = z.enum(["code", "chart", "table"]);
+const WorkspaceActionsSchema = z.array(AiWorkspaceActionSchema).max(16);
 
 export const WorkspaceDocumentSchema = z.object({
   id: z.string().min(1),
@@ -130,7 +135,7 @@ export const WorkspaceDocumentSchema = z.object({
   chartDomains: ChartDomainsSchema,
   chartDomainHistory: z.array(ChartDomainsSchema).max(20),
   mapViewport: MapViewportSchema,
-  mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(24).default([]),
+  mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(MAX_VISUAL_ITEM_SELECTIONS).default([]),
   focusArea: FocusAreaSchema,
   editorFontSize: EditorFontSizeSchema,
   aiPlacement: z.enum(["left", "right"]),
@@ -143,6 +148,7 @@ export const WorkspaceDocumentSchema = z.object({
   includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
   runtimeErrors: z.array(AiRuntimeErrorSchema).max(8).default([]),
+  workspaceActions: WorkspaceActionsSchema.default([]),
 });
 
 export const WorkspaceSessionSchema = z.object({
@@ -247,7 +253,7 @@ export const WorkspaceSnapshotSchema = z.object({
   chartDomains: ChartDomainsSchema,
   chartDomainHistory: z.array(ChartDomainsSchema).max(20),
   mapViewport: MapViewportSchema,
-  mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(24).default([]),
+  mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(MAX_VISUAL_ITEM_SELECTIONS).default([]),
   resultStatus: z.string(),
   focusArea: FocusAreaSchema,
   editorFontSize: EditorFontSizeSchema,
@@ -266,6 +272,7 @@ export const WorkspaceSnapshotSchema = z.object({
   includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
   runtimeErrors: z.array(AiRuntimeErrorSchema).max(8),
+  workspaceActions: WorkspaceActionsSchema.default([]),
   leftPaneRatio: LeftPaneRatioSchema,
   codePaneRatio: CodePaneRatioSchema,
 });
@@ -509,6 +516,7 @@ const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   includeSamples: false,
   aiPreferences: DEFAULT_AI_PREFERENCES,
   runtimeErrors: [],
+  workspaceActions: [],
 });
 
 const initialSnapshot = WorkspaceSnapshotSchema.parse({
@@ -594,6 +602,7 @@ function captureWorkspaceDocument(state: WorkspaceSnapshot): WorkspaceDocument {
     includeSamples: state.includeSamples,
     aiPreferences: state.aiPreferences,
     runtimeErrors: state.runtimeErrors,
+    workspaceActions: state.workspaceActions,
   });
 }
 
@@ -641,6 +650,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     includeSamples: document.includeSamples,
     aiPreferences: document.aiPreferences,
     runtimeErrors: document.runtimeErrors,
+    workspaceActions: document.workspaceActions,
   };
 }
 
@@ -675,6 +685,7 @@ function newWorkspaceDocument(input: NewWorkspaceInput = {}): WorkspaceDocument 
     includeSamples: false,
     aiPreferences: DEFAULT_AI_PREFERENCES,
     runtimeErrors: [],
+    workspaceActions: [],
   });
 }
 
@@ -693,6 +704,33 @@ function captureWorkspaceSession(state: WorkspaceSnapshot) {
   });
 }
 
+function mergeWorkspaceActions(current: AiWorkspaceAction[], next: AiWorkspaceAction[]) {
+  const actions = new Map(current.map((action) => [action.sql, action]));
+  next.forEach((action) => actions.set(action.sql, action));
+  return WorkspaceActionsSchema.parse([...actions.values()].slice(-16));
+}
+
+function migrateWorkspaceDocument(document: WorkspaceDocument) {
+  try {
+    const separated = separateWorkspaceProgram(document.query);
+    if (!separated.setupSql) return document;
+    return WorkspaceDocumentSchema.parse({
+      ...document,
+      query: separated.query,
+      workspaceActions: mergeWorkspaceActions(document.workspaceActions, [{
+        sql: separated.setupSql,
+        purpose: "Rebuild the derived browser-local data used by this visualization.",
+      }]),
+    });
+  } catch {
+    return document;
+  }
+}
+
+async function replayWorkspaceActions(workspaceId: string, actions: AiWorkspaceAction[]) {
+  for (const action of actions) await runtimeExecuteWorkspaceSql(workspaceId, action.sql);
+}
+
 function workspaceActivated(get: () => ChartizeWorkspaceState) {
   browserRunSequence += 1;
   fullTableSequence += 1;
@@ -703,7 +741,14 @@ function workspaceActivated(get: () => ChartizeWorkspaceState) {
   get().setRunning(false);
   queueMicrotask(() => {
     const state = get();
-    if (state.engineState === "ready") void state.runQuery(state.query);
+    if (state.engineState !== "ready") return;
+    const workspaceId = state.activeWorkspaceId;
+    void replayWorkspaceActions(workspaceId, state.workspaceActions)
+      .then(() => {
+        const current = get();
+        if (current.activeWorkspaceId === workspaceId) return current.runQuery(current.query);
+      })
+      .catch((cause) => get().setError(cause instanceof Error ? cause.message : String(cause)));
   });
 }
 
@@ -754,6 +799,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         selectedData: { ...EMPTY_TABLE, limit: 200 },
         resultRelation: EMPTY_RESULT_RELATION,
         error: "",
+        resultStatus: "",
         duration: 0,
         gridSelection: null,
         chartSelection: null,
@@ -770,7 +816,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const displaySource = displaySources[0] ?? sourceFromQuery(displayQuery, get().draft.source);
     const started = performance.now();
     get().setRunning(true);
-    set({ error: "", mapFeatureSelections: [], resultRelation: EMPTY_RESULT_RELATION });
+    set({ error: "", mapFeatureSelections: [], resultRelation: EMPTY_RESULT_RELATION, resultStatus: "" });
     try {
       const spec = await runWorkspaceGgsql(workspaceId, displayQuery);
       let selectedData = previewFromSpec(spec);
@@ -837,6 +883,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           ...(presentation.title !== undefined ? { title: presentation.title, subtitle: presentation.subtitle ?? "" } : {}),
         },
         error: "",
+        resultStatus: "",
         runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "query"),
       }));
       return { ok: true };
@@ -844,6 +891,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       const message = cause instanceof Error ? cause.message : String(cause);
       if (runId === browserRunSequence) set((state) => ({
         error: message,
+        resultStatus: "",
         runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "query", message, failedQuery: displayQuery }),
       }));
       return { ok: false, error: message };
@@ -1134,7 +1182,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         chartSelection: null,
         mapFeatureSelections: exists
           ? state.mapFeatureSelections.filter((candidate) => candidate.key !== selection.key)
-          : [...state.mapFeatureSelections, selection].slice(-24),
+          : [...state.mapFeatureSelections, selection].slice(-MAX_VISUAL_ITEM_SELECTIONS),
         runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "map"),
       };
     });
@@ -1143,8 +1191,6 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const request = AiTurnRequestSchema.parse(input);
     try {
       return await requestBrowserAiTurn(get().activeWorkspaceId, request);
-    } catch (cause) {
-      throw cause;
     } finally {
       set({ aiMessage: "" });
     }
@@ -1192,6 +1238,9 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       let body = await get().requestAiTurn(turnInput);
       if (get().activeWorkspaceId !== startedWorkspace) return;
       let usage = body.usage;
+      if (body.workspaceActions.length) {
+        set((state) => ({ workspaceActions: mergeWorkspaceActions(state.workspaceActions, body.workspaceActions) }));
+      }
       if (body.kind === "visualization") {
         get().resetMapViewport();
         let runResult = await get().runQuery(body.query);
@@ -1228,6 +1277,9 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       }
       const reply = [
         body.explanation.trim(),
+        body.workspaceActions.length
+          ? `**Applied in this browser workspace**\n${body.workspaceActions.map((action) => `- ${action.purpose}`).join("\n")}`
+          : "",
         initialState.aiPreferences.technical && body.assumptions.length ? `Assumptions: ${body.assumptions.join(" ")}` : "",
         (initialState.aiPreferences.technical || initialState.aiPreferences.challenge) && body.warnings.length ? `Check: ${body.warnings.join(" ")}` : "",
         body.sources.length ? `Sources: ${body.sources.map((source) => `[${source.title}](${source.url})`).join(" · ")}` : "",
@@ -1262,7 +1314,11 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const restored = await loadBrowserWorkspace("session");
     const record = restored.workspace;
     if (!record || !("payload" in record)) return false;
-    const session = WorkspaceSessionSchema.parse(JSON.parse(record.payload));
+    const restoredSession = WorkspaceSessionSchema.parse(JSON.parse(record.payload));
+    const session = WorkspaceSessionSchema.parse({
+      ...restoredSession,
+      workspaceDocuments: restoredSession.workspaceDocuments.map(migrateWorkspaceDocument),
+    });
     const document = session.workspaceDocuments.find((candidate) => candidate.id === session.activeWorkspaceId)!;
     lastPersistedSession = JSON.stringify(session);
     set((state) => ({
@@ -1278,6 +1334,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       leftPaneRatio: session.leftPaneRatio,
       codePaneRatio: session.codePaneRatio,
     }));
+    await replayWorkspaceActions(document.id, document.workspaceActions);
     return true;
   },
   shareWorkspace: async () => {
@@ -1372,18 +1429,24 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   setGridSelection: (gridSelection) => set({ gridSelection }),
   setSelectionOrigin: (selectionOrigin) => set({ selectionOrigin }),
   setChartSelection: (chartSelection) => set({ chartSelection }),
-  setChartDomains: (chartDomains) => set({ chartDomains: ChartDomainsSchema.parse(chartDomains) }),
+  setChartDomains: (chartDomains) => set({
+    chartDomains: ChartDomainsSchema.parse(chartDomains),
+    chartSelection: null,
+    mapFeatureSelections: [],
+  }),
   zoomChart: (next) => set((state) => ({
     chartDomains: ChartDomainsSchema.parse(next),
     chartDomainHistory: [...state.chartDomainHistory.slice(-19), state.chartDomains],
     chartSelection: null,
+    mapFeatureSelections: [],
   })),
   zoomChartOut: () => set((state) => ({
     chartDomains: state.chartDomainHistory.at(-1) ?? {},
     chartDomainHistory: state.chartDomainHistory.slice(0, -1),
     chartSelection: null,
+    mapFeatureSelections: [],
   })),
-  resetChartZoom: () => set({ chartDomains: {}, chartDomainHistory: [], chartSelection: null }),
+  resetChartZoom: () => set({ chartDomains: {}, chartDomainHistory: [], chartSelection: null, mapFeatureSelections: [] }),
   zoomMap: (factor) => set((state) => ({
     mapViewport: MapViewportSchema.parse({
       ...state.mapViewport,
@@ -1402,7 +1465,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     mapFeatureSelections: [],
   })),
   resetMapViewport: () => set({ mapViewport: { zoom: 1, panX: 0, panY: 0 }, chartSelection: null, mapFeatureSelections: [] }),
-  setMapFeatureSelections: (mapFeatureSelections) => set({ mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(24).parse(mapFeatureSelections) }),
+  setMapFeatureSelections: (mapFeatureSelections) => set({ mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(MAX_VISUAL_ITEM_SELECTIONS).parse(mapFeatureSelections) }),
   setResultStatus: (resultStatus) => set({ resultStatus }),
   setFocusArea: (focusArea) => set({ focusArea }),
   setEditorFontSize: (editorFontSize) => set({ editorFontSize: EditorFontSizeSchema.parse(editorFontSize) }),

@@ -24,6 +24,7 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
     aiContextNote: workspace.aiContextNote,
     setGridSelection: workspace.setGridSelection,
     setChartSelection: workspace.setChartSelection,
+    setMapFeatureSelections: workspace.setMapFeatureSelections,
     setResultStatus: workspace.setResultStatus,
     zoomChartOut: workspace.zoomChartOut,
     addColumnFromTable: workspace.addColumnFromTable,
@@ -33,13 +34,18 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
   if (!selectedGrid && !selectedChart) return null;
 
   const selectedMap = Boolean(selectedChart && view.isMap);
+  const visualItemCount = view.mapSelectedData?.totalRows ?? 0;
+  const chartRange = view.chartSelectionDetails.summary.split(" · ").slice(1).join(" · ");
+  const chartSelectionSummary = visualItemCount
+    ? `${visualItemCount.toLocaleString()} visual item${visualItemCount === 1 ? "" : "s"} selected${chartRange ? ` · ${chartRange}` : ""}`
+    : view.chartSelectionDetails.summary;
   const context = selectedGrid
     ? `${view.aiViewNote} Data selection: ${selectedGrid.summary}. Columns: ${selectedGrid.columns.join(", ")}. Row values are attached only when the user enables the sample-row control.`
     : selectedMap
-      ? `${view.aiViewNote} Map selection: a rectangular map area is selected. Use the map subject, legend, current query, and attached data to interpret the places inside it.`
-      : `${view.aiViewNote} Chart selection: ${view.chartSelectionDetails.summary}. X range: ${JSON.stringify(selectedChart?.x)}. Y range: ${JSON.stringify(selectedChart?.y)}.`;
+      ? `${view.aiViewNote} Map selection: a rectangular map area containing ${visualItemCount} selected map feature${visualItemCount === 1 ? "" : "s"}. Use the map subject, legend, current query, and attached feature rows to interpret the places inside it.`
+      : `${view.aiViewNote} Chart selection: ${chartSelectionSummary}.${visualItemCount ? " The intersecting rendered rows are attached." : ""} X range: ${JSON.stringify(selectedChart?.x)}. Y range: ${JSON.stringify(selectedChart?.y)}.`;
   const selectionTitle = selectedGrid ? "data selection" : selectedMap ? "map selection" : "chart selection";
-  const selectionSummary = selectedGrid?.summary ?? (selectedMap ? "selected map area" : view.chartSelectionDetails.summary);
+  const selectionSummary = selectedGrid?.summary ?? (selectedMap ? `${visualItemCount} map feature${visualItemCount === 1 ? "" : "s"} selected` : chartSelectionSummary);
   const selectionPrompt = selectedGrid
     ? "Ask about these selected cells…"
     : selectedMap
@@ -49,6 +55,7 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
   const clear = () => {
     state.setGridSelection(null);
     state.setChartSelection(null);
+    state.setMapFeatureSelections([]);
     state.setResultStatus("");
   };
 

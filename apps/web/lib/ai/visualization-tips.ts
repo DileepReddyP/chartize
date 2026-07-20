@@ -200,12 +200,13 @@ DRAW smooth
     topic: "local-data-cleanup",
     rules: [
       "The browser engine uses a compact SQLite-like SQL dialect. Do not use INITCAP, TRY_CAST, CREATE OR REPLACE TABLE, regexp functions, filesystem readers, or DuckDB-only helpers.",
+      "Trust the catalog schema and import-time type inference. Do not wrap already-numeric, temporal, or boolean fields in trim/cast cleanup unless an inspection query found malformed values.",
       "Default to a non-mutating WITH/SELECT pipeline. Preview cleanup, imputation, scoring, and modeling in CTEs without creating or dropping a table.",
-      "Use DROP/CREATE TEMP TABLE, INSERT, UPDATE, or DELETE only when the current user explicitly asks to persist or modify a browser-local workspace copy. Building a chart or model alone is not permission to mutate.",
+      "Use workspaceActions for DROP/CREATE TEMP TABLE, INSERT, UPDATE, or DELETE only when the current user explicitly asks to persist or modify a browser-local workspace copy. Building a chart or model alone is not permission to mutate. Never put those statements in the visualization query.",
       "For nullable numeric text, use CAST(NULLIF(NULLIF(LOWER(TRIM(CAST(value AS VARCHAR))), 'null'), '') AS DOUBLE). Inspect values first when an invalid non-null token may exist.",
       "For multi-word title casing, use a recursive character CTE with UPPER(SUBSTR(...)) after position 1, a space, or a hyphen. INITCAP is unavailable; do not add a quote-literal branch unless the source values actually require it.",
       "Stage window calculations in their own CTE, then COALESCE their aliases in the following SELECT. This parser rejects window expressions such as AVG(value) OVER (...) when they are written directly inside COALESCE.",
-      "End the SQL program with the SELECT that should feed VISUALISE. Keep every mapped visual field in that final projection.",
+      "Keep a one-time local action and the visualization separate: the action creates or changes a derived local table; the visualization is one SELECT/WITH statement that reads it and keeps every mapped field in its final projection.",
     ],
     recipe: `WITH RECURSIVE source_rows AS (
   SELECT ROW_NUMBER() OVER () AS row_id,

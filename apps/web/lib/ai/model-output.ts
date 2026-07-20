@@ -1,6 +1,6 @@
 import { GgsqlDraftSchema } from "@chartize/contracts";
 import { z } from "zod";
-import { sourcesFromQuery, visualLayersFromQuery, visualPointState, visualScalesFromQuery } from "../ggsql/query-context";
+import { isResultSqlStatement, sourcesFromQuery, splitGgsql, sqlStatements, visualLayersFromQuery, visualPointState, visualScalesFromQuery } from "../ggsql/query-context";
 import { makeBlankDraft } from "../ggsql/serialize";
 
 // A single conversation can answer, inspect, and edit without the UI deciding
@@ -16,6 +16,10 @@ export const ModelAgentResponseSchema = z.object({
     sql: z.string().min(1).max(20_000),
     purpose: z.string().min(1).max(500),
     limit: z.number().int().min(1).max(100),
+  })).max(4),
+  workspaceActions: z.array(z.object({
+    sql: z.string().min(1).max(50_000),
+    purpose: z.string().min(1).max(500),
   })).max(4),
 });
 
@@ -135,6 +139,26 @@ export function normalizeModelGgsql(query: string) {
     .replace(/\bTO\s+'([a-z][\w-]*)'(?![\w-])/gi, (_match, palette: string) => `TO ${palette}`)
     .replace(/\b(PROJECT\s+TO\s+[a-z][\w-]*)\s+WITH\s+SETTING\b/gi, "$1\n  SETTING")
     .trim();
+}
+
+/** Keep one-time browser-local SQL out of the editable visualization query. */
+export function separateWorkspaceProgram(query: string) {
+  const { sql, visual } = splitGgsql(query);
+  const statements = sqlStatements(sql);
+  if (statements.length <= 1) {
+    if (statements.length && !isResultSqlStatement(statements[0]!)) {
+      throw new Error("A visualization query must begin with SELECT or WITH; put one-time local SQL in workspaceActions.");
+    }
+    return { query: [sql, visual].filter(Boolean).join("\n\n"), setupSql: "" };
+  }
+  const resultStatement = statements.at(-1) ?? "";
+  if (!isResultSqlStatement(resultStatement)) {
+    throw new Error("Chartize AI did not finish its local SQL program with a SELECT or WITH query.");
+  }
+  return {
+    query: [resultStatement, visual].filter(Boolean).join("\n\n"),
+    setupSql: statements.slice(0, -1).map((statement) => `${statement};`).join("\n\n"),
+  };
 }
 
 export function publicAiError(error: unknown) {

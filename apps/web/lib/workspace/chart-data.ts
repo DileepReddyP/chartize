@@ -1,7 +1,9 @@
 import type { FieldMetadata, TablePreview } from "@chartize/contracts";
 import { z } from "zod";
 
-export const MapFeatureSelectionSchema = z.object({
+export const MAX_VISUAL_ITEM_SELECTIONS = 500;
+
+export const VisualItemSelectionSchema = z.object({
   key: z.string().min(1).max(1000),
   pixels: z.object({ x: z.number().nonnegative(), y: z.number().nonnegative() }),
   title: z.string().min(1).max(500),
@@ -9,7 +11,11 @@ export const MapFeatureSelectionSchema = z.object({
   rowIndex: z.number().int().nonnegative().optional(),
 });
 
-export type MapFeatureSelection = z.infer<typeof MapFeatureSelectionSchema>;
+export type VisualItemSelection = z.infer<typeof VisualItemSelectionSchema>;
+// Persisted workspaces still use the original property name. Keep these
+// aliases while the selection itself is shared by maps and ordinary marks.
+export const MapFeatureSelectionSchema = VisualItemSelectionSchema;
+export type MapFeatureSelection = VisualItemSelection;
 
 interface ChartSelection {
   x?: [unknown, unknown];
@@ -39,7 +45,8 @@ function recordSelection(
   datum: Record<string, unknown>,
   pixels: { x: number; y: number },
   rowIndex?: number,
-): MapFeatureSelection | null {
+  fallbackTitle = "selected data point",
+): VisualItemSelection | null {
   const geographyName = /^(?:name|namelsad|geoname|locationname|county|county_name|place|place_name|area|area_name|state|state_name|region|region_name)$/i;
   const candidates = Object.entries(datum)
     .filter(([field, value]) => (
@@ -60,8 +67,9 @@ function recordSelection(
   if (!candidates.length) return null;
   const title = candidates.find((entry) => geographyName.test(entry.field))?.value
     ?? candidates.find((entry) => !/^\d+(?:\.\d+)?$/.test(entry.value))?.value
-    ?? "selected map feature";
-  return MapFeatureSelectionSchema.parse({
+    ?? candidates.slice(0, 2).map(({ field, value }) => `${field.replaceAll("_", " ")} ${value}`).join(" · ")
+    ?? fallbackTitle;
+  return VisualItemSelectionSchema.parse({
     key: rowIndex === undefined
       ? candidates.map(({ field, value }) => `${field}:${value}`).join("|").slice(0, 1000)
       : `row:${rowIndex}`,
@@ -78,6 +86,15 @@ export function mapFeatureSelectionFromTableRow(
   pixels: { x: number; y: number },
   rowIndex?: number,
 ) {
+  return recordSelection(Object.fromEntries(columns.map((column, index) => [column, row[index]])), pixels, rowIndex, "selected map feature");
+}
+
+export function visualItemSelectionFromTableRow(
+  columns: string[],
+  row: unknown[],
+  pixels: { x: number; y: number },
+  rowIndex?: number,
+) {
   return recordSelection(Object.fromEntries(columns.map((column, index) => [column, row[index]])), pixels, rowIndex);
 }
 
@@ -87,6 +104,16 @@ export function mapFeatureSelectionFromDatum(
   pixels: { x: number; y: number },
   table?: Pick<TablePreview, "columns" | "rows">,
 ): MapFeatureSelection | null {
+  return visualItemSelectionFromDatum(input, pixels, table, true);
+}
+
+/** Convert a Vega mark datum into compact context for a point, bar, line sample, range, or place. */
+export function visualItemSelectionFromDatum(
+  input: unknown,
+  pixels: { x: number; y: number },
+  table?: Pick<TablePreview, "columns" | "rows">,
+  mapMode = false,
+): VisualItemSelection | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   let datum = input as Record<string, unknown>;
   if (datum.datum && typeof datum.datum === "object" && !Array.isArray(datum.datum)) {
@@ -100,16 +127,20 @@ export function mapFeatureSelectionFromDatum(
     ? parsedRowIndex
     : undefined;
   if (rowIndex !== undefined && table?.rows[rowIndex]) {
-    const hydrated = mapFeatureSelectionFromTableRow(table.columns, table.rows[rowIndex]!, pixels, rowIndex);
+    const hydrated = (mapMode ? mapFeatureSelectionFromTableRow : visualItemSelectionFromTableRow)(table.columns, table.rows[rowIndex]!, pixels, rowIndex);
     if (hydrated) return hydrated;
   }
-  const direct = recordSelection(datum, pixels, rowIndex);
+  const direct = recordSelection(datum, pixels, rowIndex, mapMode ? "selected map feature" : "selected data point");
   if (direct) return direct;
   return null;
 }
 
 /** The selected map rows are already present in the rendered relation. */
 export function tableFromMapFeatureSelections(selections: MapFeatureSelection[]): TablePreview | null {
+  return tableFromVisualItemSelections(selections);
+}
+
+export function tableFromVisualItemSelections(selections: VisualItemSelection[]): TablePreview | null {
   if (!selections.length) return null;
   const columns = [...new Set(selections.flatMap((selection) => selection.values.map(({ field }) => field)))];
   return {

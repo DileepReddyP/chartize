@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centeredDomain, describeChartExtent, describeChartSelection, mapFeatureSelectionFromDatum, presentationFromSpec, previewFromSpec, selectionTableFromSpec, shiftedDomain, tableFromMapFeatureSelections, visualFieldsFromPreview } from "./chart-data";
+import { centeredDomain, describeChartExtent, describeChartSelection, mapFeatureSelectionFromDatum, presentationFromSpec, previewFromSpec, selectionTableFromSpec, shiftedDomain, tableFromMapFeatureSelections, visualFieldsFromPreview, visualItemSelectionFromDatum } from "./chart-data";
 
 describe("chart workspace data", () => {
   it("zooms numeric and temporal domains around their center", () => {
@@ -89,6 +89,23 @@ describe("chart workspace data", () => {
       columns: ["county_name", "population"],
       rows: [["Teton County", "24,000"], ["Albany County", "38,000"]],
       totalRows: 2,
+    });
+  });
+
+  it("turns ordinary chart marks into persisted row context", () => {
+    expect(visualItemSelectionFromDatum(
+      { __ggsql_row_index__: 0, Cycles: 1200, Footprint: 480 },
+      { x: 220, y: 140 },
+      { columns: ["PID", "Cycles", "Footprint"], rows: [["42", "1200", "480"]] },
+    )).toMatchObject({
+      key: "row:0",
+      title: "PID 42 · Cycles 1200",
+      pixels: { x: 220, y: 140 },
+      values: [
+        { field: "PID", value: "42" },
+        { field: "Cycles", value: "1200" },
+        { field: "Footprint", value: "480" },
+      ],
     });
   });
 

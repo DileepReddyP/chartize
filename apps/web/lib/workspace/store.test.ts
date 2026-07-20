@@ -19,9 +19,11 @@ describe("Chartize workspace store", () => {
   it("keeps reversible chart zoom history in the validated store", () => {
     const store = useChartizeWorkspace.getState();
     store.resetChartZoom();
+    store.selectMapFeature({ key: "point", pixels: { x: 10, y: 12 }, title: "selected point", values: [{ field: "value", value: "42" }] });
     store.zoomChart({ x: [1, 5], y: [40, 50] });
     expect(useChartizeWorkspace.getState().chartDomains).toEqual({ x: [1, 5], y: [40, 50] });
     expect(useChartizeWorkspace.getState().chartDomainHistory).toEqual([{}]);
+    expect(useChartizeWorkspace.getState().mapFeatureSelections).toEqual([]);
     useChartizeWorkspace.getState().zoomChartOut();
     expect(useChartizeWorkspace.getState().chartDomains).toEqual({});
     expect(WorkspaceSnapshotSchema.safeParse(useChartizeWorkspace.getState()).success).toBe(true);
@@ -124,6 +126,7 @@ describe("Chartize workspace store", () => {
       warnings: [],
       sources: [],
       researched: false,
+      workspaceActions: [],
       usage: {
         models: ["test"],
         calls: 1,

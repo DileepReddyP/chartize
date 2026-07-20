@@ -209,6 +209,17 @@ export const AiCitationSchema = z.object({
   url: z.url(),
 });
 
+export const AiResearchContextSchema = z.object({
+  researched: z.literal(true),
+  memo: z.string().max(6000),
+  sources: z.array(AiCitationSchema).max(6),
+});
+
+export const AiWorkspaceActionSchema = z.object({
+  sql: z.string().min(1).max(50_000),
+  purpose: z.string().min(1).max(500),
+});
+
 export const AiSuggestionSchema = z.object({
   query: z.string(),
   draft: GgsqlDraftSchema,
@@ -217,6 +228,7 @@ export const AiSuggestionSchema = z.object({
   warnings: z.array(z.string()),
   sources: z.array(AiCitationSchema),
   researched: z.boolean(),
+  workspaceActions: z.array(AiWorkspaceActionSchema).max(4).default([]),
 });
 
 export const AiUsageSchema = z.object({
@@ -299,11 +311,13 @@ export const AiTurnRequestSchema = z.object({
 export const AiTurnEnvelopeSchema = AiTurnRequestSchema.extend({
   workspaceDataRound: z.number().int().min(0).max(3).default(0),
   workspaceData: z.array(AiWorkspaceDataResultSchema).max(12).default([]),
+  researchContext: AiResearchContextSchema.optional(),
 });
 
 export const AiDataRequestResponseSchema = z.object({
   kind: z.literal("data_request"),
   requests: z.array(AiDataRequestSchema).min(1).max(4),
+  researchContext: AiResearchContextSchema.optional(),
   usage: AiUsageSchema,
 });
 
@@ -314,6 +328,7 @@ export const AiExplanationResponseSchema = z.object({
   warnings: z.array(z.string()),
   sources: z.array(AiCitationSchema),
   researched: z.boolean(),
+  workspaceActions: z.array(AiWorkspaceActionSchema).max(4).default([]),
   usage: AiUsageSchema,
 });
 
@@ -326,6 +341,21 @@ export const AiResponseSchema = z.discriminatedUnion("kind", [
   AiExplanationResponseSchema,
   AiVisualizationResponseSchema,
   AiDataRequestResponseSchema,
+]);
+
+export const AiStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("progress"),
+    message: z.string().min(1).max(200),
+  }),
+  z.object({
+    type: z.literal("result"),
+    response: AiResponseSchema,
+  }),
+  z.object({
+    type: z.literal("error"),
+    error: z.string().min(1).max(4000),
+  }),
 ]);
 
 export type FieldMetadata = z.infer<typeof FieldMetadataSchema>;
@@ -343,6 +373,8 @@ export type QueryResult = z.infer<typeof QueryResultSchema>;
 export type TablePreview = z.infer<typeof TablePreviewSchema>;
 export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
 export type AiCitation = z.infer<typeof AiCitationSchema>;
+export type AiResearchContext = z.infer<typeof AiResearchContextSchema>;
+export type AiWorkspaceAction = z.infer<typeof AiWorkspaceActionSchema>;
 export type AiUsage = z.infer<typeof AiUsageSchema>;
 export type AiDataRequest = z.infer<typeof AiDataRequestSchema>;
 export type AiResponsePreferences = z.infer<typeof AiResponsePreferencesSchema>;
@@ -353,3 +385,4 @@ export type AiTurnEnvelope = z.infer<typeof AiTurnEnvelopeSchema>;
 export type AiExplanationResponse = z.infer<typeof AiExplanationResponseSchema>;
 export type AiVisualizationResponse = z.infer<typeof AiVisualizationResponseSchema>;
 export type AiResponse = z.infer<typeof AiResponseSchema>;
+export type AiStreamEvent = z.infer<typeof AiStreamEventSchema>;

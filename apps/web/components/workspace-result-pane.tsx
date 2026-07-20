@@ -63,6 +63,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
     resetMapViewport: workspace.resetMapViewport,
     selectChartRegion: workspace.selectChartRegion,
     selectMapFeature: workspace.selectMapFeature,
+    setMapFeatureSelections: workspace.setMapFeatureSelections,
     shareWorkspace: workspace.shareWorkspace,
   })));
   const chartRef = useRef<ChartViewHandle>(null);
@@ -197,6 +198,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
                       onChartPan={gesturePan}
                       onRegionSelect={state.selectChartRegion}
                       onMapFeatureSelect={state.selectMapFeature}
+                      onVisualItemsSelect={state.setMapFeatureSelections}
                       onAskMapFeature={(origin) => { if (view.mapFeatureContext) promoteAi(view.mapFeatureContext, "left", "chart", origin); }}
                     /></div>
                     {view.isMap

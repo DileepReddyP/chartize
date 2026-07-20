@@ -15,7 +15,7 @@ import {
   describeChartExtent,
   describeChartSelection,
   selectionTableFromSpec,
-  tableFromMapFeatureSelections,
+  tableFromVisualItemSelections,
   visualFieldsFromPreview,
 } from "./chart-data";
 import { useChartizeWorkspace } from "./store";
@@ -76,6 +76,7 @@ export function useWorkspaceViewModel() {
     const selectedFieldNames = new Set(selectedProjectionNames);
     const visualFields = visualFieldsFromPreview(activeFields, input.selectedData, selectedProjectionNames);
     const visualState = visualPointState(input.query);
+    const isMap = /\bDRAW\s+spatial\b/i.test(splitGgsql(input.query).visual);
     const chartSelectionData = selectionTableFromSpec(input.spec) ?? input.selectedData;
     const selectionFields = visualSelectionFields(input.query);
     const chartSelectionDetails = describeChartSelection(
@@ -106,10 +107,10 @@ export function useWorkspaceViewModel() {
       visualState.labelY,
     );
     const aiViewNote = `${titleNote}${subtitleNote}${sourceNote}${extent ? ` ${extent}.` : ""}`;
-    const mapSelectedData = tableFromMapFeatureSelections(input.mapFeatureSelections);
+    const mapSelectedData = tableFromVisualItemSelections(input.mapFeatureSelections);
     const activeMapFeature = input.mapFeatureSelections.at(-1) ?? null;
     const mapFeatureContext = input.mapFeatureSelections.length
-      ? `${aiViewNote} Selected ${input.mapFeatureSelections.length === 1 ? `map feature: ${activeMapFeature!.title}` : `${input.mapFeatureSelections.length} map features: ${input.mapFeatureSelections.map(({ title }) => title).join(", ")}`}. Attached feature values: ${input.mapFeatureSelections.slice(-12).map((selection) => `[${selection.title}: ${selection.values.map(({ field, value }) => `${field}=${value}`).join("; ")}]`).join(" ")}. Treat ${input.mapFeatureSelections.length === 1 ? "this geographic feature" : "these geographic features"} as the active subject unless the user broadens the question.`.slice(0, 3900)
+      ? `${aiViewNote} Selected ${input.mapFeatureSelections.length === 1 ? `${isMap ? "map feature" : "visual item"}: ${activeMapFeature!.title}` : `${input.mapFeatureSelections.length} ${isMap ? "map features" : "visual items"}: ${input.mapFeatureSelections.map(({ title }) => title).join(", ")}`}. Attached values: ${input.mapFeatureSelections.slice(-12).map((selection) => `[${selection.title}: ${selection.values.map(({ field, value }) => `${field}=${value}`).join("; ")}]`).join(" ")}. Treat ${input.mapFeatureSelections.length === 1 ? (isMap ? "this geographic feature" : "this data item") : (isMap ? "these geographic features" : "these data items")} as the active subject unless the user broadens the question.`.slice(0, 3900)
       : "";
 
     return {
@@ -132,7 +133,7 @@ export function useWorkspaceViewModel() {
         opacity: visualState.labelOpacity,
       },
       isBlankWorkspace,
-      isMap: /\bDRAW\s+spatial\b/i.test(splitGgsql(input.query).visual),
+      isMap,
       chartSelectionData,
       chartSelectionDetails,
       mapSelectedData,

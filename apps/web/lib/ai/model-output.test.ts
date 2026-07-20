@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse, sanitizeModelText } from "./model-output";
+import { draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse, sanitizeModelText, separateWorkspaceProgram } from "./model-output";
 
 describe("Chartize AI model output", () => {
   it("does not expose raw Zod issue arrays in the UI", () => {
@@ -43,6 +43,19 @@ LABEL title => 'Population change'
     expect(normalizeModelGgsql(fenced)).toBe("SELECT value FROM chartize:example\n\nVISUALISE\nDRAW line\n  MAPPING value AS y");
     expect(normalizeModelGgsql("GGSQL: SELECT value FROM chartize:example"))
       .toBe("SELECT value FROM chartize:example");
+  });
+
+  it("moves one-time local SQL out of the visualization query", () => {
+    const separated = separateWorkspaceProgram(`DROP TABLE IF EXISTS cleaned;
+CREATE TEMP TABLE cleaned AS SELECT value FROM user:upload;
+SELECT value FROM cleaned
+
+VISUALISE
+DRAW bar
+  MAPPING value AS x`);
+    expect(separated.setupSql).toBe("DROP TABLE IF EXISTS cleaned;\n\nCREATE TEMP TABLE cleaned AS SELECT value FROM user:upload;");
+    expect(separated.query).toBe("SELECT value FROM cleaned\n\nVISUALISE\nDRAW bar\n  MAPPING value AS x");
+    expect(separated.query).not.toMatch(/\b(?:DROP|CREATE)\b/);
   });
 
   it("does not claim web research was unavailable when provider evidence exists", () => {

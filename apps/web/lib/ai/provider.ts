@@ -36,6 +36,7 @@ const CHARTIZE_RESEARCH_DOMAINS = [
   "supremecourt.gov", "house.gov", "senate.gov", "whitehouse.gov", "cdc.gov",
   "nber.org", "brookings.edu", "urban.org", "rand.org", "kff.org",
   "oecd.org", "worldbank.org", "imf.org", "un.org", "ec.europa.eu", "who.int",
+  "mta.info", "nyc.gov", "thecity.nyc", "gothamist.com", "ny1.com", "amny.com",
 ] as const;
 
 function clientAndModel(): { client: ResponsesClient; model: string; promptCaching: boolean } {
@@ -82,7 +83,9 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   maxToolRounds?: number;
   requiredWebSearch?: boolean;
   continueAfterRequiredWebSearch?: boolean;
+  maxBuiltInToolCalls?: number;
   sourceSelection?: "cited" | "all";
+  onProgress?: (message: string) => void;
 }): Promise<{ output: z.infer<Schema>; sources: Array<{ title: string; url: string }>; researched: boolean; usage: AiUsage }> {
   const { client, model, promptCaching } = clientAndModel();
   const functionTools = options.functionTools ?? [];
@@ -117,9 +120,16 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   const usageValues: AiUsage[] = [];
   let parsedOutput: z.infer<Schema> | null = null;
   const maxToolRounds = options.maxToolRounds ?? 4;
+  let lastProgress = "";
+  const report = (message: string) => {
+    if (!message || message === lastProgress) return;
+    lastProgress = message;
+    options.onProgress?.(message);
+  };
 
   for (let round = 0; round <= maxToolRounds; round += 1) {
-    const response: ParsedResponse<z.infer<Schema>> = await client.responses.parse({
+    report(round ? "continuing with the gathered evidence…" : "thinking through the request…");
+    const stream = client.responses.stream({
       model,
       store: false,
       reasoning: { effort: options.reasoningEffort ?? "low" },
@@ -127,6 +137,7 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
       input,
       text: { format: zodTextFormat(options.schema, options.name) },
       max_output_tokens: options.maxOutputTokens,
+      ...(options.maxBuiltInToolCalls ? { max_tool_calls: options.maxBuiltInToolCalls } : {}),
       ...(promptCaching ? {
         prompt_cache_key: options.cacheKey,
         prompt_cache_options: { mode: "implicit" as const, ttl: "30m" as const },
@@ -144,6 +155,12 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
       } : {}),
       ...(include.length ? { include } : {}),
     });
+    for await (const event of stream) {
+      const message = progressMessage(event.type);
+      if (message) report(message);
+    }
+    const response = await stream.finalResponse() as ParsedResponse<z.infer<Schema>>;
+    report("checking the response…");
     usageValues.push(responseUsage(model, response));
     collectResearchEvidence(response, sourceMap, citationMap);
     researched = response.output.some((item) => item.type === "web_search_call" && item.status === "completed") || researched;
@@ -220,7 +237,7 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   ];
   const sources = options.sourceSelection === "all"
     ? allSources
-    : (citedSources.length ? citedSources : [...sourceMap.values()]);
+    : citedSources;
   return {
     output: options.schema.parse(parsedOutput),
     sources: sources.slice(0, 6),
@@ -229,8 +246,20 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   };
 }
 
+function progressMessage(eventType: string) {
+  switch (eventType) {
+    case "response.web_search_call.in_progress": return "starting web research…";
+    case "response.web_search_call.searching": return "searching and reading sources…";
+    case "response.web_search_call.completed": return "research sources gathered…";
+    case "response.function_call_arguments.delta": return "preparing a workspace tool…";
+    case "response.function_call_arguments.done": return "running the workspace tool…";
+    case "response.output_text.delta": return "writing the grounded response…";
+    default: return "";
+  }
+}
+
 function replayableOutput(output: ParsedResponse<unknown>["output"]): ResponseInput {
-  // `responses.parse` decorates function calls/content with SDK-only parsed
+  // The Responses SDK decorates function calls/content with SDK-only parsed
   // values. They are convenient locally but are not legal Response input
   // properties, so remove them while retaining reasoning and tool-call items.
   return JSON.parse(JSON.stringify(output, (key, value: unknown) => (

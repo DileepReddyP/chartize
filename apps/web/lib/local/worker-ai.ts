@@ -1,17 +1,93 @@
 import {
   AiResponseSchema,
+  AiStreamEventSchema,
   AiTurnEnvelopeSchema,
   AiUsageSchema,
   AiWorkspaceDataResultSchema,
+  type AiResearchContext,
+  type AiResponse,
   type AiTurnRequest,
   type AiUsage,
+  type AiWorkspaceAction,
+  type AiWorkspaceDataResult,
 } from "@chartize/contracts";
 import { executeWorkspaceSqlRaw } from "./workspace-engine";
-import { fetchWithDeadline } from "./worker-network";
 import { prepareWorkerQuery, type WorkerProgressEmitter } from "./worker-source-registry";
 
 const AI_URL = "/api/ai/query";
 const AI_TIMEOUT_MS = 180_000;
+
+async function requestStreamedAiTurn(
+  payload: unknown,
+  id: string,
+  emit: WorkerProgressEmitter,
+): Promise<AiResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  try {
+    const response = await fetch(AI_URL, {
+      method: "POST",
+      headers: {
+        accept: "application/x-ndjson",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const responseBody: unknown = await response.json().catch(() => null);
+      throw new Error(errorMessage(responseBody));
+    }
+    if (!response.headers.get("content-type")?.includes("application/x-ndjson")) {
+      const responseBody: unknown = await response.json();
+      if (typeof responseBody === "object" && responseBody !== null && "error" in responseBody) {
+        throw new Error(errorMessage(responseBody));
+      }
+      return AiResponseSchema.parse(responseBody);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Chartize AI returned an empty response stream.");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let result: AiResponse | null = null;
+    const consume = (line: string) => {
+      if (!line.trim()) return;
+      const event = AiStreamEventSchema.parse(JSON.parse(line));
+      if (event.type === "progress") {
+        emit(id, { phase: "thinking", message: event.message });
+      } else if (event.type === "error") {
+        throw new Error(event.error);
+      } else {
+        result = event.response;
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      lines.forEach(consume);
+    }
+    buffer += decoder.decode();
+    consume(buffer);
+    if (!result) throw new Error("Chartize AI finished without returning a result.");
+    return result;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("The Chartize AI request timed out.");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function errorMessage(value: unknown) {
+  return typeof value === "object" && value !== null && "error" in value && typeof value.error === "string"
+    ? value.error
+    : "AI request failed.";
+}
 
 function mergeUsage(current: AiUsage | null, next: AiUsage): AiUsage {
   if (!current) return next;
@@ -60,32 +136,62 @@ async function executeAiDataRequest(
   }
 }
 
+function assertSafeWorkspaceAction(sql: string) {
+  if (/\bVISUALI[ZS]E\b/i.test(sql)) throw new Error("A one-time workspace action cannot contain VISUALISE.");
+  if (!/\b(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE|DROP\s+TABLE|INSERT\s+INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE)\b/i.test(sql)) {
+    throw new Error("A workspace action must contain an explicit local SQL change.");
+  }
+  if (/\b(?:COPY|ATTACH|DETACH|INSTALL|LOAD|VACUUM)\b/i.test(sql) || /(?:https?:\/\/|file:|\/Users\/|\.\.\/)/i.test(sql)) {
+    throw new Error("A workspace action cannot access extensions, URLs, or the filesystem.");
+  }
+  const protectedTarget = /\b(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE(?:\s+IF\s+NOT\s+EXISTS)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?|INSERT\s+INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE)\s+(?:"|`|\[)?(?:chartize:|user:|__chartize_|__user_)/i;
+  if (protectedTarget.test(sql)) {
+    throw new Error("A workspace action must write to a derived local table, not a catalog source or raw upload.");
+  }
+}
+
+async function executeWorkspaceActions(
+  workspaceId: string,
+  actions: AiWorkspaceAction[],
+  id: string,
+  emit: WorkerProgressEmitter,
+) {
+  for (const [index, action] of actions.entries()) {
+    emit(id, {
+      phase: "querying",
+      message: `applying browser-local data change… ${index + 1}/${actions.length}`,
+    });
+    assertSafeWorkspaceAction(action.sql);
+    const query = await prepareWorkerQuery(workspaceId, action.sql, id, emit);
+    assertSafeWorkspaceAction(query);
+    try {
+      await executeWorkspaceSqlRaw(workspaceId, query);
+    } catch (error) {
+      throw new Error(`${action.purpose}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+
 export async function completeWorkerAiTurn(
   workspaceId: string,
   input: AiTurnRequest,
   id: string,
   emit: WorkerProgressEmitter,
 ) {
-  const workspaceData = [];
+  const workspaceData: AiWorkspaceDataResult[] = [];
+  let researchContext: AiResearchContext | undefined;
   let accumulatedUsage: AiUsage | null = null;
   for (let workspaceDataRound = 0; workspaceDataRound <= 3; workspaceDataRound += 1) {
     emit(id, { phase: "thinking", message: workspaceDataRound ? "checking the data…" : "thinking…" });
-    const payload = AiTurnEnvelopeSchema.parse({ ...input, workspaceDataRound, workspaceData });
-    const response = await fetchWithDeadline(AI_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    }, AI_TIMEOUT_MS);
-    const responseBody: unknown = await response.json();
-    if (!response.ok || (typeof responseBody === "object" && responseBody !== null && "error" in responseBody)) {
-      throw new Error(typeof responseBody === "object" && responseBody !== null && "error" in responseBody && typeof responseBody.error === "string"
-        ? responseBody.error
-        : "AI request failed.");
-    }
-    const parsed = AiResponseSchema.parse(responseBody);
+    const payload = AiTurnEnvelopeSchema.parse({ ...input, workspaceDataRound, workspaceData, researchContext });
+    const parsed = await requestStreamedAiTurn(payload, id, emit);
     accumulatedUsage = mergeUsage(accumulatedUsage, parsed.usage);
-    if (parsed.kind !== "data_request") return { ...parsed, usage: accumulatedUsage };
+    if (parsed.kind !== "data_request") {
+      await executeWorkspaceActions(workspaceId, parsed.workspaceActions, id, emit);
+      return { ...parsed, usage: accumulatedUsage };
+    }
     if (!input.preferences.dataAccess) throw new Error("Chartize AI requested workspace data while data access was disabled.");
+    researchContext = parsed.researchContext ?? researchContext;
     workspaceData.push(...await Promise.all(
       parsed.requests.map((request) => executeAiDataRequest(workspaceId, request, id, emit)),
     ));
