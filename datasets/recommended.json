@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-07-16",
+  "updatedAt": "2026-07-19",
   "starterDescription": "Small, useful datasets that can be published automatically into a new warehouse.",
   "datasets": [
     {
@@ -8,8 +8,8 @@
       "starter": true,
       "automatic": true,
       "slug": "presidential_approval_average",
-      "title": "Presidential approval — daily average",
-      "description": "Daily modeled approval, disapproval, and net approval for the current president.",
+      "title": "Donald Trump approval — daily average",
+      "description": "Daily modeled approval, disapproval, and net approval for Donald Trump’s second presidential term.",
       "url": "https://raw.githubusercontent.com/Hackquantumcpp/snoutcounter-backend/main/averages/presidential_gen_approval.csv",
       "fileName": "presidential_approval_average.csv",
       "sourcePage": "https://github.com/Hackquantumcpp/snoutcounter-backend",
@@ -134,14 +134,14 @@
       "priority": 2,
       "starter": false,
       "automatic": false,
-      "slug": "president_precinct_returns_2024",
-      "title": "2024 presidential precinct returns",
-      "description": "Precinct-level 2024 U.S. presidential election returns with source and coverage metadata.",
-      "sourcePage": "https://electionlab.mit.edu/data",
-      "license": "Check the Dataverse record before redistribution",
-      "attribution": "MIT Election Data and Science Lab",
+      "slug": "county_presidential_returns_2000_2024",
+      "title": "County presidential returns, 2000–2024",
+      "description": "Candidate- and voting-mode-level presidential returns for U.S. counties across seven elections.",
+      "sourcePage": "https://doi.org/10.7910/DVN/VOQCHQ",
+      "license": "CC0 1.0",
+      "attribution": "MIT Election Data and Science Lab, Harvard Dataverse V20.0",
       "refresh": "post-election revisions",
-      "notes": "Large and revision-prone. Import after the state/county prototype and preserve the exact Dataverse DOI/version."
+      "notes": "Harvard Dataverse V20.0 file 13573089 requires a download-guestbook response. Download it through the DOI, then upload the TSV in Admin; preserve the DOI/version and join county_fips only where present."
     },
     {
       "id": "eac_eavs_2024",
@@ -158,18 +158,36 @@
       "notes": "Download the CSV and codebook together. Several fields require codebook-derived labels."
     },
     {
-      "id": "bea_county_income_gdp",
+      "id": "bea_county_personal_income",
       "priority": 3,
       "starter": false,
-      "automatic": false,
-      "slug": "bea_county_income_gdp",
-      "title": "County personal income and GDP",
-      "description": "County personal income, per-capita income, population, and GDP time series.",
-      "sourcePage": "https://www.bea.gov/itable/regional-gdp-and-personal-income",
+      "automatic": true,
+      "slug": "bea_county_personal_income",
+      "title": "County personal income, 1969–2024",
+      "description": "BEA CAINC1 personal income, population, and per-capita personal income time series for counties and higher-level areas.",
+      "url": "https://apps.bea.gov/regional/zip/CAINC1.zip",
+      "fileName": "bea_cainc1.zip",
+      "sourcePage": "https://apps.bea.gov/regional/zip/CAINC1.zip",
       "license": "U.S. Government public domain",
       "attribution": "U.S. Bureau of Economic Analysis, Regional Economic Accounts",
-      "refresh": "quarterly/annual",
-      "notes": "Use CAINC1 and CAGDP1. Preserve LineCode, unit, and GeoFIPS rather than pivoting everything into ambiguous columns."
+      "refresh": "annual",
+      "notes": "The importer selects CAINC1__ALL_AREAS from the official archive. Preserve LineCode, unit, GeoFIPS, and footnote flags."
+    },
+    {
+      "id": "bea_county_gdp",
+      "priority": 3,
+      "starter": false,
+      "automatic": true,
+      "slug": "bea_county_gdp",
+      "title": "County GDP, 2001–2024",
+      "description": "BEA CAGDP1 real GDP, quantity index, current-dollar GDP, and implicit price deflator time series for counties and higher-level areas.",
+      "url": "https://apps.bea.gov/regional/zip/CAGDP1.zip",
+      "fileName": "bea_cagdp1.zip",
+      "sourcePage": "https://apps.bea.gov/regional/zip/CAGDP1.zip",
+      "license": "U.S. Government public domain",
+      "attribution": "U.S. Bureau of Economic Analysis, Regional Economic Accounts",
+      "refresh": "annual",
+      "notes": "The importer selects CAGDP1__ALL_AREAS from the official archive. Preserve LineCode, unit, GeoFIPS, and footnote flags."
     },
     {
       "id": "bls_county_unemployment",

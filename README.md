@@ -4,6 +4,8 @@ A self-hosted data warehouse and GGSQL visualization workspace. It combines a na
 
 The explorer—not a promotional homepage—is the product surface. It is a cursor-led DWIM workspace: Monaco GGSQL stays primary, while sources, fields, visual parameters, table ranges, and chart ranges expose contextual controls at the selection. The raw source stream, query result, and chart remain visible in three resizable panes. It also supports Vega-Lite rendering, PNG/SVG/share-card export, local workspace persistence, warehouse queries, and opt-in AI assistance.
 
+![Chartize workspace with GGSQL, source data, and a linked chart](./docs/images/chartize-workspace.webp)
+
 ## Execution boundary
 
 | Input | Where it is stored | Where GGSQL runs |
@@ -15,13 +17,17 @@ The explorer—not a promotional homepage—is the product surface. It is a curs
 
 The server is not merely a file API. It executes shared queries, enforces read-only policy, owns catalog metadata, profiles imports, publishes stable views, and rolls datasets back between immutable versions.
 
+Chartize AI is one workspace-scoped Terra conversation, not a separate generator bolted onto each pane. Cursor ranges, selected rows, and individual geographic features can become its active context; with permission it can query bounded warehouse data or use grounded web search.
+
+![Chartize AI comparing a selected county with its statewide peers](./docs/images/chartize-ai-county-context.webp)
+
 ## Stack
 
 - Frontend: Next.js 16, React 19, Monaco, Vega/Vega-Lite, `ggsql-wasm`, and a Zod-inferred Zustand workspace store
 - Browser conversion: `hyparquet-writer`, a GeoJSON-to-WKB encoder, and `shpjs`
 - Warehouse API: Rust, Axum, GGSQL 0.4.1, DuckDB
 - Storage: one DuckDB catalog plus Zstd-compressed Parquet and original provenance files under `data/`
-- AI: Responses API structured outputs, defaulting to `gpt-5.6`; optional Azure OpenAI deployment
+- AI: one Responses API conversation per workspace, using `gpt-5.6-terra`; optional Azure OpenAI deployment
 - Deployment: Docker Compose and Caddy on a single VPS
 
 ## Run locally
@@ -56,6 +62,8 @@ docker compose up --build -d
 ```
 
 Set `SITE_ADDRESS=studio.example.com` for automatic HTTPS. Only Caddy is public; the warehouse engine remains inside the Compose network and the web server proxies `/engine/*` at runtime.
+
+For a preview subdomain behind host Nginx and Basic Auth, use [`docs/VPS_DEPLOYMENT.md`](./docs/VPS_DEPLOYMENT.md). It includes the archive/copy flow, private Compose services, one-shot warehouse seeding, TLS, credentials, backups, and updates.
 
 The default 70 GB VPS layout is deliberately simple:
 
@@ -97,3 +105,5 @@ cargo check --manifest-path services/engine/Cargo.toml
 ```
 
 The `.cargo/config.toml` uses the generated parser included with `tree-sitter-ggsql`, so a global Tree-sitter CLI is not required.
+
+The post-pivot architecture review, resolved hazards, and remaining extraction seams are documented in [`docs/CODE_AUDIT.md`](./docs/CODE_AUDIT.md).

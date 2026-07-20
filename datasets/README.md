@@ -14,9 +14,10 @@
 | Starter | [2025 county cartographic boundaries](https://www.census.gov/geographies/mapping-files/time-series/geo/cartographic-boundary.2025.html) | County choropleths joined on five-character GEOID | Automatic |
 | Next | [2020–2024 ACS 5-year county profile](https://api.census.gov/data/2024/acs/acs5.html) | Income, poverty, age, education, race, housing, and internet access, with margins of error | Census API key + curated variables |
 | Next | [CDC PLACES 2025 county health](https://data.cdc.gov/d/swc5-untb) | Forty modeled public-health measures with confidence intervals | Automatic with `--all` or its manifest ID |
-| Next | [MIT Election Lab 2024 precinct returns](https://electionlab.mit.edu/data) | Detailed election results and geographic coverage | Manual Dataverse download; retain DOI and version |
+| Next | [MIT Election Lab county presidential returns, 2000–2024](https://doi.org/10.7910/DVN/VOQCHQ) | County vote, candidate, party, and voting-mode history | Manual Dataverse V20.0 download; guestbook response required |
 | Later | [EAC 2024 EAVS](https://www.eac.gov/research-and-data/studies-and-reports) | Registration, turnout, mail voting, provisional voting, and election administration | Manual CSV + codebook |
-| Later | [BEA county income and GDP](https://www.bea.gov/itable/regional-gdp-and-personal-income) | County economic levels and trends | Curated BEA tables/API |
+| Next | [BEA CAINC1 county personal income](https://apps.bea.gov/regional/zip/CAINC1.zip) | Income, population, and per-capita income through 2024 | Automatic with `--all` |
+| Next | [BEA CAGDP1 county GDP](https://apps.bea.gov/regional/zip/CAGDP1.zip) | Real and current-dollar county GDP through 2024 | Automatic with `--all` |
 | Later | [BLS county unemployment](https://www.bls.gov/lau/tables.htm) | Monthly and annual labor-force conditions | Curated BLS files/API |
 
 The machine-readable URLs, slugs, licenses, attribution, refresh cadence, and caveats live in [`recommended.json`](./recommended.json).
@@ -40,11 +41,13 @@ This installs:
 
 The political data comes from the actively maintained, GPL-3.0 SnoutCounter model repository. The old FiveThirtyEight download URLs are deliberately excluded because they now return an ABC web page instead of CSV data.
 
-Use `pnpm data:seed -- --all` to additionally publish automatic non-starter sources such as CDC PLACES. Pass one or more manifest IDs to select datasets explicitly:
+Use `pnpm data:seed -- --all` to additionally publish CDC PLACES plus the official BEA CAINC1 and CAGDP1 archives. ZIP ingestion retains the original archive and selects its national `__ALL_AREAS` table for Parquet normalization. Pass one or more manifest IDs to select datasets explicitly:
 
 ```bash
 ADMIN_TOKEN=local-dev-token pnpm data:seed -- cdc_places_county_2025
 ```
+
+The current all-automatic warehouse contains nine published sources: the six-table starter pack, CDC PLACES county health estimates, BEA county personal income, and BEA county GDP. MIT county presidential returns are CC0 but Harvard Dataverse now requires a guestbook response before it issues a download URL; complete that interaction at the DOI and import the resulting TSV through Admin. ACS API calls require a Census key, so the profile remains a curated manual follow-up rather than pretending an unauthenticated seed is reliable.
 
 The command skips slugs that are already published. Add `--force` when you intentionally want to download current upstream data and create a new warehouse version.
 

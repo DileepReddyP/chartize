@@ -29,7 +29,7 @@ services:
     environment:
       ENGINE_URL: http://engine:8787
       AI_PROVIDER: ${AI_PROVIDER:-openai}
-      AI_TEXT_MODEL: ${AI_TEXT_MODEL:-gpt-5.6}
+      AI_TEXT_MODEL: ${AI_TEXT_MODEL:-gpt-5.6-terra}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
@@ -37,6 +37,21 @@ services:
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-04-01-preview}
     ports:
       - "127.0.0.1:3000:3000"
+
+  seed:
+    image: node:24-bookworm-slim
+    profiles: ["tools"]
+    depends_on:
+      engine:
+        condition: service_healthy
+    working_dir: /workspace
+    environment:
+      ENGINE_URL: http://engine:8787
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env}
+    volumes:
+      - ./scripts:/workspace/scripts:ro
+      - ./datasets:/workspace/datasets:ro
+    command: ["node", "scripts/seed-data.mjs", "--all"]
 
   caddy:
     image: caddy:2.10-alpine
