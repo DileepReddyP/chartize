@@ -5,8 +5,8 @@ describe("Chartize AI prompt contract", () => {
   it("defines one persistent GGSQL collaborator", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("sole AI collaborator");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("Continue as one conversation");
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("complete executable read-only GGSQL query");
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("query_warehouse");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("complete executable browser-local GGSQL query");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("request_data");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("get_visualization_tips");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("Any request to label line endpoints must consult endpoint-labels");
   });
@@ -45,7 +45,7 @@ describe("Chartize AI prompt contract", () => {
   });
 
   it("keeps the model contract query-authoritative instead of emitting duplicate builder state", () => {
-    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("reconstructs its visual-builder state from the GGSQL");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("reconstructs its visual-builder state from the result");
     expect(CHARTIZE_AI_INSTRUCTIONS).not.toContain("draft.scenarioDeltas");
   });
 });

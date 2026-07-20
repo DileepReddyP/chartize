@@ -11,7 +11,7 @@ WORKDIR /app
 COPY --from=build /workspace/services/engine/target/release/chartize-engine /usr/local/bin/chartize-engine
 RUN mkdir -p /data && chown chartize:chartize /data
 USER chartize
-ENV WAREHOUSE_ROOT=/data
+ENV DATA_ROOT=/data
 ENV ENGINE_BIND=0.0.0.0:8787
 EXPOSE 8787
 CMD ["chartize-engine"]

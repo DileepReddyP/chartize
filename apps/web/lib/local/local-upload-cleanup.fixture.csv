@@ -1,0 +1,7 @@
+city,year,value,category
+ New York ,2022,100,East
+new york,2023,,east
+BOSTON,2022,80,North East
+ Boston ,2023,95,northeast
+Austin,2022,,South
+Austin ,2023,130,south

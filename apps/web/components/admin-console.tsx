@@ -3,6 +3,7 @@
 import type { DatasetManifest } from "@chartize/contracts";
 import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { getAdminCatalog, publishAdminDataset, rollbackAdminDataset } from "@/app/admin/actions";
 
 export function AdminConsole() {
   const [datasets, setDatasets] = useState<DatasetManifest[]>([]);
@@ -11,9 +12,7 @@ export function AdminConsole() {
   const [adminToken, setAdminToken] = useState("");
 
   const refresh = useCallback(async () => {
-    const response = await fetch("/engine/api/catalog", { cache: "no-store" });
-    if (!response.ok) throw new Error("The warehouse service is unavailable.");
-    setDatasets(await response.json() as DatasetManifest[]);
+    setDatasets(await getAdminCatalog());
   }, []);
 
   useEffect(() => {
@@ -26,13 +25,7 @@ export function AdminConsole() {
     setBusy(true);
     setMessage("Uploading, profiling, and publishing…");
     try {
-      const response = await fetch("/engine/api/admin/imports", {
-        method: "POST",
-        headers: { "x-admin-token": adminToken },
-        body: new FormData(form),
-      });
-      const body = await response.json() as DatasetManifest | { error: string };
-      if (!response.ok || "error" in body) throw new Error("error" in body ? body.error : "Import failed.");
+      const body = await publishAdminDataset(adminToken, new FormData(form));
       setMessage(`Published ${body.title} with ${body.rowCount.toLocaleString()} rows.`);
       form.reset();
       await refresh();
@@ -47,12 +40,7 @@ export function AdminConsole() {
     if (!window.confirm(`Roll ${slug} back to its previous published version?`)) return;
     setBusy(true);
     try {
-      const response = await fetch(`/engine/api/admin/datasets/${encodeURIComponent(slug)}/rollback`, {
-        method: "POST",
-        headers: { "x-admin-token": adminToken },
-      });
-      const body = await response.json() as DatasetManifest | { error: string };
-      if (!response.ok || "error" in body) throw new Error("error" in body ? body.error : "Rollback failed.");
+      const body = await rollbackAdminDataset(adminToken, slug);
       setMessage(`Rolled ${slug} back to version ${body.version}.`);
       await refresh();
     } catch (error) {
@@ -67,7 +55,7 @@ export function AdminConsole() {
       <header className="admin-heading">
         <div>
           <a className="eyebrow" href="/explore">Chartize / Explorer</a>
-          <h1>Warehouse steward</h1>
+          <h1>Data steward</h1>
           <p>Publish normalized, versioned datasets to the VPS. The original upload is retained for provenance.</p>
         </div>
         <span className="privacy-badge">VPS storage · DuckDB + Parquet</span>

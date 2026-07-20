@@ -1,6 +1,6 @@
 # Chartize
 
-Chartize is a GGSQL workspace for querying, exploring, and visualizing public datasets. It combines a read-only DuckDB and Parquet warehouse, direct-manipulation chart tools, and an optional grounded AI collaborator.
+Chartize is a local-first GGSQL workspace for querying, exploring, and visualizing public datasets. Versioned Parquet sources are cached and queried in the browser, alongside direct-manipulation chart tools and an optional grounded AI collaborator.
 
 - [Explorer](/explore): build and inspect visualizations.
 - [About](/about): product and privacy overview.

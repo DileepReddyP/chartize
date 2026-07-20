@@ -4,47 +4,51 @@ import type { FieldMetadata } from "@chartize/contracts";
 import { useEffect, type CSSProperties } from "react";
 import { sourceAlias, type QuerySection, type VisualPointState } from "@/lib/ggsql/query-context";
 import { fieldsForAesthetic, guidanceForMark, patchForMark, type VisualAesthetic } from "@/lib/ggsql/visual-guidance";
+import type { WorkspaceSource } from "@/lib/workspace/view-model";
 
-export interface DwimSource {
-  id: string;
-  title: string;
-  description: string;
-  namespace: "chartize" | "user" | "ggsql";
-  fields: FieldMetadata[];
-  rows?: number;
-  disabled?: boolean;
-}
+export type DwimSource = WorkspaceSource;
 
 interface SourceTilesProps {
   sources: DwimSource[];
   activeSources: string[];
   onSource: (source: string, enabled: boolean) => void;
+  onRemoveSource?: (tableName: string) => void;
   compact?: boolean;
   loading?: boolean;
 }
 
-export function SourceTiles({ sources, activeSources, onSource, compact, loading }: SourceTilesProps) {
+export function SourceTiles({ sources, activeSources, onSource, onRemoveSource, compact, loading }: SourceTilesProps) {
   return (
     <div className={`dwim-source-tiles ${compact ? "compact" : ""}`} aria-busy={loading}>
       {sources.map((source) => {
         const active = activeSources.includes(source.id);
         return (
-          <button
-            key={source.id}
-            type="button"
-            className={active ? "active" : ""}
-            aria-pressed={active}
-            disabled={source.disabled && !active}
-            title={source.disabled ? "A query cannot mix VPS and browser-only sources." : source.description}
-            onClick={() => onSource(source.id, !active)}
-          >
-            <span>{active ? "✓" : "+"}</span>
-            <strong>{source.title}</strong>
-            <small>{source.namespace}: {source.rows === undefined ? "browser" : `${source.rows.toLocaleString()} rows`}</small>
-          </button>
+          <div key={source.id} className={`dwim-source-tile ${active ? "active" : ""}`}>
+            <button
+              type="button"
+              className="dwim-source-choice"
+              aria-pressed={active}
+              disabled={source.disabled && !active}
+              title={source.disabled ? "A query cannot mix published and browser-only sources." : source.description}
+              onClick={() => onSource(source.id, !active)}
+            >
+              <span>{active ? "✓" : "+"}</span>
+              <strong>{source.title}</strong>
+              <small>{source.namespace}: {source.rows === undefined ? "browser" : `${source.rows.toLocaleString()} rows`}</small>
+            </button>
+            {source.namespace === "user" && onRemoveSource && (
+              <button
+                className="dwim-source-remove"
+                type="button"
+                title={`Remove ${source.title} from this browser`}
+                aria-label={`Remove ${source.title} from this browser`}
+                onClick={() => onRemoveSource(source.id.slice("user:".length))}
+              >×</button>
+            )}
+          </div>
         );
       })}
-      {loading && <div className="source-tiles-loading" role="status"><span className="spinner" /><span>loading warehouse sources…</span></div>}
+      {loading && <div className="source-tiles-loading" role="status"><span className="spinner" /><span>loading data sources…</span></div>}
     </div>
   );
 }

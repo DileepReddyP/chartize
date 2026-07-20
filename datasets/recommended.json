@@ -1,6 +1,6 @@
 {
   "updatedAt": "2026-07-19",
-  "starterDescription": "Small, useful datasets that can be published automatically into a new warehouse.",
+  "starterDescription": "Small, useful datasets that can be published automatically into a new Chartize catalog.",
   "datasets": [
     {
       "id": "presidential_approval_average",

@@ -14,6 +14,7 @@
     "@monaco-editor/react": "4.7.0",
     "@next/env": "16.2.10",
     "@vanilla-extract/css": "1.21.1",
+    "dexie": "^4.4.4",
     "ggsql-wasm": "0.4.1",
     "hyparquet-writer": "0.16.1",
     "next": "16.2.10",
@@ -35,6 +36,7 @@
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@vanilla-extract/next-plugin": "2.5.2",
+    "fake-indexeddb": "^6.2.5",
     "typescript": "5.9.3",
     "vitest": "3.2.4"
   }

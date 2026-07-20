@@ -1,0 +1,29 @@
+{
+  "id": "approval-v1",
+  "slug": "presidential_approval_average",
+  "title": "Presidential approval",
+  "description": "Daily modeled approval average.",
+  "version": "20260720010736",
+  "tableName": "presidential_approval_average",
+  "sourceUrl": "https://example.test/approval.csv",
+  "license": "Public domain",
+  "attribution": "Example polling archive",
+  "rowCount": 100,
+  "spatial": false,
+  "publishedAt": "2026-07-20T01:07:36Z",
+  "fields": [
+    {
+      "name": "end_date",
+      "dataType": "DATE",
+      "nullable": false,
+      "semanticType": "temporal"
+    },
+    {
+      "name": "approve",
+      "dataType": "DOUBLE",
+      "nullable": true,
+      "semanticType": "measure"
+    }
+  ],
+  "joinHints": []
+}

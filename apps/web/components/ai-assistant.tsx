@@ -185,7 +185,7 @@ export function AiAssistant({
     : undefined;
   const thinkingSteps = [
     "reading the active workspace",
-    ...(preferences.dataAccess ? ["querying the warehouse"] : []),
+    ...(preferences.dataAccess ? ["browser data access"] : []),
     ...(preferences.webSearch ? ["grounding the answer"] : []),
     "checking the visual design",
     "shaping a useful reply",
@@ -288,7 +288,7 @@ export function AiAssistant({
                     {preferences.webSearch && <span title="Live web search and source grounding" aria-label="Web search is active">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.2 2.4 3.3 5.2 3.3 8.5S14.2 18.1 12 20.5C9.8 18.1 8.7 15.3 8.7 12S9.8 5.9 12 3.5Z" /></svg>
                     </span>}
-                    {preferences.dataAccess && <span title="Read-only warehouse tools" aria-label="Warehouse data access is active">
+                    {preferences.dataAccess && <span title="Browser data access" aria-label="Browser data access is active">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="3" /><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6" /></svg>
                     </span>}
                     {preferences.hypothesize && <span title="Helpful hypotheses" aria-label="Hypotheses are active">
@@ -306,7 +306,7 @@ export function AiAssistant({
                     <header><i>03</i><span><b>response profile</b><small>tune this conversation</small></span></header>
                     <label><input name="ai-hypothesize" type="checkbox" checked={preferences.hypothesize} onChange={(event) => onPreferences({ ...preferences, hypothesize: event.target.checked })} /><span><b>offer hypotheses</b><small>use clearly labeled historical or outside context</small></span></label>
                     <label><input name="ai-web-search" type="checkbox" checked={preferences.webSearch} onChange={(event) => onPreferences({ ...preferences, webSearch: event.target.checked })} /><span><b>search and ground</b><small>look up causal, historical, and current questions on the live web</small></span></label>
-                    <label><input name="ai-data-access" type="checkbox" checked={preferences.dataAccess} onChange={(event) => onPreferences({ ...preferences, dataAccess: event.target.checked })} /><span><b>query the warehouse</b><small>let the assistant run bounded read-only queries over server datasets</small></span></label>
+                    <label><input name="ai-data-access" type="checkbox" checked={preferences.dataAccess} onChange={(event) => onPreferences({ ...preferences, dataAccess: event.target.checked })} /><span><b>use workspace data</b><small>let the assistant query sources cached in this browser</small></span></label>
                     <label><input name="ai-concise" type="checkbox" checked={preferences.concise} onChange={(event) => onPreferences({ ...preferences, concise: event.target.checked })} /><span><b>keep it concise</b><small>lead with the answer and trim repeated caveats</small></span></label>
                     <label><input name="ai-challenge" type="checkbox" checked={preferences.challenge} onChange={(event) => onPreferences({ ...preferences, challenge: event.target.checked })} /><span><b>challenge my framing</b><small>surface weak assumptions and alternative readings</small></span></label>
                     <label><input name="ai-technical" type="checkbox" checked={preferences.technical} onChange={(event) => onPreferences({ ...preferences, technical: event.target.checked })} /><span><b>show technical detail</b><small>include methodology and GGSQL mechanics</small></span></label>

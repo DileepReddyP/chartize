@@ -4,7 +4,7 @@ import { AppHeader } from "@/components/app-header";
 
 export const metadata: Metadata = {
   title: "Chartize — Query and visualize public data",
-  description: "A privacy-first data warehouse and GGSQL visualization studio.",
+  description: "A local-first GGSQL data and visualization studio.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

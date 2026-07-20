@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { GgsqlDraftSchema } from "./index";
+import { readFile } from "node:fs/promises";
+import { DatasetManifestSchema, GgsqlDraftSchema } from "./index";
 
 describe("GgsqlDraftSchema", () => {
   it("fills safe defaults", () => {
@@ -11,5 +12,14 @@ describe("GgsqlDraftSchema", () => {
     expect(draft.layers[0]?.opacity).toBe(0.9);
     expect(draft.scales).toEqual([]);
     expect(draft.axisLabels.x).toBe("");
+  });
+});
+
+describe("cross-runtime dataset contract", () => {
+  it("parses the manifest fixture shared with the Rust service", async () => {
+    const fixture: unknown = JSON.parse(await readFile(new URL("../fixtures/dataset-manifest.json", import.meta.url), "utf8"));
+    const manifest = DatasetManifestSchema.parse(fixture);
+    expect(manifest.tableName).toBe("presidential_approval_average");
+    expect(manifest.fields.map((field) => field.name)).toEqual(["end_date", "approve"]);
   });
 });

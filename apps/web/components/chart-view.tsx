@@ -1,9 +1,10 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useReducer, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import embed, { type Result as EmbedResult, type VisualizationSpec } from "vega-embed";
 import type { TablePreview } from "@chartize/contracts";
 import type { MapViewport } from "@/lib/ggsql/geo-fit";
+import { pngWithHeader, svgWithHeader } from "@/lib/ggsql/chart-export";
 import { presentChartSpec, type ChartLegendTitles, type ChartThreshold } from "@/lib/ggsql/vega-presentation";
 import { mapFeatureSelectionFromDatum, type MapFeatureSelection } from "@/lib/workspace/chart-data";
 
@@ -46,6 +47,15 @@ const DEFAULT_MAP_VIEWPORT: MapViewport = { zoom: 1, panX: 0, panY: 0 };
 
 type SelectionPixels = ChartRegionSelection["pixels"];
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
+type ChartInteraction =
+  | { kind: "idle" }
+  | { kind: "selection"; pixels: SelectionPixels }
+  | { kind: "resize"; pixels: SelectionPixels; handle: ResizeHandle }
+  | { kind: "map"; start: { x: number; y: number }; current: { x: number; y: number } };
+
+function interactionReducer(_state: ChartInteraction, next: ChartInteraction) {
+  return next;
+}
 
 function normalizedPixels(pixels: SelectionPixels): SelectionPixels {
   return {
@@ -54,102 +64,6 @@ function normalizedPixels(pixels: SelectionPixels): SelectionPixels {
     x1: Math.max(pixels.x0, pixels.x1),
     y1: Math.max(pixels.y0, pixels.y1),
   };
-}
-
-function loadImage(url: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("The rendered chart image could not be read."));
-    image.src = url;
-  });
-}
-
-function canvasLines(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return [];
-  const lines: string[] = [];
-  let line = words[0]!;
-  for (const word of words.slice(1)) {
-    const candidate = `${line} ${word}`;
-    if (context.measureText(candidate).width <= maxWidth) line = candidate;
-    else { lines.push(line); line = word; }
-  }
-  lines.push(line);
-  return lines;
-}
-
-async function pngWithHeader(chartUrl: string, title: string, subtitle: string) {
-  if (!title.trim() && !subtitle.trim()) return chartUrl;
-  const image = await loadImage(chartUrl);
-  const scale = image.naturalWidth >= 1_000 ? 2 : 1;
-  const padding = 28 * scale;
-  const canvas = document.createElement("canvas");
-  const measure = canvas.getContext("2d");
-  if (!measure) throw new Error("Canvas export is unavailable.");
-  measure.font = `300 ${34 * scale}px system-ui, sans-serif`;
-  const titleLines = canvasLines(measure, title, image.naturalWidth - padding * 2);
-  measure.font = `400 ${14 * scale}px system-ui, sans-serif`;
-  const subtitleLines = canvasLines(measure, subtitle, image.naturalWidth - padding * 2);
-  const headerHeight = padding
-    + titleLines.length * 39 * scale
-    + (subtitleLines.length ? 8 * scale + subtitleLines.length * 20 * scale : 0)
-    + 18 * scale;
-  canvas.width = image.naturalWidth;
-  canvas.height = image.naturalHeight + headerHeight;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Canvas export is unavailable.");
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#0a0f0d";
-  context.font = `300 ${34 * scale}px system-ui, sans-serif`;
-  titleLines.forEach((line, index) => context.fillText(line, padding, padding + 32 * scale + index * 39 * scale));
-  context.fillStyle = "#596662";
-  context.font = `400 ${14 * scale}px system-ui, sans-serif`;
-  const subtitleTop = padding + titleLines.length * 39 * scale + 8 * scale;
-  subtitleLines.forEach((line, index) => context.fillText(line, padding, subtitleTop + 14 * scale + index * 20 * scale));
-  context.drawImage(image, 0, headerHeight);
-  return canvas.toDataURL("image/png");
-}
-
-function xmlText(value: string) {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
-
-function approximateLines(text: string, maxCharacters: number) {
-  const words = text.trim().split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = "";
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (line && candidate.length > maxCharacters) { lines.push(line); line = word; }
-    else line = candidate;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
-
-async function svgWithHeader(chartUrl: string, title: string, subtitle: string) {
-  if (!title.trim() && !subtitle.trim()) return chartUrl;
-  const source = await (await fetch(chartUrl)).text();
-  const parsed = new DOMParser().parseFromString(source, "image/svg+xml");
-  const root = parsed.documentElement;
-  if (root.nodeName.toLocaleLowerCase() !== "svg") throw new Error("The rendered SVG could not be read.");
-  const viewBox = root.getAttribute("viewBox")?.split(/\s+/).map(Number);
-  const width = Number.parseFloat(root.getAttribute("width") ?? "") || viewBox?.[2] || 800;
-  const height = Number.parseFloat(root.getAttribute("height") ?? "") || viewBox?.[3] || 500;
-  const scale = width >= 1_000 ? 2 : 1;
-  const padding = 28 * scale;
-  const titleSize = 34 * scale;
-  const subtitleSize = 14 * scale;
-  const titleLines = approximateLines(title, Math.max(12, Math.floor((width - padding * 2) / (titleSize * .54))));
-  const subtitleLines = approximateLines(subtitle, Math.max(18, Math.floor((width - padding * 2) / (subtitleSize * .52))));
-  const headerHeight = padding + titleLines.length * 39 * scale + (subtitleLines.length ? 8 * scale + subtitleLines.length * 20 * scale : 0) + 18 * scale;
-  const titleText = titleLines.map((line, index) => `<text x="${padding}" y="${padding + 32 * scale + index * 39 * scale}" fill="#0a0f0d" font-family="system-ui, sans-serif" font-size="${titleSize}" font-weight="300">${xmlText(line)}</text>`).join("");
-  const subtitleTop = padding + titleLines.length * 39 * scale + 8 * scale;
-  const subtitleText = subtitleLines.map((line, index) => `<text x="${padding}" y="${subtitleTop + 14 * scale + index * 20 * scale}" fill="#596662" font-family="system-ui, sans-serif" font-size="${subtitleSize}" font-weight="400">${xmlText(line)}</text>`).join("");
-  const exported = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height + headerHeight}" viewBox="0 0 ${width} ${height + headerHeight}"><rect width="100%" height="100%" fill="#ffffff"/>${titleText}${subtitleText}<g transform="translate(0 ${headerHeight})">${root.innerHTML}</g></svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(exported)}`;
 }
 
 export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function ChartView({
@@ -177,8 +91,13 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
   const interaction = useRef<HTMLDivElement>(null);
   const element = useRef<HTMLDivElement>(null);
   const result = useRef<EmbedResult | null>(null);
-  const [gesture, setGesture] = useState<{ pixels: SelectionPixels; handle?: ResizeHandle } | null>(null);
-  const [mapGesture, setMapGesture] = useState<{ start: { x: number; y: number }; current: { x: number; y: number } } | null>(null);
+  const [interactionState, setInteractionState] = useReducer(interactionReducer, { kind: "idle" });
+  const gesture = interactionState.kind === "selection"
+    ? { pixels: interactionState.pixels }
+    : interactionState.kind === "resize"
+      ? { pixels: interactionState.pixels, handle: interactionState.handle }
+      : null;
+  const mapGesture = interactionState.kind === "map" ? interactionState : null;
   const wheelFrame = useRef<number | null>(null);
   const wheelIntent = useRef({ x: 0, y: 0, pinch: false, shift: false });
   const suppressFeatureClick = useRef(false);
@@ -318,40 +237,38 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     // browser surfaces. Selection still works there as long as the pointer
     // remains over the chart, so do not let capture support abort the gesture.
     if (mapMode && !event.shiftKey) {
-      setMapGesture({ start: { x, y }, current: { x, y } });
+      setInteractionState({ kind: "map", start: { x, y }, current: { x, y } });
       return;
     }
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* optional enhancement */ }
     if (mapMode) onMapFeatureSelect?.(null);
-    setGesture({ pixels: { x0: x, y0: y, x1: x, y1: y } });
+    setInteractionState({ kind: "selection", pixels: { x0: x, y0: y, x1: x, y1: y } });
   };
   const moveSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!gesture || gesture.handle) return;
     const { x, y } = point(event);
-    setGesture((current) => current ? { ...current, pixels: { ...current.pixels, x1: x, y1: y } } : current);
+    setInteractionState({ kind: "selection", pixels: { ...gesture.pixels, x1: x, y1: y } });
   };
   const finishSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!gesture || gesture.handle) return;
     const { x, y } = point(event);
     const next = { ...gesture.pixels, x1: x, y1: y };
-    setGesture(null);
+    setInteractionState({ kind: "idle" });
     commitSelection(next);
   };
   const startResize = (handle: ResizeHandle, event: ReactPointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0 || !selection) return;
     event.stopPropagation();
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* optional enhancement */ }
-    setGesture({ pixels: normalizedPixels(selection.pixels), handle });
+    setInteractionState({ kind: "resize", pixels: normalizedPixels(selection.pixels), handle });
   };
   const moveResize = (event: ReactPointerEvent<HTMLElement>) => {
-    setGesture((current) => current?.handle
-      ? { ...current, pixels: resizePixels(current.pixels, current.handle, point(event)) }
-      : current);
+    if (gesture?.handle) setInteractionState({ kind: "resize", handle: gesture.handle, pixels: resizePixels(gesture.pixels, gesture.handle, point(event)) });
   };
   const finishResize = (event: ReactPointerEvent<HTMLElement>) => {
     if (!gesture?.handle) return;
     const next = resizePixels(gesture.pixels, gesture.handle, point(event));
-    setGesture(null);
+    setInteractionState({ kind: "idle" });
     commitSelection(next);
   };
   const moveGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -360,7 +277,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       if (Math.hypot(currentPoint.x - mapGesture.start.x, currentPoint.y - mapGesture.start.y) > 4) {
         try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* optional enhancement */ }
       }
-      setMapGesture((current) => current ? { ...current, current: currentPoint } : current);
+      setInteractionState({ ...mapGesture, current: currentPoint });
       return;
     }
     if (gesture?.handle) moveResize(event);
@@ -373,7 +290,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       const moved = Math.hypot(current.x - mapGesture.start.x, current.y - mapGesture.start.y) > 4;
       const horizontal = bounds?.width ? -(current.x - mapGesture.start.x) / bounds.width : 0;
       const vertical = bounds?.height ? (current.y - mapGesture.start.y) / bounds.height : 0;
-      setMapGesture(null);
+      setInteractionState({ kind: "idle" });
       suppressFeatureClick.current = moved;
       if (moved) {
         onMapFeatureSelect?.(null);
@@ -438,11 +355,11 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       className={`chart-interaction ${mapMode ? "map-interaction" : ""}${mapDragging ? " is-panning" : ""}`}
       tabIndex={0}
       aria-label={mapMode ? "Map. Drag or scroll to pan, pinch to zoom, and hold Shift while dragging to select a region." : "Chart. Scroll or pinch to zoom, scroll sideways to pan, and drag to select a region."}
-      onKeyDown={(event) => { if (event.key === "Escape") { setGesture(null); setMapGesture(null); onRegionSelect?.(null); onMapFeatureSelect?.(null); } }}
+      onKeyDown={(event) => { if (event.key === "Escape") { setInteractionState({ kind: "idle" }); onRegionSelect?.(null); onMapFeatureSelect?.(null); } }}
       onPointerDown={startSelection}
       onPointerMove={moveGesture}
       onPointerUp={finishGesture}
-      onPointerCancel={() => { setGesture(null); setMapGesture(null); }}
+      onPointerCancel={() => setInteractionState({ kind: "idle" })}
       onWheel={wheel}
     >
       <div
@@ -494,7 +411,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
               type="button"
               aria-label={`Resize selection from ${handle} corner`}
               onPointerDown={(event) => startResize(handle, event)}
-              onPointerCancel={() => setGesture(null)}
+              onPointerCancel={() => setInteractionState({ kind: "idle" })}
             />
           ))}
         </span>

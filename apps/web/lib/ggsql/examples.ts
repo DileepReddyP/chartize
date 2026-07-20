@@ -1,12 +1,9 @@
-import type { ExecutionMode } from "@/lib/workspace/store";
-
 export interface VisualizationExample {
   id: string;
   category: "quick" | "range" | "map" | "model" | "linked" | "playful";
   title: string;
   description: string;
   source: string;
-  mode: ExecutionMode;
   tags: string[];
   query: string;
 }
@@ -18,7 +15,6 @@ export const VISUALIZATION_EXAMPLES: VisualizationExample[] = [
     title: "trump approval · one line",
     description: "A minimal temporal line with readable dates and axis labels.",
     source: "chartize:presidential_approval_average",
-    mode: "warehouse",
     tags: ["line", "time", "starter"],
     query: `SELECT "end_date", "approve"
 FROM chartize:presidential_approval_average
@@ -38,7 +34,6 @@ LABEL title => 'Presidential approval, daily average', subtitle => 'daily modele
     title: "approval · interval + opposition",
     description: "Two series, an approval confidence ribbon, and a 50% reference line.",
     source: "chartize:presidential_approval_average",
-    mode: "warehouse",
     tags: ["ribbon", "layers", "uncertainty"],
     query: `SELECT "end_date", "approve", "disapprove", "approve_lower_ci", "approve_upper_ci", 50 AS "majority"
 FROM chartize:presidential_approval_average
@@ -68,7 +63,6 @@ LABEL title => 'approval, disapproval + uncertainty', subtitle => 'daily average
     title: "generic ballot · competing bands",
     description: "Democratic and Republican averages with separate confidence ribbons.",
     source: "chartize:generic_ballot_average",
-    mode: "warehouse",
     tags: ["ribbon", "polls", "multi-layer"],
     query: `SELECT "end_date", "dem", "rep", "dem_lower_ci", "dem_upper_ci", "rep_lower_ci", "rep_upper_ci"
 FROM chartize:generic_ballot_average
@@ -98,7 +92,6 @@ LABEL title => 'generic ballot with uncertainty', subtitle => 'daily party avera
     title: "county population · OLS fit",
     description: "A ggpredict-style fitted relationship using the model GGSQL actually supports.",
     source: "chartize:county_population_2025",
-    mode: "warehouse",
     tags: ["regression", "smooth", "log scale"],
     query: `SELECT "POPESTIMATE2020", "POPESTIMATE2025", "STNAME", "CTYNAME"
 FROM chartize:county_population_2025
@@ -122,7 +115,6 @@ LABEL title => 'county population: 2020 vs 2025', subtitle => 'descriptive OLS f
     title: "approval · hypothetical delta",
     description: "Observed approval beside an explicitly labeled +3-point scenario.",
     source: "chartize:presidential_approval_average",
-    mode: "warehouse",
     tags: ["scenario", "delta", "layers"],
     query: `SELECT "end_date", "approve", "approve" + 3 AS "approve_plus_3", 50 AS "majority"
 FROM chartize:presidential_approval_average
@@ -149,7 +141,6 @@ LABEL title => 'approval with hypothetical +3-point scenario', subtitle => 'scen
     title: "county map · population",
     description: "A joined county choropleth with a log-scaled sequential palette.",
     source: "chartize:us_counties_2025",
-    mode: "warehouse",
     tags: ["map", "join", "choropleth"],
     query: `SELECT b."geometry" AS "geometry", p."POPESTIMATE2025" AS "population", p."CTYNAME" AS "county", p."STNAME" AS "state"
 FROM chartize:us_counties_2025 AS b
@@ -172,7 +163,6 @@ PROJECT TO albers
     title: "county map · population change",
     description: "A diverging choropleth of percent change from 2020 to 2025.",
     source: "chartize:us_counties_2025",
-    mode: "warehouse",
     tags: ["map", "computed field", "diverging"],
     query: `SELECT b."geometry" AS "geometry",
   100.0 * (p."POPESTIMATE2025" - p."POPESTIMATE2020") / NULLIF(p."POPESTIMATE2020", 0) AS "population_change",
@@ -197,7 +187,6 @@ PROJECT TO albers
     title: "county map · smoking prevalence",
     description: "CDC age-adjusted smoking estimates joined to Census county shapes.",
     source: "chartize:us_counties_2025",
-    mode: "warehouse",
     tags: ["CDC PLACES", "join", "health"],
     query: `SELECT b."geometry" AS "geometry", h."data_value" AS "smoking", h."locationname" AS "county", h."stateabbr" AS "state"
 FROM chartize:us_counties_2025 AS b
@@ -219,7 +208,6 @@ PROJECT TO albers
     title: "population × obesity",
     description: "Join Census population estimates to CDC obesity prevalence and fit a descriptive trend.",
     source: "chartize:county_population_2025",
-    mode: "warehouse",
     tags: ["Census + CDC", "join", "smooth"],
     query: `SELECT p."POPESTIMATE2025" AS "population", h."data_value" AS "obesity", p."CTYNAME" AS "county", p."STNAME" AS "state"
 FROM chartize:county_population_2025 AS p
@@ -244,7 +232,6 @@ LABEL title => 'county population × adult obesity', subtitle => 'descriptive as
     title: "income × obesity",
     description: "Relate BEA per-capita income to CDC obesity estimates across counties.",
     source: "chartize:bea_county_personal_income",
-    mode: "warehouse",
     tags: ["BEA + CDC", "join", "regression"],
     query: `SELECT TRY_CAST(REPLACE(i."2024", ',', '') AS DOUBLE) AS "per_capita_income",
   h."data_value" AS "obesity", h."locationname" AS "county", h."stateabbr" AS "state"
@@ -269,7 +256,6 @@ LABEL title => 'income × adult obesity', subtitle => 'BEA 2024 per-capita incom
     title: "county map · personal income",
     description: "Official BEA per-capita income joined to Census county boundaries.",
     source: "chartize:us_counties_2025",
-    mode: "warehouse",
     tags: ["BEA + Census", "economy", "choropleth"],
     query: `SELECT b."geometry" AS "geometry", TRY_CAST(REPLACE(i."2024", ',', '') AS DOUBLE) AS "income",
   i."GeoName" AS "county"
@@ -292,7 +278,6 @@ PROJECT TO albers
     title: "county map · real GDP change",
     description: "Compare inflation-adjusted county output in 2019 and 2024.",
     source: "chartize:us_counties_2025",
-    mode: "warehouse",
     tags: ["BEA + Census", "change", "diverging"],
     query: `SELECT b."geometry" AS "geometry", g."GeoName" AS "county",
   100.0 * (TRY_CAST(REPLACE(g."2024", ',', '') AS DOUBLE) - TRY_CAST(REPLACE(g."2019", ',', '') AS DOUBLE))
@@ -316,7 +301,6 @@ PROJECT TO albers
     title: "do big counties ever sleep?",
     description: "A playful—but still honest—look at population and insufficient sleep.",
     source: "chartize:cdc_places_county_2025",
-    mode: "warehouse",
     tags: ["CDC PLACES", "playful", "not causal"],
     query: `SELECT "totalpopulation" AS "population", "data_value" AS "insufficient_sleep", "locationname" AS "county", "stateabbr" AS "state"
 FROM chartize:cdc_places_county_2025
@@ -339,7 +323,6 @@ LABEL title => 'do big counties ever sleep?', subtitle => 'population versus ins
     title: "penguins on the campaign trail",
     description: "The browser-only sample, dressed up as an entirely unserious field operation.",
     source: "ggsql:penguins",
-    mode: "local",
     tags: ["private browser", "penguins", "joke"],
     query: `SELECT "bill_len", "body_mass", "species", "island"
 FROM ggsql:penguins
@@ -359,6 +342,6 @@ export const EXAMPLE_CATEGORIES: Array<{ id: VisualizationExample["category"]; t
   { id: "range", title: "ranges + uncertainty", description: "bands, intervals, and comparison lines" },
   { id: "map", title: "maps", description: "spatial joins and choropleths" },
   { id: "model", title: "models + scenarios", description: "fits, deltas, and counterfactuals" },
-  { id: "linked", title: "linked sources", description: "questions spanning warehouse tables" },
+  { id: "linked", title: "linked sources", description: "questions spanning linked datasets" },
   { id: "playful", title: "playful", description: "valid charts with less-serious premises" },
 ];

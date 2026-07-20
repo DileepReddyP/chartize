@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   addSelectedColumn,
   addSelectedExpression,
-  assertReadOnlyGgsql,
   directManipulationRanges,
+  finalSqlStatement,
   querySectionAtOffset,
   removeSelectedProjection,
   replaceQuerySources,
@@ -60,9 +60,20 @@ DRAW spatial`;
     ]);
   });
 
+  it("reports only canonical sources in a multi-statement local cleanup program", () => {
+    const cleanup = `DROP TABLE IF EXISTS cleaned;
+CREATE TEMP TABLE cleaned AS
+WITH normalized AS (SELECT * FROM user:upload)
+SELECT * FROM normalized;
+SELECT * FROM cleaned
+VISUALISE
+DRAW point`;
+    expect(sourcesFromQuery(cleanup)).toEqual(["user:upload"]);
+  });
+
   it("resolves virtual namespaces before execution", () => {
-    expect(resolveNamespacedSources("SELECT * FROM chartize:polls VISUALISE", (_, name) => `warehouse_${name}`))
-      .toContain('FROM "warehouse_polls"');
+    expect(resolveNamespacedSources("SELECT * FROM chartize:polls VISUALISE", (_, name) => `cached_${name}`))
+      .toContain('FROM "cached_polls"');
   });
 
   it("replaces only the first source and preserves joins", () => {
@@ -148,10 +159,11 @@ DRAW spatial`;
     expect(updated).not.toContain("COORD map");
   });
 
-  it("blocks mutation and file-reader operations while allowing strings", () => {
-    expect(() => assertReadOnlyGgsql(query)).not.toThrow();
-    expect(() => assertReadOnlyGgsql("DELETE FROM polls\nVISUALISE")).toThrow("Only SELECT");
-    expect(() => assertReadOnlyGgsql("SELECT * FROM read_parquet('/etc/passwd')\nVISUALISE")).toThrow("READ_PARQUET");
-    expect(() => assertReadOnlyGgsql("SELECT 'delete' AS note\nVISUALISE")).not.toThrow();
+  it("finds the final result query after local setup and mutation statements", () => {
+    const sql = `CREATE TEMP TABLE cleaned AS SELECT 'a;b' AS note;
+-- keep the semicolon in this comment; harmless
+UPDATE cleaned SET note = 'c;d';
+/* and this one; too */ SELECT note FROM cleaned`;
+    expect(finalSqlStatement(sql)).toBe("/* and this one; too */ SELECT note FROM cleaned");
   });
 });

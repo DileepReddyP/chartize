@@ -7,11 +7,16 @@ import { makeBlankDraft } from "../ggsql/serialize";
 // the turn type first. The action discriminator keeps edits explicit so the
 // route can validate them before applying anything to the workspace.
 export const ModelAgentResponseSchema = z.object({
-  action: z.enum(["answer", "update_visualization"]),
+  action: z.enum(["answer", "update_visualization", "request_data"]),
   query: z.string(),
   explanation: z.string(),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
+  dataRequests: z.array(z.object({
+    sql: z.string().min(1).max(20_000),
+    purpose: z.string().min(1).max(500),
+    limit: z.number().int().min(1).max(100),
+  })).max(4),
 });
 
 export type ModelAgentResponse = z.infer<typeof ModelAgentResponseSchema>;

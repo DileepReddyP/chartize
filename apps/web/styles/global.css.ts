@@ -555,10 +555,13 @@ globalStyle(".dwim-scale-groups > div", { minWidth: 0, display: "grid", gridTemp
 globalStyle(".dwim-scale-groups > div > b", { minHeight: "25px", display: "flex", alignItems: "center", padding: "4px 6px", borderBottom: `1px solid ${vars.color.line}`, color: vars.color.tealDark, fontSize: "7px", fontWeight: 700, textTransform: "lowercase" });
 
 globalStyle(".dwim-source-tiles", { position: "relative", display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", borderTop: `1px solid ${vars.color.line}`, borderLeft: `1px solid ${vars.color.line}` });
-globalStyle(".dwim-source-tiles > button", { minWidth: 0, display: "grid", gridTemplateColumns: "17px minmax(0, 1fr)", gap: "2px 4px", padding: "8px", border: 0, borderRight: `1px solid ${vars.color.line}`, borderBottom: `1px solid ${vars.color.line}`, borderRadius: 0, background: vars.color.panel, color: vars.color.ink, cursor: "pointer", textAlign: "left" });
-globalStyle(".dwim-source-tiles > button:hover", { background: vars.color.tealPale });
-globalStyle(".dwim-source-tiles > button.active", { background: vars.color.tealPale, boxShadow: `inset 3px 0 ${vars.color.tealDark}` });
-globalStyle(".dwim-source-tiles > button > span", { gridRow: "1 / span 2", color: vars.color.tealDark, fontSize: "10px", fontWeight: 800 });
+globalStyle(".dwim-source-tile", { position: "relative", minWidth: 0, borderRight: `1px solid ${vars.color.line}`, borderBottom: `1px solid ${vars.color.line}`, background: vars.color.panel });
+globalStyle(".dwim-source-tile:hover", { background: vars.color.tealPale });
+globalStyle(".dwim-source-tile.active", { background: vars.color.tealPale, boxShadow: `inset 3px 0 ${vars.color.tealDark}` });
+globalStyle(".dwim-source-choice", { width: "100%", minWidth: 0, display: "grid", gridTemplateColumns: "17px minmax(0, 1fr)", gap: "2px 4px", padding: "8px 25px 8px 8px", border: 0, borderRadius: 0, background: "transparent", color: vars.color.ink, cursor: "pointer", textAlign: "left" });
+globalStyle(".dwim-source-choice > span", { gridRow: "1 / span 2", color: vars.color.tealDark, fontSize: "10px", fontWeight: 800 });
+globalStyle(".dwim-source-remove", { position: "absolute", top: "5px", right: "5px", width: "17px", height: "17px", padding: 0, border: 0, borderRadius: 0, background: "transparent", color: vars.color.muted, fontSize: "13px", lineHeight: "17px", cursor: "pointer" });
+globalStyle(".dwim-source-remove:hover", { color: vars.color.watermelon });
 globalStyle(".dwim-source-tiles strong", { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "9px", fontWeight: 560 });
 globalStyle(".dwim-source-tiles small", { minWidth: 0, overflow: "hidden", color: vars.color.muted, textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "7px" });
 globalStyle(".dwim-source-tiles.compact", { gridTemplateColumns: "repeat(2, minmax(170px, 1fr))" });

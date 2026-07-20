@@ -3,12 +3,11 @@ use std::{
     env, fs,
     io::{Cursor, Read},
     path::{Path, PathBuf},
-    time::Instant,
 };
 
 use axum::{
     Json, Router,
-    body::Bytes,
+    body::{Body, Bytes},
     extract::{DefaultBodyLimit, Multipart, Path as AxumPath, Query as AxumQuery, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
@@ -16,21 +15,16 @@ use axum::{
 };
 use chrono::{SecondsFormat, Utc};
 use duckdb::{Connection, params};
-use ggsql::{
-    reader::{DuckDBReader, Reader},
-    validate::validate,
-    writer::{VegaLiteWriter, Writer},
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tokio_util::io::ReaderStream;
 use tracing::info;
 use uuid::Uuid;
 
 #[derive(Clone)]
 struct AppState {
     root: PathBuf,
-    db_uri: String,
     admin_token: String,
     max_import_bytes: usize,
 }
@@ -109,61 +103,8 @@ struct DatasetManifest {
 }
 
 #[derive(Deserialize)]
-struct QueryRequest {
-    ggsql: String,
-}
-
-#[derive(Deserialize)]
-struct AiDataQueryRequest {
-    sql: String,
-    limit: Option<usize>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct QueryValidation {
-    valid: bool,
-    errors: Vec<String>,
-    warnings: Vec<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct QueryResult {
-    spec: Value,
-    generated_sql: String,
-    rows: usize,
-    columns: Vec<String>,
-    selected_data: TablePreview,
-    warnings: Vec<String>,
-    duration_ms: f64,
-}
-
-#[derive(Deserialize)]
-struct PreviewParams {
-    limit: Option<usize>,
-    offset: Option<usize>,
-    sort: Option<String>,
-    direction: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TablePreview {
-    columns: Vec<String>,
-    rows: Vec<Vec<String>>,
-    total_rows: u64,
-    offset: usize,
-    limit: usize,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AiDataQueryResult {
-    columns: Vec<String>,
-    rows: Vec<Vec<String>>,
-    returned_rows: usize,
-    truncated: bool,
+struct ParquetParams {
+    version: String,
 }
 
 #[derive(Default)]
@@ -193,11 +134,13 @@ async fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let root = PathBuf::from(env::var("WAREHOUSE_ROOT").unwrap_or_else(|_| "./data".into()));
-    fs::create_dir_all(root.join("datasets")).expect("create warehouse directories");
-    let db_path = root.join("warehouse.duckdb");
+    let root = PathBuf::from(
+        env::var("CHARTIZE_DATA_ROOT")
+            .or_else(|_| env::var("WAREHOUSE_ROOT"))
+            .unwrap_or_else(|_| "./data".into()),
+    );
+    fs::create_dir_all(root.join("datasets")).expect("create data directories");
     let state = AppState {
-        db_uri: format!("duckdb://{}", db_path.display()),
         root,
         admin_token: env::var("ADMIN_TOKEN").unwrap_or_else(|_| "change-me-in-production".into()),
         max_import_bytes: env::var("MAX_IMPORT_BYTES")
@@ -205,16 +148,12 @@ async fn main() {
             .and_then(|v| v.parse().ok())
             .unwrap_or(1_000_000_000),
     };
-    initialize(&state).expect("initialize warehouse database");
+    initialize(&state).expect("initialize catalog database");
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/catalog", get(catalog))
-        .route("/api/datasets/{slug}", get(dataset))
-        .route("/api/datasets/{slug}/preview", get(dataset_preview))
-        .route("/api/validate", post(validate_query))
-        .route("/api/query", post(query))
-        .route("/api/ai/query-data", post(ai_data_query))
+        .route("/api/datasets/{slug}/parquet", get(dataset_parquet))
         .route("/api/admin/imports", post(import_dataset))
         .route("/api/admin/datasets/{slug}/rollback", post(rollback))
         .layer(DefaultBodyLimit::max(state.max_import_bytes))
@@ -226,11 +165,11 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
         .expect("bind server");
-    info!(%bind, "warehouse engine listening");
+    info!(%bind, "Chartize data service listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .expect("serve warehouse engine");
+        .expect("serve Chartize data service");
 }
 
 async fn shutdown_signal() {
@@ -239,8 +178,24 @@ async fn shutdown_signal() {
 
 fn initialize(state: &AppState) -> Result<(), ApiError> {
     let connection = open_connection(state)?;
+    let has_legacy_table: bool = connection.query_row(
+        "SELECT COUNT(*) > 0 FROM information_schema.tables WHERE table_name = 'warehouse_versions'",
+        [],
+        |row| row.get(0),
+    )?;
+    let has_dataset_table: bool = connection.query_row(
+        "SELECT COUNT(*) > 0 FROM information_schema.tables WHERE table_name = 'dataset_versions'",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_legacy_table && !has_dataset_table {
+        connection.execute_batch(
+            "DROP INDEX IF EXISTS warehouse_versions_slug;
+             ALTER TABLE warehouse_versions RENAME TO dataset_versions;",
+        )?;
+    }
     connection.execute_batch(
-        "CREATE TABLE IF NOT EXISTS warehouse_versions (
+        "CREATE TABLE IF NOT EXISTS dataset_versions (
             id VARCHAR PRIMARY KEY,
             slug VARCHAR NOT NULL,
             title VARCHAR NOT NULL,
@@ -259,15 +214,58 @@ fn initialize(state: &AppState) -> Result<(), ApiError> {
             fields_json VARCHAR NOT NULL,
             parquet_path VARCHAR NOT NULL,
             original_path VARCHAR NOT NULL,
+            browser_compatible BOOLEAN NOT NULL DEFAULT FALSE,
             active BOOLEAN NOT NULL DEFAULT FALSE
         );
-        CREATE INDEX IF NOT EXISTS warehouse_versions_slug ON warehouse_versions(slug);",
+        ALTER TABLE dataset_versions ADD COLUMN IF NOT EXISTS browser_compatible BOOLEAN DEFAULT FALSE;
+        CREATE INDEX IF NOT EXISTS dataset_versions_slug ON dataset_versions(slug);",
     )?;
+    repack_legacy_parquet(&connection)?;
+    Ok(())
+}
+
+fn repack_legacy_parquet(connection: &Connection) -> Result<(), ApiError> {
+    let pending = {
+        let mut statement = connection.prepare(
+            "SELECT id, parquet_path, version FROM dataset_versions WHERE browser_compatible = FALSE",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, path, version) in pending {
+        let source = PathBuf::from(&path);
+        if !source.exists() {
+            continue;
+        }
+        let temporary = source.with_extension("browser.parquet");
+        connection.execute_batch(&format!(
+            "COPY (SELECT * FROM read_parquet({})) TO {} (FORMAT PARQUET, COMPRESSION UNCOMPRESSED);",
+            quote_literal_path(&source),
+            quote_literal_path(&temporary),
+        ))?;
+        fs::rename(&temporary, &source)?;
+        let browser_version = format!("{version}-browser1");
+        connection.execute(
+            "UPDATE dataset_versions SET browser_compatible = TRUE, version = ? WHERE id = ?",
+            params![browser_version, id],
+        )?;
+        info!(dataset_id = %id, "repacked Parquet for the browser engine");
+    }
     Ok(())
 }
 
 fn open_connection(state: &AppState) -> Result<Connection, ApiError> {
-    let path = state.root.join("warehouse.duckdb");
+    let path = state.root.join("chartize.duckdb");
+    let legacy_path = state.root.join("warehouse.duckdb");
+    if !path.exists() && legacy_path.exists() {
+        fs::rename(&legacy_path, &path)?;
+    }
     Connection::open(path).map_err(Into::into)
 }
 
@@ -283,480 +281,29 @@ async fn catalog(State(state): State<AppState>) -> Result<Json<Vec<DatasetManife
         .map(Json)
 }
 
-async fn dataset(
+async fn dataset_parquet(
     State(state): State<AppState>,
     AxumPath(slug): AxumPath<String>,
-) -> Result<Json<DatasetManifest>, ApiError> {
+    AxumQuery(params): AxumQuery<ParquetParams>,
+) -> Result<Response, ApiError> {
     validate_slug(&slug)?;
-    tokio::task::spawn_blocking(move || active_manifest(&state, &slug))
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?
-        .map(Json)
-}
-
-async fn dataset_preview(
-    State(state): State<AppState>,
-    AxumPath(slug): AxumPath<String>,
-    AxumQuery(params): AxumQuery<PreviewParams>,
-) -> Result<Json<TablePreview>, ApiError> {
-    validate_slug(&slug)?;
-    let limit = params.limit.unwrap_or(50).clamp(1, 200);
-    let offset = params.offset.unwrap_or(0).min(10_000_000);
-    let direction = params.direction.unwrap_or_else(|| "asc".into());
-    tokio::task::spawn_blocking(move || {
-        preview_dataset(
-            &state,
-            &slug,
-            limit,
-            offset,
-            params.sort.as_deref(),
-            &direction,
-        )
+    if params.version.is_empty() || params.version.len() > 100 {
+        return Err(ApiError::BadRequest("A dataset version is required.".into()));
+    }
+    let requested_version = params.version;
+    let (path, version, length) = tokio::task::spawn_blocking(move || {
+        active_parquet_file(&state, &slug, &requested_version)
     })
     .await
-    .map_err(|error| ApiError::Internal(error.to_string()))?
-    .map(Json)
-}
-
-fn preview_dataset(
-    state: &AppState,
-    slug: &str,
-    limit: usize,
-    offset: usize,
-    sort: Option<&str>,
-    direction: &str,
-) -> Result<TablePreview, ApiError> {
-    let manifest = active_manifest(state, slug)?;
-    let columns = manifest
-        .fields
-        .iter()
-        .map(|field| field.name.clone())
-        .collect::<Vec<_>>();
-    if columns.is_empty() {
-        return Ok(TablePreview {
-            columns,
-            rows: vec![],
-            total_rows: manifest.row_count,
-            offset,
-            limit,
-        });
-    }
-
-    let order = if let Some(sort) = sort {
-        if !manifest.fields.iter().any(|field| field.name == sort) {
-            return Err(ApiError::BadRequest(format!(
-                "Unknown sort column '{sort}'."
-            )));
-        }
-        let direction = match direction.to_ascii_lowercase().as_str() {
-            "asc" => "ASC",
-            "desc" => "DESC",
-            _ => {
-                return Err(ApiError::BadRequest(
-                    "Sort direction must be asc or desc.".into(),
-                ));
-            }
-        };
-        format!(" ORDER BY {} {direction} NULLS LAST", quote_ident(sort))
-    } else {
-        String::new()
-    };
-
-    // Cast to text at the database boundary so the preview can represent mixed
-    // schemas without teaching the public API about every DuckDB value type.
-    // Geometry payloads are deliberately summarized; the chart still receives
-    // the complete geometry through GGSQL.
-    let selections = manifest
-        .fields
-        .iter()
-        .map(|field| {
-            let identifier = quote_ident(&field.name);
-            if field.name.eq_ignore_ascii_case("geometry")
-                || field.semantic_type.as_deref() == Some("geometry")
-            {
-                format!(
-                    "CASE WHEN {identifier} IS NULL THEN '' ELSE '[geometry]' END AS {identifier}"
-                )
-            } else {
-                format!("COALESCE(CAST({identifier} AS VARCHAR), '') AS {identifier}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let connection = open_connection(state)?;
-    let mut statement = connection.prepare(&format!(
-        "SELECT {selections} FROM {}{order} LIMIT {limit} OFFSET {offset}",
-        quote_ident(&manifest.table_name)
-    ))?;
-    let column_count = columns.len();
-    let rows = statement.query_map([], move |row| {
-        (0..column_count)
-            .map(|index| {
-                row.get::<_, Option<String>>(index)
-                    .map(|value| value.unwrap_or_default())
-            })
-            .collect::<Result<Vec<_>, _>>()
-    })?;
-
-    Ok(TablePreview {
-        columns,
-        rows: rows.collect::<Result<Vec<_>, _>>()?,
-        total_rows: manifest.row_count,
-        offset,
-        limit,
-    })
-}
-
-fn selected_query_preview(
-    state: &AppState,
-    sql: &str,
-    total_rows: usize,
-) -> Result<TablePreview, ApiError> {
-    let sql = sql.trim().trim_end_matches(';').trim();
-    let connection = open_connection(state)?;
-    connection.execute_batch("SET memory_limit='2GB'; SET threads=2;")?;
-    if uses_spatial_functions(sql) {
-        connection.execute_batch("LOAD spatial;")?;
-    }
-    let columns = {
-        let mut statement = connection.prepare(&format!(
-            "SELECT * FROM ({sql}) AS chartize_selected LIMIT 0"
-        ))?;
-        {
-            // duckdb-rs populates prepared-statement schema metadata when the
-            // statement is stepped, even for a zero-row result.
-            let mut rows = statement.query([])?;
-            while rows.next()?.is_some() {}
-        }
-        statement.column_names()
-    };
-    if columns.is_empty() {
-        return Ok(TablePreview {
-            columns,
-            rows: vec![],
-            total_rows: total_rows as u64,
-            offset: 0,
-            limit: 200,
-        });
-    }
-    let selections = columns
-        .iter()
-        .map(|column| {
-            let identifier = quote_ident(column);
-            if column.eq_ignore_ascii_case("geometry") {
-                format!(
-                    "CASE WHEN {identifier} IS NULL THEN '' ELSE '[geometry]' END AS {identifier}"
-                )
-            } else {
-                format!("COALESCE(CAST({identifier} AS VARCHAR), '') AS {identifier}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut statement = connection.prepare(&format!(
-        "SELECT {selections} FROM ({sql}) AS chartize_selected LIMIT 200"
-    ))?;
-    let column_count = columns.len();
-    let rows = statement.query_map([], move |row| {
-        (0..column_count)
-            .map(|index| {
-                row.get::<_, Option<String>>(index)
-                    .map(|value| value.unwrap_or_default())
-            })
-            .collect::<Result<Vec<_>, _>>()
-    })?;
-    Ok(TablePreview {
-        columns,
-        rows: rows.collect::<Result<Vec<_>, _>>()?,
-        total_rows: total_rows as u64,
-        offset: 0,
-        limit: 200,
-    })
-}
-
-async fn query(
-    State(state): State<AppState>,
-    Json(body): Json<QueryRequest>,
-) -> Result<Json<QueryResult>, ApiError> {
-    if body.ggsql.len() > 100_000 {
-        return Err(ApiError::BadRequest(
-            "Query exceeds the 100 KB limit.".into(),
-        ));
-    }
-    tokio::task::spawn_blocking(move || execute_query(&state, &body.ggsql))
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?
-        .map(Json)
-}
-
-async fn ai_data_query(
-    State(state): State<AppState>,
-    Json(body): Json<AiDataQueryRequest>,
-) -> Result<Json<AiDataQueryResult>, ApiError> {
-    if body.sql.len() > 20_000 {
-        return Err(ApiError::BadRequest(
-            "AI data query exceeds the 20 KB limit.".into(),
-        ));
-    }
-    let limit = body.limit.unwrap_or(50).clamp(1, 100);
-    tokio::task::spawn_blocking(move || execute_ai_data_query(&state, &body.sql, limit))
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?
-        .map(Json)
-}
-
-async fn validate_query(Json(body): Json<QueryRequest>) -> Result<Json<QueryValidation>, ApiError> {
-    if body.ggsql.len() > 100_000 {
-        return Err(ApiError::BadRequest(
-            "Query exceeds the 100 KB limit.".into(),
-        ));
-    }
-    Ok(Json(inspect_query(&body.ggsql)))
-}
-
-fn inspect_query(query: &str) -> QueryValidation {
-    let validated = match validate(query) {
-        Ok(validated) => validated,
-        Err(error) => {
-            return QueryValidation {
-                valid: false,
-                errors: vec![error.to_string()],
-                warnings: Vec::new(),
-            };
-        }
-    };
-    let mut errors = validated
-        .errors()
-        .iter()
-        .map(|error| error.message.clone())
-        .collect::<Vec<_>>();
-    let warnings = validated
-        .warnings()
-        .iter()
-        .map(|warning| warning.message.clone())
-        .collect::<Vec<_>>();
-
-    if errors.is_empty() && !validated.has_visual() {
-        errors.push("A warehouse request must include a VISUALISE block.".into());
-    }
-    if errors.is_empty()
-        && let Err(error) = enforce_read_only(validated.sql())
-    {
-        errors.push(error.to_string());
-    }
-
-    QueryValidation {
-        valid: errors.is_empty(),
-        errors,
-        warnings,
-    }
-}
-
-fn execute_query(state: &AppState, query: &str) -> Result<QueryResult, ApiError> {
-    let started = Instant::now();
-    let validated = validate(query).map_err(|error| ApiError::BadRequest(error.to_string()))?;
-    if !validated.valid() {
-        let errors = validated
-            .errors()
-            .iter()
-            .map(|error| error.message.clone())
-            .collect::<Vec<_>>()
-            .join("; ");
-        return Err(ApiError::BadRequest(errors));
-    }
-    if !validated.has_visual() {
-        return Err(ApiError::BadRequest(
-            "A warehouse request must include a VISUALISE block.".into(),
-        ));
-    }
-    enforce_read_only(validated.sql())?;
-
-    let reader = DuckDBReader::from_connection_string(&state.db_uri)
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
-    reader
-        .connection()
-        .execute_batch("SET memory_limit='2GB'; SET threads=2;")?;
-    if uses_spatial_functions(validated.sql()) {
-        reader.connection().execute_batch("LOAD spatial;")?;
-    }
-    let prepared = reader
-        .execute(query)
-        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
-    let rows = prepared
-        .data()
-        .values()
-        .map(|frame| frame.shape().0)
-        .max()
-        .unwrap_or(0);
-    let columns = prepared
-        .data()
-        .values()
-        .next()
-        .map(|frame| frame.get_column_names())
-        .unwrap_or_default();
-    let rendered = VegaLiteWriter::new()
-        .render(&prepared)
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
-    let spec =
-        serde_json::from_str(&rendered).map_err(|error| ApiError::Internal(error.to_string()))?;
-    // Preview is supplementary: special GGSQL-owned sources (for example its
-    // embedded smoke-test tables) may not exist on the warehouse connection.
-    // A successful chart must not fail solely because that auxiliary preview
-    // cannot be materialized.
-    let selected_data =
-        selected_query_preview(state, validated.sql(), rows).unwrap_or_else(|_| TablePreview {
-            columns: columns.clone(),
-            rows: vec![],
-            total_rows: rows as u64,
-            offset: 0,
-            limit: 200,
-        });
-    Ok(QueryResult {
-        spec,
-        generated_sql: validated.sql().to_owned(),
-        rows,
-        columns,
-        selected_data,
-        warnings: validated
-            .warnings()
-            .iter()
-            .map(|warning| warning.message.clone())
-            .collect(),
-        duration_ms: started.elapsed().as_secs_f64() * 1000.0,
-    })
-}
-
-fn execute_ai_data_query(
-    state: &AppState,
-    sql: &str,
-    limit: usize,
-) -> Result<AiDataQueryResult, ApiError> {
-    enforce_read_only(sql)?;
-    let sql = sql.trim().trim_end_matches(';').trim();
-    let connection = open_connection(state)?;
-    connection.execute_batch("SET memory_limit='1GB'; SET threads=2;")?;
-    if uses_spatial_functions(sql) {
-        connection.execute_batch("LOAD spatial;")?;
-    }
-
-    let columns = {
-        let mut statement = connection.prepare(&format!(
-            "SELECT * FROM ({sql}) AS chartize_ai_result LIMIT 0"
-        ))?;
-        {
-            let mut rows = statement.query([])?;
-            while rows.next()?.is_some() {}
-        }
-        statement.column_names()
-    };
-    if columns.len() > 100 {
-        return Err(ApiError::BadRequest(
-            "AI data queries may return at most 100 columns.".into(),
-        ));
-    }
-    if columns.is_empty() {
-        return Ok(AiDataQueryResult {
-            columns,
-            rows: vec![],
-            returned_rows: 0,
-            truncated: false,
-        });
-    }
-
-    let selections = columns
-        .iter()
-        .map(|column| {
-            let identifier = quote_ident(column);
-            if column.eq_ignore_ascii_case("geometry") {
-                format!(
-                    "CASE WHEN {identifier} IS NULL THEN '' ELSE '[geometry]' END AS {identifier}"
-                )
-            } else {
-                format!("LEFT(COALESCE(CAST({identifier} AS VARCHAR), ''), 2000) AS {identifier}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut statement = connection.prepare(&format!(
-        "SELECT {selections} FROM ({sql}) AS chartize_ai_result LIMIT {}",
-        limit + 1
-    ))?;
-    let column_count = columns.len();
-    let mapped = statement.query_map([], move |row| {
-        (0..column_count)
-            .map(|index| {
-                row.get::<_, Option<String>>(index)
-                    .map(|value| value.unwrap_or_default())
-            })
-            .collect::<Result<Vec<_>, _>>()
-    })?;
-    let mut rows = mapped.collect::<Result<Vec<_>, _>>()?;
-    let truncated = rows.len() > limit;
-    rows.truncate(limit);
-    let returned_rows = rows.len();
-    Ok(AiDataQueryResult {
-        columns,
-        rows,
-        returned_rows,
-        truncated,
-    })
-}
-
-fn enforce_read_only(sql: &str) -> Result<(), ApiError> {
-    let trimmed = sql.trim_start();
-    let upper = trimmed.to_ascii_uppercase();
-    if !(upper.starts_with("SELECT ") || upper.starts_with("WITH ")) {
-        return Err(ApiError::BadRequest(
-            "Only SELECT and WITH queries are allowed.".into(),
-        ));
-    }
-    let blocked = [
-        " INSTALL ",
-        " LOAD ",
-        " COPY ",
-        " ATTACH ",
-        " DETACH ",
-        " PRAGMA ",
-        " CREATE ",
-        " DROP ",
-        " ALTER ",
-        " INSERT ",
-        " UPDATE ",
-        " DELETE ",
-        " EXPORT ",
-        " IMPORT ",
-        " READ_",
-        "_SCAN",
-        " GLOB",
-        " SNIFF_CSV",
-        " PARQUET_METADATA",
-        " PARQUET_FILE_METADATA",
-        " PARQUET_SCHEMA",
-        " QUERY_TABLE",
-        " ST_READ",
-        " HTTPFS",
-        " HTTP_GET",
-        " HTTP_POST",
-        " DUCKDB_EXTENSIONS",
-        " WAREHOUSE_VERSIONS",
-        " DUCKDB_",
-        " SQLITE_",
-        " PG_",
-        " INFORMATION_SCHEMA",
-    ];
-    let padded = format!(" {upper} ");
-    if let Some(keyword) = blocked.iter().find(|keyword| padded.contains(*keyword)) {
-        return Err(ApiError::BadRequest(format!(
-            "The warehouse query contains a blocked operation: {}.",
-            keyword.trim()
-        )));
-    }
-    if sql.matches(';').count() > usize::from(sql.trim_end().ends_with(';')) {
-        return Err(ApiError::BadRequest(
-            "Only one SQL statement is allowed.".into(),
-        ));
-    }
-    Ok(())
+    .map_err(|error| ApiError::Internal(error.to_string()))??;
+    let file = tokio::fs::File::open(path).await?;
+    Response::builder()
+        .header("content-type", "application/vnd.apache.parquet")
+        .header("content-length", length)
+        .header("cache-control", "private, max-age=31536000, immutable")
+        .header("etag", format!("\"{version}\""))
+        .body(Body::from_stream(ReaderStream::new(file)))
+        .map_err(|error| ApiError::Internal(error.to_string()))
 }
 
 async fn import_dataset(
@@ -842,7 +389,7 @@ fn publish_upload(state: &AppState, upload: Upload) -> Result<DatasetManifest, A
     )?;
     let fields = describe_table(&connection, &table_name)?;
     connection.execute_batch(&format!(
-        "COPY {} TO {} (FORMAT PARQUET, COMPRESSION ZSTD);",
+        "COPY {} TO {} (FORMAT PARQUET, COMPRESSION UNCOMPRESSED);",
         quote_ident(&table_name),
         quote_literal_path(&parquet_path)
     ))?;
@@ -886,15 +433,15 @@ fn publish_upload(state: &AppState, upload: Upload) -> Result<DatasetManifest, A
         quote_literal_path(&parquet_path)
     ))?;
     tx.execute(
-        "UPDATE warehouse_versions SET active = FALSE WHERE slug = ?",
+        "UPDATE dataset_versions SET active = FALSE WHERE slug = ?",
         [&manifest.slug],
     )?;
     tx.execute(
-        "INSERT INTO warehouse_versions (
+        "INSERT INTO dataset_versions (
             id, slug, title, description, version, table_name, source_url, license, attribution,
             row_count, spatial, geometry_type, geography_level, time_coverage, published_at,
-            fields_json, parquet_path, original_path, active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)",
+            fields_json, parquet_path, original_path, browser_compatible, active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, TRUE)",
         params![
             manifest.id,
             manifest.slug,
@@ -1015,7 +562,7 @@ async fn rollback(
 fn rollback_dataset(state: &AppState, slug: &str) -> Result<DatasetManifest, ApiError> {
     let connection = open_connection(state)?;
     let previous: (String, String) = connection.query_row(
-        "SELECT id, parquet_path FROM warehouse_versions WHERE slug = ? AND active = FALSE ORDER BY published_at DESC LIMIT 1",
+        "SELECT id, parquet_path FROM dataset_versions WHERE slug = ? AND active = FALSE ORDER BY published_at DESC LIMIT 1",
         [slug], |row| Ok((row.get(0)?, row.get(1)?)),
     ).map_err(|_| ApiError::NotFound("No previous version is available.".into()))?;
     connection.execute_batch(&format!(
@@ -1025,11 +572,11 @@ fn rollback_dataset(state: &AppState, slug: &str) -> Result<DatasetManifest, Api
     ))?;
     let tx = connection.unchecked_transaction()?;
     tx.execute(
-        "UPDATE warehouse_versions SET active = FALSE WHERE slug = ?",
+        "UPDATE dataset_versions SET active = FALSE WHERE slug = ?",
         [slug],
     )?;
     tx.execute(
-        "UPDATE warehouse_versions SET active = TRUE WHERE id = ?",
+        "UPDATE dataset_versions SET active = TRUE WHERE id = ?",
         [&previous.0],
     )?;
     tx.commit()?;
@@ -1054,8 +601,44 @@ fn active_manifest(state: &AppState, slug: &str) -> Result<DatasetManifest, ApiE
         .map_err(|_| ApiError::NotFound(format!("Dataset '{slug}' was not found.")))
 }
 
+fn active_parquet_file(
+    state: &AppState,
+    slug: &str,
+    requested_version: &str,
+) -> Result<(PathBuf, String, u64), ApiError> {
+    let connection = open_connection(state)?;
+    let (stored_path, active_version): (String, String) = connection
+        .query_row(
+            "SELECT parquet_path, version FROM dataset_versions WHERE active = TRUE AND slug = ?",
+            [slug],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|_| ApiError::NotFound(format!("Dataset '{slug}' was not found.")))?;
+    if active_version != requested_version {
+        return Err(ApiError::NotFound(format!(
+            "Dataset '{slug}' version '{requested_version}' is not active. Refresh the catalog."
+        )));
+    }
+
+    let stored_path = PathBuf::from(stored_path);
+    let candidate = if stored_path.exists() {
+        stored_path
+    } else {
+        state.root.join(stored_path)
+    };
+    let canonical_root = fs::canonicalize(state.root.join("datasets"))?;
+    let canonical_path = fs::canonicalize(candidate)?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(ApiError::Internal(
+            "The published dataset file is outside the managed data directory.".into(),
+        ));
+    }
+    let length = fs::metadata(&canonical_path)?.len();
+    Ok((canonical_path, active_version, length))
+}
+
 fn manifest_select() -> &'static str {
-    "SELECT id, slug, title, description, version, table_name, source_url, license, attribution, row_count, spatial, geometry_type, geography_level, time_coverage, published_at, fields_json FROM warehouse_versions WHERE active = TRUE"
+    "SELECT id, slug, title, description, version, table_name, source_url, license, attribution, row_count, spatial, geometry_type, geography_level, time_coverage, published_at, fields_json FROM dataset_versions WHERE active = TRUE"
 }
 
 fn manifest_from_row(row: &duckdb::Row<'_>) -> duckdb::Result<DatasetManifest> {
@@ -1122,10 +705,6 @@ fn extension(name: &str) -> String {
         .and_then(|value| value.to_str())
         .unwrap_or("")
         .to_ascii_lowercase()
-}
-
-fn uses_spatial_functions(sql: &str) -> bool {
-    sql.to_ascii_uppercase().contains("ST_")
 }
 
 fn safe_filename(name: &str) -> String {
@@ -1212,87 +791,67 @@ fn quote_literal_path(path: &Path) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn read_only_policy_rejects_mutation_and_file_readers() {
-        assert!(enforce_read_only("SELECT * FROM county_population").is_ok());
-        assert!(enforce_read_only("WITH totals AS (SELECT 1) SELECT * FROM totals").is_ok());
-        assert!(enforce_read_only("DELETE FROM county_population").is_err());
-        assert!(enforce_read_only("SELECT * FROM read_parquet('/etc/passwd')").is_err());
-        assert!(enforce_read_only("SELECT * FROM read_text('/etc/passwd')").is_err());
-        assert!(enforce_read_only("SELECT * FROM parquet_scan('/tmp/a')").is_err());
-        assert!(enforce_read_only("SELECT * FROM query_table('warehouse_versions')").is_err());
-        assert!(enforce_read_only("SELECT 1; DROP TABLE warehouse_versions").is_err());
-        assert!(enforce_read_only("SELECT * FROM warehouse_versions").is_err());
-        assert!(enforce_read_only("SELECT * FROM duckdb_tables()").is_err());
-    }
-
-    #[test]
-    fn ai_data_queries_are_stringified_and_row_bounded() {
-        let root = env::temp_dir().join(format!("chartize-ai-query-{}", Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        let state = AppState {
-            db_uri: format!("duckdb://{}", root.join("warehouse.duckdb").display()),
-            root: root.clone(),
+    fn test_state(root: PathBuf) -> AppState {
+        AppState {
+            root,
             admin_token: "test".into(),
             max_import_bytes: 1_000_000,
-        };
-        initialize(&state).unwrap();
-        let result = execute_ai_data_query(
-            &state,
-            "SELECT value FROM (VALUES (1), (2), (3)) AS values_table(value) ORDER BY value",
-            2,
-        )
-        .unwrap();
-        assert_eq!(result.columns, vec!["value"]);
-        assert_eq!(result.rows, vec![vec!["1"], vec!["2"]]);
-        assert_eq!(result.returned_rows, 2);
-        assert!(result.truncated);
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn syntax_validation_accepts_executable_ggsql_without_running_it() {
-        let result = inspect_query(
-            "SELECT value, category FROM chartize:example\n\nVISUALISE\nDRAW bar\n  MAPPING category AS x, value AS y",
-        );
-        assert!(result.valid, "{:?}", result.errors);
-        assert!(result.errors.is_empty());
-    }
-
-    #[test]
-    fn syntax_validation_rejects_expressions_inside_mappings() {
-        let result = inspect_query(
-            "SELECT value FROM chartize:example\n\nVISUALISE\nDRAW point\n  MAPPING CAST(value AS DOUBLE) AS x, value AS y",
-        );
-        assert!(!result.valid);
-        assert!(!result.errors.is_empty());
+        }
     }
 
     #[test]
     fn slugs_are_safe_identifiers() {
         assert!(validate_slug("county_population_2025").is_ok());
         assert!(validate_slug("County-Population").is_err());
-        assert!(validate_slug("../warehouse").is_err());
+        assert!(validate_slug("../data").is_err());
     }
 
     #[test]
-    fn spatial_sql_detection_is_case_insensitive() {
-        assert!(uses_spatial_functions("SELECT ST_X(point)"));
-        assert!(uses_spatial_functions("select st_pointonsurface(geometry)"));
-        assert!(!uses_spatial_functions("SELECT geometry FROM boundaries"));
+    fn parquet_downloads_require_the_active_catalog_version() {
+        let root = env::temp_dir().join(format!("chartize-data-{}", Uuid::new_v4()));
+        let slug = "example_data";
+        let version = "20260720120000";
+        let path = root.join("datasets").join(slug).join(version).join("data.parquet");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"PAR1test").unwrap();
+
+        let state = test_state(root.clone());
+        initialize(&state).unwrap();
+        let connection = open_connection(&state).unwrap();
+        connection.execute(
+            "INSERT INTO dataset_versions (
+                id, slug, title, description, version, table_name, source_url, license, attribution,
+                row_count, spatial, geometry_type, geography_level, time_coverage, published_at,
+                fields_json, parquet_path, original_path, active
+            ) VALUES (?, ?, ?, '', ?, ?, '', 'test', '', 1, FALSE, NULL, NULL, NULL, '', '[]', ?, ?, TRUE)",
+            params![
+                "test-id",
+                slug,
+                "Example data",
+                version,
+                slug,
+                path.to_string_lossy(),
+                path.to_string_lossy(),
+            ],
+        ).unwrap();
+
+        let (served, served_version, length) = active_parquet_file(&state, slug, version).unwrap();
+        assert_eq!(served, fs::canonicalize(&path).unwrap());
+        assert_eq!(served_version, version);
+        assert_eq!(length, 8);
+        assert!(matches!(
+            active_parquet_file(&state, slug, "stale-version"),
+            Err(ApiError::NotFound(_))
+        ));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn builtin_query_renders_vega_lite() {
-        let state = AppState {
-            root: env::temp_dir(),
-            db_uri: "duckdb://memory".into(),
-            admin_token: "test".into(),
-            max_import_bytes: 1_000_000,
-        };
-        let result = execute_query(&state, "SELECT \"bill_len\", \"bill_dep\", \"species\", \"body_mass\", \"island\" FROM ggsql:penguins LIMIT 20\n\nVISUALISE\nDRAW point\nMAPPING \"bill_len\" AS x, \"bill_dep\" AS y, \"species\" AS colour, \"body_mass\" AS size\nLABEL title => 'How penguin measurements cluster by species', subtitle => 'A built-in dataset confirms that GGSQL is running.'")
-            .expect("built-in GGSQL should execute");
-        assert_eq!(result.rows, 20);
-        assert!(result.spec.get("$schema").is_some());
+    fn catalog_manifest_matches_the_shared_frontend_fixture() {
+        let fixture = include_str!("../../../packages/contracts/fixtures/dataset-manifest.json");
+        let manifest: DatasetManifest = serde_json::from_str(fixture).unwrap();
+        let actual = serde_json::to_value(manifest).unwrap();
+        let expected: Value = serde_json::from_str(fixture).unwrap();
+        assert_eq!(actual, expected);
     }
 }

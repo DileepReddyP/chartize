@@ -19,9 +19,9 @@ if (!candidates.length) {
 }
 
 const health = await fetch(`${engine}/health`).catch(() => null);
-if (!health?.ok) throw new Error(`Warehouse engine is not reachable at ${engine}. Start pnpm dev first.`);
+if (!health?.ok) throw new Error(`Chartize data service is not reachable at ${engine}. Start pnpm dev first.`);
 const catalogResponse = await fetch(`${engine}/api/catalog`);
-if (!catalogResponse.ok) throw new Error(`Could not read the warehouse catalog (${catalogResponse.status}).`);
+if (!catalogResponse.ok) throw new Error(`Could not read the Chartize catalog (${catalogResponse.status}).`);
 const publishedSlugs = new Set((await catalogResponse.json()).map((dataset) => dataset.slug));
 let publishedCount = 0;
 
@@ -60,4 +60,4 @@ for (const dataset of candidates) {
   publishedCount += 1;
 }
 
-console.log(`Published ${publishedCount} datasets. Refresh Warehouse in the explorer.`);
+console.log(`Published ${publishedCount} datasets. Refresh sources in the explorer.`);

@@ -11,6 +11,7 @@ export const VISUALIZATION_TIP_TOPICS = [
   "scales-and-formatting",
   "facets",
   "statistical-layers",
+  "local-data-cleanup",
 ] as const;
 
 export type VisualizationTipTopic = typeof VISUALIZATION_TIP_TOPICS[number];
@@ -139,6 +140,7 @@ DRAW line
     rules: [
       "Use the full GGSQL formatter expression, such as '{:time %b %Y}' or '{:num %.1f}%'; do not emit a bare strftime or Vega/d3 format.",
       "Use the same human-readable unit in axes, tooltip values, direct labels, and subtitle.",
+      "A DISCRETE fill/colour scale requires a string result column. Cast numeric categories such as year to a VARCHAR alias in SQL and map that alias; never leave the numeric field mapped after this type diagnostic.",
       "Do not force a misleading zero baseline for line charts, but do start magnitude bars at zero unless a clearly disclosed analytical reason says otherwise.",
       "Expand a domain only enough to fit annotations; never change data values to create visual padding.",
     ],
@@ -170,6 +172,49 @@ LABEL x => 'Poll date', y => 'Approval'`,
 DRAW smooth
   MAPPING predictor AS x, outcome AS y
   SETTING method => 'ols', colour => '#2a1e5c', linewidth => 2`,
+  },
+  "local-data-cleanup": {
+    topic: "local-data-cleanup",
+    rules: [
+      "The browser engine uses a compact SQLite-like SQL dialect. Do not use INITCAP, TRY_CAST, CREATE OR REPLACE TABLE, regexp functions, filesystem readers, or DuckDB-only helpers.",
+      "Make a repeatable workspace copy with DROP TABLE IF EXISTS name; followed by CREATE TEMP TABLE name AS .... The user: or chartize: source remains the untouched canonical input.",
+      "For nullable numeric text, use CAST(NULLIF(NULLIF(LOWER(TRIM(CAST(value AS VARCHAR))), 'null'), '') AS DOUBLE). Inspect values first when an invalid non-null token may exist.",
+      "For multi-word title casing, use a recursive character CTE with UPPER(SUBSTR(...)) after position 1, a space, or a hyphen. INITCAP is unavailable; do not add a quote-literal branch unless the source values actually require it.",
+      "Stage window calculations in their own CTE, then COALESCE their aliases in the following SELECT. This parser rejects window expressions such as AVG(value) OVER (...) when they are written directly inside COALESCE.",
+      "End the SQL program with the SELECT that should feed VISUALISE. Keep every mapped visual field in that final projection.",
+    ],
+    recipe: `DROP TABLE IF EXISTS cleaned;
+CREATE TEMP TABLE cleaned AS
+WITH RECURSIVE source_rows AS (
+  SELECT ROW_NUMBER() OVER () AS row_id,
+    LOWER(TRIM(CAST(name AS VARCHAR))) AS name_key,
+    CAST(NULLIF(NULLIF(LOWER(TRIM(CAST(value AS VARCHAR))), 'null'), '') AS DOUBLE) AS value
+  FROM user:source
+),
+name_chars(row_id, name_key, pos, name) AS (
+  SELECT row_id, name_key, 1, '' FROM source_rows
+  UNION ALL
+  SELECT row_id, name_key, pos + 1,
+    name || CASE
+      WHEN pos = 1 OR SUBSTR(name_key, pos - 1, 1) IN (' ', '-') THEN UPPER(SUBSTR(name_key, pos, 1))
+      ELSE SUBSTR(name_key, pos, 1)
+    END
+  FROM name_chars WHERE pos <= LENGTH(name_key)
+),
+normalized AS (
+  SELECT source_rows.*, name_chars.name AS clean_name
+  FROM source_rows
+  JOIN name_chars ON source_rows.row_id = name_chars.row_id
+  WHERE name_chars.pos = LENGTH(name_chars.name_key) + 1
+),
+with_means AS (
+  SELECT *, AVG(value) OVER (PARTITION BY clean_name) AS group_average, AVG(value) OVER () AS overall_average
+  FROM normalized
+)
+SELECT *, COALESCE(value, group_average, overall_average) AS clean_value
+FROM with_means;
+
+SELECT clean_name, clean_value FROM cleaned`,
   },
 };
 

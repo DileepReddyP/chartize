@@ -162,7 +162,7 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
         ...replayableOutput(response.output),
         {
           role: "user",
-          content: "Live research is complete. Continue the same turn now: use the read-only workspace tool for any calculation or data inspection the request needs, then return the final grounded response.",
+          content: "Live research is complete. Continue the same turn now: request browser workspace data if a calculation or data inspection is still needed, otherwise return the final grounded response.",
         },
       ];
       continue;

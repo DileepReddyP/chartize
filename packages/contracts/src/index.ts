@@ -38,6 +38,17 @@ export const DatasetManifestSchema = z.object({
   joinHints: z.array(JoinHintSchema).default([]),
 });
 
+export const DatasetArtifactRequestSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9_]+$/).max(100),
+  version: z.string().min(1).max(100),
+});
+
+export const DatasetArtifactHeadersSchema = z.object({
+  contentType: z.literal("application/vnd.apache.parquet"),
+  etag: z.string().min(3).max(202),
+  contentLength: z.number().int().positive(),
+});
+
 export const DraftJoinSchema = z.object({
   table: z.string(),
   leftField: z.string(),
@@ -219,6 +230,76 @@ export const AiUsageSchema = z.object({
   totalTokens: z.number().int().nonnegative(),
 });
 
+export const AiDataRequestSchema = z.object({
+  sql: z.string().min(1).max(20000),
+  purpose: z.string().min(1).max(500),
+  limit: z.number().int().min(1).max(100),
+});
+
+export const AiResponsePreferencesSchema = z.object({
+  hypothesize: z.boolean(),
+  webSearch: z.boolean(),
+  dataAccess: z.boolean().default(true),
+  concise: z.boolean(),
+  challenge: z.boolean(),
+  technical: z.boolean(),
+});
+
+export const AiWorkspaceDataResultSchema = z.object({
+  sql: z.string().min(1).max(20_000),
+  purpose: z.string().min(1).max(500),
+  columns: z.array(z.string().max(300)).max(100),
+  rows: z.array(z.array(z.string().max(1000)).max(100)).max(100),
+  returnedRows: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  error: z.string().max(2000).optional(),
+});
+
+export const AiTurnRequestSchema = z.object({
+  task: z.enum(["generate", "repair", "explain"]),
+  context: z.enum(["code", "chart", "general"]),
+  contextNote: z.string().max(4000),
+  request: z.string().min(1).max(4000),
+  currentQuery: z.string().max(100_000),
+  source: z.string().max(300).optional(),
+  schema: z.array(FieldMetadataSchema).max(500),
+  availableSources: z.array(z.object({
+    id: z.string().min(1).max(300),
+    title: z.string().max(500),
+    description: z.string().max(3000),
+    fields: z.array(FieldMetadataSchema).max(500),
+  })).max(100),
+  view: z.object({
+    title: z.string().max(1000),
+    subtitle: z.string().max(2000),
+    sources: z.array(z.object({
+      id: z.string().max(300),
+      title: z.string().max(500),
+      description: z.string().max(3000),
+    })).max(20),
+  }),
+  preferences: AiResponsePreferencesSchema,
+  sampleData: z.object({
+    columns: z.array(z.string().max(300)).max(100),
+    rows: z.array(z.array(z.string().max(3000)).max(100)).max(20),
+  }).optional(),
+  history: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    text: z.string().max(6000),
+  })).max(24),
+});
+
+export const AiTurnEnvelopeSchema = AiTurnRequestSchema.extend({
+  workspaceDataRound: z.number().int().min(0).max(3).default(0),
+  workspaceData: z.array(AiWorkspaceDataResultSchema).max(12).default([]),
+});
+
+export const AiDataRequestResponseSchema = z.object({
+  kind: z.literal("data_request"),
+  requests: z.array(AiDataRequestSchema).min(1).max(4),
+  usage: AiUsageSchema,
+});
+
 export const AiExplanationResponseSchema = z.object({
   kind: z.literal("explanation"),
   explanation: z.string(),
@@ -237,11 +318,14 @@ export const AiVisualizationResponseSchema = AiSuggestionSchema.extend({
 export const AiResponseSchema = z.discriminatedUnion("kind", [
   AiExplanationResponseSchema,
   AiVisualizationResponseSchema,
+  AiDataRequestResponseSchema,
 ]);
 
 export type FieldMetadata = z.infer<typeof FieldMetadataSchema>;
 export type JoinHint = z.infer<typeof JoinHintSchema>;
 export type DatasetManifest = z.infer<typeof DatasetManifestSchema>;
+export type DatasetArtifactRequest = z.infer<typeof DatasetArtifactRequestSchema>;
+export type DatasetArtifactHeaders = z.infer<typeof DatasetArtifactHeadersSchema>;
 export type VisualizationLayer = z.infer<typeof VisualizationLayerSchema>;
 export type VisualizationScale = z.infer<typeof VisualizationScaleSchema>;
 export type DraftScenarioDelta = z.infer<typeof DraftScenarioDeltaSchema>;
@@ -253,6 +337,11 @@ export type TablePreview = z.infer<typeof TablePreviewSchema>;
 export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
 export type AiCitation = z.infer<typeof AiCitationSchema>;
 export type AiUsage = z.infer<typeof AiUsageSchema>;
+export type AiDataRequest = z.infer<typeof AiDataRequestSchema>;
+export type AiResponsePreferences = z.infer<typeof AiResponsePreferencesSchema>;
+export type AiWorkspaceDataResult = z.infer<typeof AiWorkspaceDataResultSchema>;
+export type AiTurnRequest = z.infer<typeof AiTurnRequestSchema>;
+export type AiTurnEnvelope = z.infer<typeof AiTurnEnvelopeSchema>;
 export type AiExplanationResponse = z.infer<typeof AiExplanationResponseSchema>;
 export type AiVisualizationResponse = z.infer<typeof AiVisualizationResponseSchema>;
 export type AiResponse = z.infer<typeof AiResponseSchema>;

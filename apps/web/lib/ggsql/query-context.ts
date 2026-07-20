@@ -122,18 +122,50 @@ function executableSql(sql: string) {
   return output;
 }
 
-export function assertReadOnlyGgsql(query: string) {
-  const { sql } = splitGgsql(query);
-  const executable = executableSql(sql);
-  const normalized = executable.trimStart().toUpperCase();
-  if (!/^(SELECT|WITH)\b/.test(normalized)) {
-    throw new Error("Only SELECT and WITH queries are allowed.");
+/** Split a local SQL program while ignoring semicolons in strings/comments. */
+export function sqlStatements(sql: string) {
+  const statements: string[] = [];
+  let start = 0;
+  let index = 0;
+  let state: "normal" | "single" | "double" | "line" | "block" = "normal";
+  while (index < sql.length) {
+    const character = sql[index]!;
+    const next = sql[index + 1];
+    if (state === "normal") {
+      if (character === "'") state = "single";
+      else if (character === '"') state = "double";
+      else if (character === "-" && next === "-") { state = "line"; index += 1; }
+      else if (character === "/" && next === "*") { state = "block"; index += 1; }
+      else if (character === ";") {
+        const statement = sql.slice(start, index).trim();
+        if (statement) statements.push(statement);
+        start = index + 1;
+      }
+    } else if (state === "single") {
+      if (character === "'" && next === "'") index += 1;
+      else if (character === "'") state = "normal";
+    } else if (state === "double") {
+      if (character === '"' && next === '"') index += 1;
+      else if (character === '"') state = "normal";
+    } else if (state === "line" && character === "\n") {
+      state = "normal";
+    } else if (state === "block" && character === "*" && next === "/") {
+      state = "normal";
+      index += 1;
+    }
+    index += 1;
   }
-  const blocked = /\b(INSTALL|LOAD|COPY|ATTACH|DETACH|PRAGMA|CREATE|DROP|ALTER|INSERT|UPDATE|DELETE|EXPORT|IMPORT|READ_CSV|READ_JSON|READ_PARQUET|ST_READ|HTTPFS|DUCKDB_EXTENSIONS)\b/i.exec(executable);
-  if (blocked) throw new Error(`The query contains a blocked operation: ${blocked[1]!.toUpperCase()}.`);
-  const statements = executable.split(";").filter((part) => part.trim());
-  if (statements.length > 1) throw new Error("Only one SQL statement is allowed.");
-  return sql;
+  const trailing = sql.slice(start).trim();
+  if (trailing) statements.push(trailing);
+  return statements;
+}
+
+export function finalSqlStatement(sql: string) {
+  return sqlStatements(sql).at(-1) ?? "";
+}
+
+export function isResultSqlStatement(sql: string) {
+  return /^(?:SELECT|WITH)\b/i.test(executableSql(sql).trimStart());
 }
 
 interface Token {
@@ -215,17 +247,6 @@ function allSourceRefs(sql: string): QuerySourceRef[] {
     });
 }
 
-function cteNames(sql: string) {
-  const topLevel = sqlTokens(sql).filter((token) => token.depth === 0);
-  if (topLevel[0]?.value !== "WITH") return new Set<string>();
-  const finalSelect = topLevel.map((token) => token.value).lastIndexOf("SELECT");
-  const names = new Set<string>();
-  for (let index = 1; index < finalSelect; index += 1) {
-    if (topLevel[index + 1]?.value === "AS") names.add(topLevel[index]!.value.toLocaleLowerCase());
-  }
-  return names;
-}
-
 function terminalFromEnd(sql: string, fromStart: number) {
   const clauses = new Set(["WHERE", "GROUP", "HAVING", "QUALIFY", "WINDOW", "ORDER", "LIMIT", "OFFSET", "UNION", "EXCEPT", "INTERSECT"]);
   return sqlTokens(sql).find((token) => token.depth === 0 && token.start > fromStart && clauses.has(token.value))?.start ?? sql.length;
@@ -233,10 +254,9 @@ function terminalFromEnd(sql: string, fromStart: number) {
 
 export function sourcesFromQuery(query: string) {
   const sql = splitGgsql(query).sql;
-  const internal = cteNames(sql);
   return [...new Set(allSourceRefs(sql)
     .map((source) => source.id)
-    .filter((source) => !internal.has(source.toLocaleLowerCase())))];
+    .filter((source) => /^(?:chartize|user|ggsql):[\w-]+$/i.test(source)))];
 }
 
 export function sourceAlias(source: string, index = 0) {

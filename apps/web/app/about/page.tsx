@@ -6,7 +6,7 @@ export default function AboutPage() {
       <p className="eyebrow">Why this exists</p>
       <h1>Public data should be explorable, inspectable, and yours to question.</h1>
       <p className="lede">
-        Chartize joins a self-hosted warehouse with GGSQL, browser-local analysis,
+        Chartize joins a self-hosted data catalog with GGSQL and browser-local analysis,
         and a GPT-5.6 copilot. Every picture keeps its query, source, version, and attribution.
       </p>
       <section className="principle-grid">

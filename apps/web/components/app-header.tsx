@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { visualPointState } from "@/lib/ggsql/query-context";
 import { makeDefaultDraft } from "@/lib/ggsql/serialize";
 import type { VisualizationExample } from "@/lib/ggsql/examples";
@@ -12,14 +13,20 @@ import { VisualizationExamplePicker } from "./visualization-example-picker";
 export function AppHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const aiPhase = useChartizeWorkspace((state) => state.aiPhase);
-  const setAiPhase = useChartizeWorkspace((state) => state.setAiPhase);
-  const activeWorkspaceId = useChartizeWorkspace((state) => state.activeWorkspaceId);
-  const workspaceDocuments = useChartizeWorkspace((state) => state.workspaceDocuments);
-  const activeTitle = useChartizeWorkspace((state) => state.draft.title || "untitled visualization");
-  const openWorkspace = useChartizeWorkspace((state) => state.openWorkspace);
-  const switchWorkspace = useChartizeWorkspace((state) => state.switchWorkspace);
-  const closeWorkspace = useChartizeWorkspace((state) => state.closeWorkspace);
+  const {
+    aiPhase, setAiPhase, activeWorkspaceId, workspaceDocuments, activeTitle,
+    openWorkspace, switchWorkspace, closeWorkspace, closeAi,
+  } = useChartizeWorkspace(useShallow((state) => ({
+    aiPhase: state.aiPhase,
+    setAiPhase: state.setAiPhase,
+    activeWorkspaceId: state.activeWorkspaceId,
+    workspaceDocuments: state.workspaceDocuments,
+    activeTitle: state.draft.title || "untitled visualization",
+    openWorkspace: state.openWorkspace,
+    switchWorkspace: state.switchWorkspace,
+    closeWorkspace: state.closeWorkspace,
+    closeAi: state.closeAi,
+  })));
   const activationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const workspaceMenu = useRef<HTMLDetailsElement>(null);
 
@@ -60,9 +67,8 @@ export function AppHeader() {
 
   const announceWorkspaceChange = () => {
     workspaceMenu.current?.removeAttribute("open");
-    window.dispatchEvent(new CustomEvent("chartize:ai-closed"));
-    if (pathname === "/explore") window.dispatchEvent(new CustomEvent("chartize:workspace-switched"));
-    else router.push("/explore?workspace=active");
+    closeAi();
+    if (pathname !== "/explore") router.push("/explore?workspace=active");
   };
 
   const chooseWorkspace = (id: string) => {
@@ -85,7 +91,6 @@ export function AppHeader() {
       title: draft.title,
       draft,
       query: example.query,
-      mode: example.mode,
       dockSource: example.source,
     });
     announceWorkspaceChange();
@@ -112,7 +117,7 @@ export function AppHeader() {
               {workspaceDocuments.map((document, index) => {
                 const active = document.id === activeWorkspaceId;
                 const title = active ? activeTitle : document.title;
-                return <li key={document.id} className={active ? "active" : ""}><button type="button" onClick={() => chooseWorkspace(document.id)}><i>{String(index + 1).padStart(2, "0")}</i><span><b>{title}</b><small>{active ? "current workspace" : document.mode === "warehouse" ? "vps warehouse" : "private browser"}</small></span></button><button type="button" disabled={workspaceDocuments.length <= 1} title={`Close ${title}`} aria-label={`Close ${title}`} onClick={() => removeWorkspace(document.id)}>×</button></li>;
+                return <li key={document.id} className={active ? "active" : ""}><button type="button" onClick={() => chooseWorkspace(document.id)}><i>{String(index + 1).padStart(2, "0")}</i><span><b>{title}</b><small>{active ? "current workspace" : "browser workspace"}</small></span></button><button type="button" disabled={workspaceDocuments.length <= 1} title={`Close ${title}`} aria-label={`Close ${title}`} onClick={() => removeWorkspace(document.id)}>×</button></li>;
               })}
             </ol>
           </div>
