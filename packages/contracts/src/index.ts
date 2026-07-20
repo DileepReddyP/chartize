@@ -255,6 +255,12 @@ export const AiWorkspaceDataResultSchema = z.object({
   error: z.string().max(2000).optional(),
 });
 
+export const AiRuntimeErrorSchema = z.object({
+  stage: z.enum(["engine", "query", "table", "map", "upload", "ai"]),
+  message: z.string().min(1).max(4000),
+  failedQuery: z.string().max(100_000).optional(),
+});
+
 export const AiTurnRequestSchema = z.object({
   task: z.enum(["generate", "repair", "explain"]),
   context: z.enum(["code", "chart", "general"]),
@@ -287,6 +293,7 @@ export const AiTurnRequestSchema = z.object({
     role: z.enum(["user", "assistant"]),
     text: z.string().max(6000),
   })).max(24),
+  runtimeErrors: z.array(AiRuntimeErrorSchema).max(8).default([]),
 });
 
 export const AiTurnEnvelopeSchema = AiTurnRequestSchema.extend({
@@ -341,6 +348,7 @@ export type AiDataRequest = z.infer<typeof AiDataRequestSchema>;
 export type AiResponsePreferences = z.infer<typeof AiResponsePreferencesSchema>;
 export type AiWorkspaceDataResult = z.infer<typeof AiWorkspaceDataResultSchema>;
 export type AiTurnRequest = z.infer<typeof AiTurnRequestSchema>;
+export type AiRuntimeError = z.infer<typeof AiRuntimeErrorSchema>;
 export type AiTurnEnvelope = z.infer<typeof AiTurnEnvelopeSchema>;
 export type AiExplanationResponse = z.infer<typeof AiExplanationResponseSchema>;
 export type AiVisualizationResponse = z.infer<typeof AiVisualizationResponseSchema>;

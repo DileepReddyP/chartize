@@ -26,6 +26,21 @@ interface VisualizationTip {
   recipe: string;
 }
 
+export const GGSQL_OFFICIAL_REFERENCE = {
+  version: "0.4.1",
+  index: "https://ggsql.org/llms.txt",
+  summary: [
+    "A Chartize query is browser SQL followed by VISUALISE. Put data transformations in SELECT/WITH, alias computed values, and map only returned columns.",
+    "DRAW creates data-driven layers with MAPPING; PLACE creates literal annotation layers with SETTING and no MAPPING.",
+    "Layer order is paint order. Draw broad areas/ribbons first, marks next, and rules/text last.",
+    "Supported scale transforms include date and log. Palette names are unquoted identifiers; formatter values use GGSQL forms such as '{:time %b %Y}' and '{:num %.1f}%'.",
+    "LABEL names titles, subtitles, axes, and legends. PROJECT follows drawing, scales, facets, and labels; Albers maps may set origin and parallels.",
+    "Text needs a position and label. Its offset is a scalar or two-number tuple, and every usable data row creates a text mark.",
+    "Rules need x or y. Use PLACE rule for a literal threshold/event; use DRAW rule only when rule positions come from query rows.",
+    "The Chartize browser SQL dialect is SQLite-like: avoid TRY_CAST and DuckDB-only SQL in workspace queries.",
+  ],
+} as const;
+
 const VISUALIZATION_TIPS: Record<VisualizationTipTopic, VisualizationTip> = {
   "endpoint-labels": {
     topic: "endpoint-labels",
@@ -58,12 +73,20 @@ Repeat the three nullable endpoint aliases and one text layer for each additiona
   "event-annotations": {
     topic: "event-annotations",
     rules: [
-      "Project one nullable event_date/event_y/event_label tuple per intended event; all three must be null on ordinary observations.",
-      "Do not aggregate a multi-event rule layer with max or min, because that collapses all event dates to one rule.",
+      "For known literal dates and labels, use PLACE rule and PLACE text. Do not repeat event values across the observation table or manufacture nullable event columns just to annotate a chart.",
+      "PLACE has SETTING only and no MAPPING. Repeat a PLACE layer for separately styled events; tuple values are permitted only when each setting has the same length.",
+      "Use data-driven nullable event_date/event_y/event_label columns only when annotations genuinely come from query rows. Do not aggregate a multi-event rule layer with max or min, because that collapses the dates.",
       "Keep labels terse and stagger nearby events across genuinely separate vertical bands. A one-unit nudge is not meaningful when the visible y-domain is tens of units wide.",
       "Draw ribbons and data first, then rules, then annotation text so the explanatory layer stays legible.",
     ],
-    recipe: `Project event aliases with CASE expressions in SELECT. Then use:
+    recipe: `For one known event, keep the chart query unchanged and append:
+PLACE rule
+  SETTING x => '2025-02-26', colour => '#6f7774', opacity => 0.55, linewidth => 1
+PLACE text
+  SETTING x => '2025-02-26', y => 49.5, label => 'Feb. 26 · crossover',
+    rotation => -35, hjust => 'left', vjust => 'bottom', offset => (5, 5)
+
+When dates/labels are data, project a nullable tuple and use:
 DRAW rule
   MAPPING event_date AS x
   SETTING colour => '#6f7774', opacity => 0.55, linewidth => 1
@@ -221,6 +244,7 @@ SELECT clean_name, clean_value FROM cleaned`,
 export function visualizationTipsFor(topics: VisualizationTipTopic[]) {
   return {
     reference: "Chartize cookbook for GGSQL 0.4.1",
+    official: GGSQL_OFFICIAL_REFERENCE,
     tips: [...new Set(topics)].map((topic) => VISUALIZATION_TIPS[topic]),
   };
 }

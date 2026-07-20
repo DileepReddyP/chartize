@@ -8,6 +8,9 @@ describe("Chartize AI prompt contract", () => {
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("complete executable browser-local GGSQL query");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("request_data");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("get_visualization_tips");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("https://ggsql.org/llms.txt");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("PLACE is literal");
+    expect(CHARTIZE_AI_INSTRUCTIONS).toContain("failedQuery is the exact candidate");
     expect(CHARTIZE_AI_INSTRUCTIONS).toContain("Any request to label line endpoints must consult endpoint-labels");
   });
 

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { AiTurnRequest } from "@chartize/contracts";
 import { WorkspaceSnapshotSchema, useChartizeWorkspace } from "./store";
 
 describe("Chartize workspace store", () => {
@@ -70,5 +71,65 @@ describe("Chartize workspace store", () => {
     expect(useChartizeWorkspace.getState().query).toBe("second workspace query");
     expect(useChartizeWorkspace.getState().aiHistory[0]?.text).toBe("second conversation");
     expect(WorkspaceSnapshotSchema.safeParse(useChartizeWorkspace.getState()).success).toBe(true);
+  });
+
+  it("automatically sends the exact failed query with the next AI turn", async () => {
+    const previous = useChartizeWorkspace.getState();
+    const failedQuery = "SELECT missing FROM chartize:presidential_approval_average\n\nVISUALISE\nDRAW line";
+    const requestAiTurn = vi.fn(async (_request: AiTurnRequest) => ({
+      kind: "explanation" as const,
+      explanation: "I can repair that diagnostic.",
+      assumptions: [],
+      warnings: [],
+      sources: [],
+      researched: false,
+      usage: {
+        models: ["test"],
+        calls: 1,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+      },
+    }));
+
+    useChartizeWorkspace.setState({
+      catalogLoaded: true,
+      aiBusy: false,
+      aiPrompt: "Why did this fail?",
+      aiHistory: [],
+      query: "SELECT 1",
+      runtimeErrors: [{ stage: "query", message: "no such column: missing", failedQuery }],
+      requestAiTurn,
+    });
+
+    try {
+      await useChartizeWorkspace.getState().submitAiTurn({
+        task: "explain",
+        context: "code",
+        contextNote: "current editor",
+        schema: [],
+        availableSources: [],
+        view: { title: "", subtitle: "", sources: [] },
+      });
+
+      expect(requestAiTurn).toHaveBeenCalledTimes(1);
+      expect(requestAiTurn.mock.calls[0]?.[0].runtimeErrors).toEqual([
+        { stage: "query", message: "no such column: missing", failedQuery },
+      ]);
+    } finally {
+      useChartizeWorkspace.setState({
+        catalogLoaded: previous.catalogLoaded,
+        aiBusy: previous.aiBusy,
+        aiPrompt: previous.aiPrompt,
+        aiHistory: previous.aiHistory,
+        aiUsage: previous.aiUsage,
+        query: previous.query,
+        runtimeErrors: previous.runtimeErrors,
+        requestAiTurn: previous.requestAiTurn,
+      });
+    }
   });
 });

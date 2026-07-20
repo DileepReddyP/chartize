@@ -13,11 +13,25 @@ describe("createVisualizationFunctionTools", () => {
     expect(cookbook).toBeDefined();
     await expect(cookbook?.execute({ topics: ["endpoint-labels", "layered-series"] })).resolves.toMatchObject({
       reference: "Chartize cookbook for GGSQL 0.4.1",
+      official: {
+        version: "0.4.1",
+        index: "https://ggsql.org/llms.txt",
+      },
       tips: [
         { topic: "endpoint-labels" },
         { topic: "layered-series" },
       ],
     });
+  });
+
+  it("includes the official DRAW/PLACE distinction without requiring web research", async () => {
+    const [cookbook] = createVisualizationFunctionTools();
+    const result = await cookbook?.execute({ topics: ["event-annotations"] });
+    const serialized = JSON.stringify(result);
+
+    expect(serialized).toContain("https://ggsql.org/llms.txt");
+    expect(serialized).toContain("PLACE rule");
+    expect(serialized).toContain("SETTING x");
   });
 
   it("teaches endpoint labels as a one-row-per-series invariant", async () => {

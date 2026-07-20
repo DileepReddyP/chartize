@@ -20,7 +20,9 @@ export async function POST(request: Request) {
     const source = body.source ?? inferSource(body.currentQuery) ?? "";
     const availableSources = body.availableSources.length
       ? body.availableSources
-      : [{ id: source || "ggsql:penguins", title: source || "GGSQL sample · Penguins", description: "Current source", fields: body.schema }];
+      : source
+        ? [{ id: source, title: source, description: "Current source", fields: body.schema }]
+        : [];
     const allowedSources = availableSources.map((candidate) => candidate.id);
     const hasCurrentQuery = Boolean(body.currentQuery.trim());
     const compactContext = compactAiContext({
@@ -52,6 +54,9 @@ export async function POST(request: Request) {
       `Available source index: ${JSON.stringify(compactContext.sourceIndex)}`,
       `Relevant source schemas: ${JSON.stringify(compactContext.sourceSchemas)}`,
       `Current GGSQL:\n${body.currentQuery || "(none)"}`,
+      body.runtimeErrors.length
+        ? `Unresolved workspace diagnostics (authoritative; failedQuery is the exact candidate that produced the message):\n${JSON.stringify(body.runtimeErrors)}`
+        : "No unresolved workspace diagnostics are attached.",
       researchRequired
         ? `Live research is required for this turn. Find at least ${researchTarget} relevant dated finding${researchTarget === 1 ? "" : "s"}, ground factual claims in direct sources returned by web search, and keep web evidence separate from workspace data.`
         : "Live research is optional for this turn.",

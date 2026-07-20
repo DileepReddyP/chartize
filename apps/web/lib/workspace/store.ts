@@ -1,5 +1,6 @@
 import {
   AiResponsePreferencesSchema,
+  AiRuntimeErrorSchema,
   AiTurnRequestSchema,
   AiUsageSchema,
   DatasetManifestSchema,
@@ -12,6 +13,7 @@ import {
   type TablePreview,
   type AiUsage,
   type AiResponsePreferences,
+  type AiRuntimeError,
   type AiTurnRequest,
 } from "@chartize/contracts";
 import { z } from "zod";
@@ -140,6 +142,7 @@ export const WorkspaceDocumentSchema = z.object({
   aiUsage: AiUsageSchema.nullable(),
   includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
+  runtimeErrors: z.array(AiRuntimeErrorSchema).max(8).default([]),
 });
 
 export type LocalDataset = z.infer<typeof LocalDatasetSchema>;
@@ -166,6 +169,7 @@ const AiSubmissionSchema = AiTurnRequestSchema.omit({
   request: true,
   preferences: true,
   history: true,
+  runtimeErrors: true,
 }).extend({
   requestOverride: z.string().max(4000).optional(),
   retryAssistantIndex: z.number().int().nonnegative().optional(),
@@ -248,6 +252,7 @@ export const WorkspaceSnapshotSchema = z.object({
   aiFocusVersion: z.number().int().nonnegative(),
   includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
+  runtimeErrors: z.array(AiRuntimeErrorSchema).max(8),
   leftPaneRatio: LeftPaneRatioSchema,
   codePaneRatio: CodePaneRatioSchema,
 });
@@ -297,6 +302,17 @@ let loadingMaskTimer: ReturnType<typeof setTimeout> | null = null;
 let fullTableSequence = 0;
 let mapFeatureSequence = 0;
 const fullTableCache = new Map<string, TablePreview>();
+
+function addRuntimeError(current: AiRuntimeError[], next: AiRuntimeError) {
+  const parsed = AiRuntimeErrorSchema.parse(next);
+  return [...current.filter((item) =>
+    item.stage !== parsed.stage || item.message !== parsed.message || item.failedQuery !== parsed.failedQuery
+  ), parsed].slice(-8);
+}
+
+function withoutRuntimeStage(current: AiRuntimeError[], stage: AiRuntimeError["stage"]) {
+  return current.filter((item) => item.stage !== stage);
+}
 
 function quoteIdentifier(value: string) {
   return `"${value.replaceAll('"', '""')}"`;
@@ -475,6 +491,7 @@ const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   aiUsage: null,
   includeSamples: false,
   aiPreferences: DEFAULT_AI_PREFERENCES,
+  runtimeErrors: [],
 });
 
 const initialSnapshot = WorkspaceSnapshotSchema.parse({
@@ -524,6 +541,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   aiFocusVersion: 0,
   includeSamples: false,
   aiPreferences: DEFAULT_AI_PREFERENCES,
+  runtimeErrors: [],
   leftPaneRatio: 0.44,
   codePaneRatio: 0.56,
 });
@@ -557,6 +575,7 @@ function captureWorkspaceDocument(state: WorkspaceSnapshot): WorkspaceDocument {
     aiUsage: state.aiUsage,
     includeSamples: state.includeSamples,
     aiPreferences: state.aiPreferences,
+    runtimeErrors: state.runtimeErrors,
   });
 }
 
@@ -602,6 +621,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     aiFocusVersion: focusVersion,
     includeSamples: document.includeSamples,
     aiPreferences: document.aiPreferences,
+    runtimeErrors: document.runtimeErrors,
   };
 }
 
@@ -635,6 +655,7 @@ function newWorkspaceDocument(input: NewWorkspaceInput = {}): WorkspaceDocument 
     aiUsage: null,
     includeSamples: false,
     aiPreferences: DEFAULT_AI_PREFERENCES,
+    runtimeErrors: [],
   });
 }
 
@@ -670,7 +691,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     });
     try {
       const bootstrap = await initializeBrowserRuntime(get().activeWorkspaceId, spatialiteUrl);
-      set({
+      set((state) => ({
         engineState: "ready",
         catalogLoaded: true,
         catalogDatasets: bootstrap.catalog,
@@ -680,10 +701,17 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         ],
         error: "",
         resultStatus: "",
-      });
+        runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "engine"),
+      }));
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      set({ engineState: "error", catalogLoaded: true, error: message, resultStatus: "" });
+      set((state) => ({
+        engineState: "error",
+        catalogLoaded: true,
+        error: message,
+        resultStatus: "",
+        runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "engine", message }),
+      }));
       throw cause;
     }
   },
@@ -693,7 +721,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     if (!displayQuery.trim()) {
       browserRunSequence += 1;
       get().setRunning(false);
-      set({
+      set((state) => ({
         spec: null,
         selectedData: { ...EMPTY_TABLE, limit: 200 },
         error: "",
@@ -702,7 +730,8 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         chartSelection: null,
         chartDomains: {},
         chartDomainHistory: [],
-      });
+        runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "query"),
+      }));
       return { ok: true };
     }
 
@@ -751,11 +780,16 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           source: displaySource,
           ...(presentation.title !== undefined ? { title: presentation.title, subtitle: presentation.subtitle ?? "" } : {}),
         },
+        error: "",
+        runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "query"),
       }));
       return { ok: true };
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      if (runId === browserRunSequence) set({ error: message });
+      if (runId === browserRunSequence) set((state) => ({
+        error: message,
+        runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "query", message, failedQuery: displayQuery }),
+      }));
       return { ok: false, error: message };
     } finally {
       if (runId === browserRunSequence) get().setRunning(false);
@@ -855,7 +889,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       try {
         if (file.size > 100 * 1024 * 1024) throw new Error(`${file.name} exceeds the 100 MB browser safety limit.`);
         get().setRunning(true);
-        set({ error: "" });
+        set((state) => ({ error: "", runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "upload") }));
         const format = detectFormat(file);
         const tableName = tableNameFromFile(file.name);
         const original = await file.arrayBuffer();
@@ -871,7 +905,11 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         fullTableCache.clear();
         get().applyDataset(`user:${tableName}`, dataset);
       } catch (cause) {
-        set({ error: cause instanceof Error ? cause.message : String(cause) });
+        const message = cause instanceof Error ? cause.message : String(cause);
+        set((state) => ({
+          error: message,
+          runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "upload", message }),
+        }));
       } finally {
         get().setRunning(false);
       }
@@ -963,9 +1001,16 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         limit: 100,
       });
       remember(fullTableCache, key, table, 16);
-      if (requestId === fullTableSequence) commit(table);
+      if (requestId === fullTableSequence) {
+        commit(table);
+        set((state) => ({ runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "table") }));
+      }
     } catch (cause) {
-      if (requestId === fullTableSequence) set({ error: cause instanceof Error ? cause.message : String(cause) });
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (requestId === fullTableSequence) set((state) => ({
+        error: message,
+        runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "table", message }),
+      }));
     } finally {
       if (requestId === fullTableSequence) set({ fullLoading: false });
     }
@@ -1000,23 +1045,31 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const requestId = ++mapFeatureSequence;
     set({ selectionOrigin: "result", gridSelection: null, chartSelection: null, mapFeatureSelection: selection });
     if (!selection?.pending || selection.rowIndex === undefined) return;
+    const rowIndex = selection.rowIndex;
     const selectedQuery = get().query;
     try {
       const sql = splitGgsql(selectedQuery).sql.trim().replace(/;$/, "");
       if (!sql) throw new Error("The active map has no query to inspect.");
-      const row = await get().executeWorkspaceSql(`SELECT * FROM (${sql}) AS chartize_selected_feature LIMIT 1 OFFSET ${selection.rowIndex}`);
+      const row = await get().executeWorkspaceSql(`SELECT * FROM (${sql}) AS chartize_selected_feature LIMIT 1 OFFSET ${rowIndex}`);
       if (!row.rows[0]) throw new Error("No feature details were returned.");
-      const hydrated = mapFeatureSelectionFromTableRow(row.columns, row.rows[0], selection.pixels, selection.rowIndex);
+      const hydrated = mapFeatureSelectionFromTableRow(row.columns, row.rows[0], selection.pixels, rowIndex);
       if (!hydrated) throw new Error("This feature has no readable attributes.");
-      if (mapFeatureSequence === requestId && get().query === selectedQuery) set({ mapFeatureSelection: hydrated });
+      if (mapFeatureSequence === requestId && get().query === selectedQuery) set((state) => ({
+        mapFeatureSelection: hydrated,
+        runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "map"),
+      }));
     } catch (cause) {
       if (mapFeatureSequence !== requestId || get().query !== selectedQuery) return;
-      set({ mapFeatureSelection: {
-        ...selection,
-        title: `map feature ${selection.rowIndex + 1}`,
-        pending: false,
-        error: cause instanceof Error ? cause.message : "Feature details could not be loaded.",
-      } });
+      const message = cause instanceof Error ? cause.message : "Feature details could not be loaded.";
+      set((state) => ({
+        mapFeatureSelection: {
+          ...selection,
+          title: `map feature ${rowIndex + 1}`,
+          pending: false,
+          error: message,
+        },
+        runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "map", message, failedQuery: selectedQuery }),
+      }));
     }
   },
   requestAiTurn: async (input) => {
@@ -1067,6 +1120,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         currentQuery: initialState.query,
         preferences: initialState.aiPreferences,
         history,
+        runtimeErrors: initialState.runtimeErrors,
       });
       let body = await get().requestAiTurn(turnInput);
       if (get().activeWorkspaceId !== startedWorkspace) return;
@@ -1086,6 +1140,11 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
             request: `Repair the candidate GGSQL completely while preserving this request: ${request}`,
             currentQuery: body.query,
             preferences: { ...initialState.aiPreferences, webSearch: false },
+            runtimeErrors: addRuntimeError(turnInput.runtimeErrors, {
+              stage: "query",
+              message: runResult.error,
+              failedQuery: body.query,
+            }),
           });
           usage = mergeAiUsage(usage, repaired.usage);
           if (repaired.kind !== "visualization") break;
@@ -1119,6 +1178,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
             text: `I hit a workspace error before I could finish.\n\n> ${message}\n\nUse **redo** below to try this turn again.`,
           }],
           aiMessage: "",
+          runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "ai", message, failedQuery: state.query || undefined }),
         }));
       }
     } finally {
@@ -1226,7 +1286,12 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       if (get().running) set({ showLoadingMask: true });
     }, 180);
   },
-  setError: (error) => set({ error }),
+  setError: (error) => set((state) => ({
+    error,
+    runtimeErrors: error
+      ? addRuntimeError(state.runtimeErrors, { stage: "query", message: error, failedQuery: state.query || undefined })
+      : state.runtimeErrors,
+  })),
   setEditorContext: (editorContext) => set({ editorContext }),
   setDwimStatus: (dwimStatus) => set({ dwimStatus }),
   setInlineAnchors: (inlineAnchors) => set({ inlineAnchors }),

@@ -1,6 +1,6 @@
 export interface VisualizationExample {
   id: string;
-  category: "quick" | "range" | "map" | "model" | "linked" | "playful";
+  category: "quick" | "range" | "map" | "model" | "linked";
   title: string;
   description: string;
   source: string;
@@ -12,7 +12,7 @@ export const VISUALIZATION_EXAMPLES: VisualizationExample[] = [
   {
     id: "approval-simple",
     category: "quick",
-    title: "trump approval · one line",
+    title: "presidential approval · one line",
     description: "A minimal temporal line with readable dates and axis labels.",
     source: "chartize:presidential_approval_average",
     tags: ["line", "time", "starter"],
@@ -105,8 +105,8 @@ DRAW point
 DRAW smooth
   MAPPING "POPESTIMATE2020" AS x, "POPESTIMATE2025" AS y
   SETTING method => 'ols', color => '#2a1e5c', linewidth => 2
-SCALE x VIA log10
-SCALE y VIA log10
+SCALE x VIA log
+SCALE y VIA log
 LABEL title => 'county population: 2020 vs 2025', subtitle => 'descriptive OLS fit on log-scaled axes — not a forecast', x => '2020 population', y => '2025 population'`,
   },
   {
@@ -152,7 +152,7 @@ LIMIT 4000
 VISUALISE
 DRAW spatial
   MAPPING "geometry" AS geometry, "population" AS fill
-SCALE CONTINUOUS fill TO viridis VIA log10
+SCALE CONTINUOUS fill TO viridis VIA log
 LABEL title => 'county population, 2025', subtitle => 'population estimates joined to cartographic county boundaries', fill => '2025 population'
 PROJECT TO albers
   SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
@@ -223,7 +223,7 @@ DRAW point
 DRAW smooth
   MAPPING "population" AS x, "obesity" AS y
   SETTING method => 'ols', color => '#2a1e5c', linewidth => 2
-SCALE x VIA log10
+SCALE x VIA log
 LABEL title => 'county population × adult obesity', subtitle => 'descriptive association using Census 2025 population and CDC PLACES · not causal', x => '2025 population', y => 'Obesity prevalence (%)'`,
   },
   {
@@ -233,12 +233,12 @@ LABEL title => 'county population × adult obesity', subtitle => 'descriptive as
     description: "Relate BEA per-capita income to CDC obesity estimates across counties.",
     source: "chartize:bea_county_personal_income",
     tags: ["BEA + CDC", "join", "regression"],
-    query: `SELECT TRY_CAST(REPLACE(i."2024", ',', '') AS DOUBLE) AS "per_capita_income",
+    query: `SELECT CAST(REPLACE(i."2024", ',', '') AS DOUBLE) AS "per_capita_income",
   h."data_value" AS "obesity", h."locationname" AS "county", h."stateabbr" AS "state"
 FROM chartize:bea_county_personal_income AS i
 JOIN chartize:cdc_places_county_2025 AS h ON trim(i."GeoFIPS") = h."locationid"
 WHERE i."LineCode" = 3 AND h."measureid" = 'OBESITY'
-  AND h."datavaluetypeid" = 'AgeAdjPrv' AND TRY_CAST(REPLACE(i."2024", ',', '') AS DOUBLE) > 0
+  AND h."datavaluetypeid" = 'AgeAdjPrv' AND CAST(REPLACE(i."2024", ',', '') AS DOUBLE) > 0
 LIMIT 5000
 
 VISUALISE
@@ -257,11 +257,11 @@ LABEL title => 'income × adult obesity', subtitle => 'BEA 2024 per-capita incom
     description: "Official BEA per-capita income joined to Census county boundaries.",
     source: "chartize:us_counties_2025",
     tags: ["BEA + Census", "economy", "choropleth"],
-    query: `SELECT b."geometry" AS "geometry", TRY_CAST(REPLACE(i."2024", ',', '') AS DOUBLE) AS "income",
+    query: `SELECT b."geometry" AS "geometry", CAST(REPLACE(i."2024", ',', '') AS DOUBLE) AS "income",
   i."GeoName" AS "county"
 FROM chartize:us_counties_2025 AS b
 JOIN chartize:bea_county_personal_income AS i ON b."GEOID" = trim(i."GeoFIPS")
-WHERE i."LineCode" = 3 AND TRY_CAST(REPLACE(i."2024", ',', '') AS DOUBLE) > 0
+WHERE i."LineCode" = 3 AND CAST(REPLACE(i."2024", ',', '') AS DOUBLE) > 0
 LIMIT 4000
 
 VISUALISE
@@ -280,11 +280,11 @@ PROJECT TO albers
     source: "chartize:us_counties_2025",
     tags: ["BEA + Census", "change", "diverging"],
     query: `SELECT b."geometry" AS "geometry", g."GeoName" AS "county",
-  100.0 * (TRY_CAST(REPLACE(g."2024", ',', '') AS DOUBLE) - TRY_CAST(REPLACE(g."2019", ',', '') AS DOUBLE))
-    / NULLIF(TRY_CAST(REPLACE(g."2019", ',', '') AS DOUBLE), 0) AS "real_gdp_change"
+  100.0 * (CAST(REPLACE(g."2024", ',', '') AS DOUBLE) - CAST(REPLACE(g."2019", ',', '') AS DOUBLE))
+    / NULLIF(CAST(REPLACE(g."2019", ',', '') AS DOUBLE), 0) AS "real_gdp_change"
 FROM chartize:us_counties_2025 AS b
 JOIN chartize:bea_county_gdp AS g ON b."GEOID" = trim(g."GeoFIPS")
-WHERE g."LineCode" = 1 AND TRY_CAST(REPLACE(g."2019", ',', '') AS DOUBLE) > 0
+WHERE g."LineCode" = 1 AND CAST(REPLACE(g."2019", ',', '') AS DOUBLE) > 0
 LIMIT 4000
 
 VISUALISE
@@ -295,46 +295,6 @@ LABEL title => 'real county GDP change, 2019–2024', subtitle => 'inflation-adj
 PROJECT TO albers
   SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
   },
-  {
-    id: "sleepy-big-counties",
-    category: "playful",
-    title: "do big counties ever sleep?",
-    description: "A playful—but still honest—look at population and insufficient sleep.",
-    source: "chartize:cdc_places_county_2025",
-    tags: ["CDC PLACES", "playful", "not causal"],
-    query: `SELECT "totalpopulation" AS "population", "data_value" AS "insufficient_sleep", "locationname" AS "county", "stateabbr" AS "state"
-FROM chartize:cdc_places_county_2025
-WHERE "measureid" = 'SLEEP' AND "datavaluetypeid" = 'AgeAdjPrv' AND "totalpopulation" > 0
-LIMIT 5000
-
-VISUALISE
-DRAW point
-  MAPPING "population" AS x, "insufficient_sleep" AS y
-  SETTING color => '#ee4266', opacity => 0.2
-DRAW smooth
-  MAPPING "population" AS x, "insufficient_sleep" AS y
-  SETTING method => 'ols', color => '#2a1e5c', linewidth => 2
-SCALE x VIA log10
-LABEL title => 'do big counties ever sleep?', subtitle => 'population versus insufficient sleep · a descriptive joke, emphatically not causation', x => 'County population', y => 'Insufficient sleep (%)'`,
-  },
-  {
-    id: "penguins-campaign-trail",
-    category: "playful",
-    title: "penguins on the campaign trail",
-    description: "The browser-only sample, dressed up as an entirely unserious field operation.",
-    source: "ggsql:penguins",
-    tags: ["private browser", "penguins", "joke"],
-    query: `SELECT "bill_len", "body_mass", "species", "island"
-FROM ggsql:penguins
-LIMIT 1000
-
-VISUALISE
-DRAW point
-  MAPPING "bill_len" AS x, "body_mass" AS y, "species" AS colour
-  SETTING opacity => 0.7
-SCALE DISCRETE colour TO tableau10
-LABEL title => 'penguins on the campaign trail', subtitle => 'body mass versus bill length · no electoral inference permitted', x => 'Bill length', y => 'Body mass', colour => 'Candidate species'`,
-  },
 ];
 
 export const EXAMPLE_CATEGORIES: Array<{ id: VisualizationExample["category"]; title: string; description: string }> = [
@@ -343,5 +303,4 @@ export const EXAMPLE_CATEGORIES: Array<{ id: VisualizationExample["category"]; t
   { id: "map", title: "maps", description: "spatial joins and choropleths" },
   { id: "model", title: "models + scenarios", description: "fits, deltas, and counterfactuals" },
   { id: "linked", title: "linked sources", description: "questions spanning linked datasets" },
-  { id: "playful", title: "playful", description: "valid charts with less-serious premises" },
 ];

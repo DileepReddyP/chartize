@@ -9,7 +9,7 @@ import {
 export function createVisualizationFunctionTools(): StructuredFunctionTool[] {
   return [{
     name: "get_visualization_tips",
-    description: "Retrieve Chartize's compact GGSQL 0.4.1 cookbook for the drawing or browser-local data technique needed in this turn. Call this before writing or repairing local-data cleanup/mutations, text labels, endpoint labels, event annotations, dense or layered charts, maps, uncertainty, facets, scales, or statistical layers. The returned rules include engine compatibility, row-cardinality invariants, and executable patterns that are intentionally not all repeated in the base prompt.",
+    description: "Retrieve Chartize's local digest of the official GGSQL 0.4.1 documentation and its executable cookbook for the requested drawing or browser-local data technique. The response includes the canonical https://ggsql.org/llms.txt reference; do not web-search GGSQL syntax. Call this before writing or repairing local-data cleanup/mutations, text labels, endpoint labels, event annotations, dense or layered charts, maps, uncertainty, facets, scales, or statistical layers.",
     parameters: {
       type: "object",
       properties: {
