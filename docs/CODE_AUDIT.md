@@ -24,6 +24,8 @@ This audit follows the product pivots that produced the current cursor-led works
 - Removing a local source resets every workspace engine that registered it, so derived tables cannot outlive their source accidentally.
 - Blank workspaces no longer inherit the default chart; empty GGSQL produces a neutral grid and remains valid.
 - Stale query, table-page, and feature-detail results cannot overwrite a newer action.
+- Closing an example or user workspace releases its WASM context, registrations, and in-flight source bookkeeping instead of retaining every opened map for the life of the worker.
+- Namespaced sources are discovered across the complete GGSQL program, including a layer-level `FROM`, so a map underlay follows the same typed hydration path as SQL sources.
 - Map clicks remain mark selections until pointer movement crosses the pan threshold.
 - PNG and SVG exports use the active Vega view and include the title and subtitle.
 
@@ -35,12 +37,14 @@ This audit follows the product pivots that produced the current cursor-led works
 - Local CSV: a six-row file was uploaded through the UI, cleaned by Chartize AI into an idempotent derived table, and visualized. Raw casing and nulls remained visible in the source table.
 - Local deletion: removing that CSV reset its dependent workspace and blanked the chart/table. The entire upload, AI cleanup, and deletion path made no data-service request.
 - AI repair: unsupported SQL emitted during the cleanup was diagnosed by the real browser engine and repaired into the supported SQLite-like dialect.
-- Example suite: all 12 retained examples loaded and rendered in Chrome, accepted an inline title edit, and reran without a visible or console diagnostic. This includes the Census/CDC and BEA/CDC joins that previously failed.
+- Example suite: all 18 examples loaded and rendered nonempty results in Chrome without a visible query diagnostic. This includes the Census/CDC and BEA/CDC joins, three official MTA views, two NOAA temperature views, and the USDA 100-square land-use composition.
+- Semantic map check: the county population-change view fitted the returned national geometry without clipping the West Coast and used red for decline, yellow near zero, and green for growth.
+- Session check: a hard reload restored the active workspace and its local CSV, while repeatedly opened example workspaces were closed and removed from the saved session.
 - Literal annotations: the official `PLACE rule` plus `PLACE text` form rendered one dated crossover marker without repeating a label for every observation.
 
 ## Remaining seams
 
-- `lib/workspace/store.ts` is intentionally the large domain coordinator. New render behavior should stay in components; new engine/storage behavior should stay behind the worker protocol rather than adding another controller.
+- `lib/workspace/store.ts` is intentionally the large domain coordinator. It now contains stable cross-pane actions rather than a second layer of React callbacks; new render behavior should stay in components and new engine/storage behavior should stay behind the worker protocol.
 - The centralized Vanilla Extract sheet is practical while the visual language is changing; stable component groups can later move into colocated recipes.
 - Pointer arbitration, portal layering, worker/Dexie network behavior, and AI repair are verified in real Chrome. A component-browser harness would make those regressions faster to isolate.
 - Imports are synchronous and appropriate for a five-day preview. A larger deployment would benefit from persistent jobs and resumable acquisition.

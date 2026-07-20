@@ -21,7 +21,7 @@ cd /srv/chartize
 cp .env.example .env
 ```
 
-Set a long random `ADMIN_TOKEN`, keep `AI_TEXT_MODEL=gpt-5.6-terra`, and add the OpenAI key to `/srv/chartize/.env`. Restrict that file with `chmod 600 .env`.
+Set a long random `ADMIN_TOKEN`, keep `AI_TEXT_MODEL=gpt-5.6-luna`, and add the OpenAI key to `/srv/chartize/.env`. Restrict that file with `chmod 600 .env`.
 
 ## 2. Start the private application
 

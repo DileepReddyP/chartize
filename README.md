@@ -19,9 +19,13 @@ React and Zustand do not know that IndexedDB or the data service exists. They se
 
 Next.js exposes a deliberately small data surface on the same origin: catalog metadata, exact dataset-version downloads, and steward-only ingestion and rollback. It never accepts arbitrary SQL from the browser or from Chartize AI.
 
-Chartize AI is a workspace-scoped Terra conversation. It receives the active query, chart description, catalog schemas, user-enabled selection context, and unresolved browser diagnostics. If it needs exact values, it emits a bounded data request; the worker runs it in the same workspace engine and continues the model turn. Generated GGSQL is tried locally, and an engine diagnostic—including the exact failed candidate—can trigger up to two bounded repair passes. A compact local digest of the official GGSQL 0.4.1 documentation and drawing recipes is available to the agent, so ordinary syntax generation does not require a web search.
+Chartize AI is one workspace-scoped, latency-first Luna conversation. It receives the active query, chart description, catalog schemas, user-enabled selection context, and unresolved browser diagnostics. If it needs exact values, it emits a bounded data request; the worker runs it in the same workspace engine and continues the model turn. Generated GGSQL is tried locally, and an engine diagnostic—including the exact failed candidate—can trigger up to two bounded repair passes. A compact local digest of the official GGSQL 0.4.1 documentation and drawing recipes is available to the agent, so ordinary syntax generation does not require a web search.
 
 ![Chartize AI explaining a county population-change map with browser-grounded statistics](./docs/images/chartize-ai-county-context.webp)
+
+## Included examples
+
+The example menu currently contains 18 browser-tested views: polling lines and uncertainty bands; county population, health, income, and GDP maps; descriptive regressions and scenarios; MTA route-delay, route-by-month, and station-accessibility views; NOAA daily and seasonal temperature views; and a USDA 100-square land-use composition. The transit maps use official MTA line/station geometry and NYC borough boundaries, while signed change maps consistently use red for decline, yellow near zero, and green for growth.
 
 ## Stack
 
@@ -31,7 +35,7 @@ Chartize AI is a workspace-scoped Terra conversation. It receives the active que
 - Dexie/IndexedDB, owned only by the worker, for canonical Parquet bytes, local uploads, catalog metadata, and saved workspace documents
 - Explicit Next.js Node routes for catalog, exact Parquet delivery, steward imports, and rollback
 - DuckDB Node Neo for server-side ingestion/catalog metadata; normalized published datasets are Parquet
-- OpenAI Responses API with `gpt-5.6-terra`
+- OpenAI Responses API with latency-first `gpt-5.6-luna`
 - Docker Compose with Caddy, or host Nginx with Basic Auth, on one VPS
 
 ## Run locally
@@ -97,6 +101,6 @@ pnpm --filter @chartize/web test
 pnpm --filter @chartize/web build
 ```
 
-The browser acceptance pass covers cold and warm `chartize:` loads, workspace mutation isolation, and a local CSV upload that Chartize AI cleans into a derived table before source deletion resets that workspace. The CSV path performs no catalog or dataset-artifact request. The bundled example suite is also exercised in Chrome: every example must load, render, accept an inline title edit, and rerun without a UI or console error.
+The browser acceptance pass covers cold and warm `chartize:` loads, workspace mutation isolation, workspace teardown, and a local CSV upload that Chartize AI can clean into a derived table before source deletion resets that workspace. The CSV path performs no catalog or dataset-artifact request. The bundled example suite is also exercised in Chrome: every example must load and render a nonempty result without a UI diagnostic.
 
 The post-pivot boundary review is in [`docs/CODE_AUDIT.md`](./docs/CODE_AUDIT.md).
