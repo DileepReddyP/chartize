@@ -2,7 +2,9 @@
 
 Chartize is a self-hosted, local-first GGSQL visualization studio for civic, polling, Census, election, economic, and geographic data.
 
-The explorer is the product surface. Monaco GGSQL stays primary while sources, fields, visualization parameters, table ranges, chart ranges, and map features expose contextual controls around the current selection. The code, source table, and rendered result live in three resizable panes.
+![Chartize homepage with live polling, transit, world, climate, food, and land-use views](./docs/images/chartize-home.webp)
+
+The explorer is the product surface. Monaco GGSQL stays primary while sources, fields, visualization parameters, table ranges, chart ranges, and map features expose contextual controls around the current selection. On desktop, the code, source table, and rendered result live in three resizable panes; tablet and phone layouts turn them into graph-first tabs with a persistent Chartize AI entry beneath the visualization. A clicked mark or place carries its values in a movable inspector; a dragged range persists with editable corner handles, a compact range label, intersecting-mark count, zoom, copy, CSV export, and Chartize AI handoff.
 
 ![Chartize workspace with GGSQL, source data, and a linked chart](./docs/images/chartize-workspace.webp)
 
@@ -21,11 +23,9 @@ Next.js exposes a deliberately small data surface on the same origin: catalog me
 
 Chartize AI is one workspace-scoped, latency-first Luna conversation. It receives the active query, chart description, catalog schemas, user-enabled selection context, and unresolved browser diagnostics. If it needs exact values, it emits a bounded data request; the worker runs it in the same workspace engine and continues the model turn. Generated GGSQL is tried locally, and an engine diagnostic—including the exact failed candidate—can trigger up to two bounded repair passes. A compact local digest of the official GGSQL 0.4.1 documentation and drawing recipes is available to the agent, so ordinary syntax generation does not require a web search.
 
-![Chartize AI explaining a county population-change map with browser-grounded statistics](./docs/images/chartize-ai-county-context.webp)
-
 ## Included examples
 
-The example menu currently contains 18 browser-tested views: polling lines and uncertainty bands; county population, health, income, and GDP maps; descriptive regressions and scenarios; MTA route-delay, route-by-month, and station-accessibility views; NOAA daily and seasonal temperature views; and a USDA 100-square land-use composition. The transit maps use official MTA line/station geometry and NYC borough boundaries, while signed change maps consistently use red for decline, yellow near zero, and green for growth.
+The example menu currently contains 23 browser-tested views: polling lines and uncertainty bands; county population, health, income, and GDP maps; descriptive regressions and scenarios; MTA route-delay, route-by-month, and station-accessibility views; NOAA daily and seasonal temperature views; worldwide population, development, climate, and food views; and a USDA equal-area land-use atlas shaped like the contiguous United States. The transit map uses official MTA route colors and endpoint badges, with a tapered in-scene key that explains how rider volume controls line width. Signed change maps consistently use red for decline, yellow near zero, and green for growth.
 
 ## Stack
 
@@ -101,6 +101,6 @@ pnpm --filter @chartize/web test
 pnpm --filter @chartize/web build
 ```
 
-The browser acceptance pass covers cold and warm `chartize:` loads, workspace mutation isolation, workspace teardown, and a local CSV upload that Chartize AI can clean into a derived table before source deletion resets that workspace. The CSV path performs no catalog or dataset-artifact request. The bundled example suite is also exercised in Chrome: every example must load and render a nonempty result without a UI diagnostic.
+The browser acceptance pass covers cold and warm `chartize:` loads, workspace mutation isolation, workspace teardown, and a local CSV upload that Chartize AI can clean into a derived table before source deletion resets that workspace. The CSV path performs no catalog or dataset-artifact request. The bundled example suite is also exercised in Chrome: every example must load and render a nonempty result without a UI diagnostic. Direct map clicks, ordinary point clicks, multi-selection, and persistent rectangular selections are checked through the same visible interaction layer used by a person.
 
 The post-pivot boundary review is in [`docs/CODE_AUDIT.md`](./docs/CODE_AUDIT.md).

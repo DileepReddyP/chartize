@@ -28,6 +28,9 @@ This audit follows the product pivots that produced the current cursor-led works
 - Namespaced sources are discovered across the complete GGSQL program, including a layer-level `FROM`, so a map underlay follows the same typed hydration path as SQL sources.
 - Map clicks remain mark selections until pointer movement crosses the pan threshold.
 - PNG and SVG exports use the active Vega view and include the title and subtitle.
+- Point, bar, line, and map selections share one persisted selection model. Selected items receive direct chart labels plus a movable detail inspector; rectangular selections retain corner handles, mark counts, data bounds, copy, CSV export, zoom, and AI context actions.
+- Projected maps may replace an opaque numeric linewidth legend with a Vega-native tapered key, so the visual encoding remains understandable in the live chart and in exported PNG/SVG files.
+- The desktop three-pane editor becomes graph-first tabs at tablet and phone widths. Code and full data remain one tap away, while a persistent Chartize AI entry stays beneath the active graph without introducing document-level scrolling.
 
 ## Browser acceptance evidence
 
@@ -37,10 +40,13 @@ This audit follows the product pivots that produced the current cursor-led works
 - Local CSV: a six-row file was uploaded through the UI, cleaned by Chartize AI into an idempotent derived table, and visualized. Raw casing and nulls remained visible in the source table.
 - Local deletion: removing that CSV reset its dependent workspace and blanked the chart/table. The entire upload, AI cleanup, and deletion path made no data-service request.
 - AI repair: unsupported SQL emitted during the cleanup was diagnosed by the real browser engine and repaired into the supported SQLite-like dialect.
-- Example suite: all 18 examples loaded and rendered nonempty results in Chrome without a visible query diagnostic. This includes the Census/CDC and BEA/CDC joins, three official MTA views, two NOAA temperature views, and the USDA 100-square land-use composition.
+- Example suite: all 23 examples loaded and rendered nonempty results in Chrome without a visible query diagnostic. This includes Census/CDC and BEA/CDC links, three official MTA views, two NOAA weather views, worldwide population/development/climate/food views, and the USDA equal-area land-use atlas.
 - Semantic map check: the county population-change view fitted the returned national geometry without clipping the West Coast and used red for decline, yellow near zero, and green for growth.
 - Session check: a hard reload restored the active workspace and its local CSV, while repeatedly opened example workspaces were closed and removed from the saved session.
 - Literal annotations: the official `PLACE rule` plus `PLACE text` form rendered one dated crossover marker without repeating a label for every observation.
+- Selection semantics: a subway route, a country bubble, and a dragged multi-point range were selected in Chrome. Each retained its highlight and details; the range persisted with four resize handles and exposed zoom, copy, download, clear, and AI handoff actions.
+- Homepage production pass: all eight editorial cards reached a rendered state with no loading/error panel. The approval, subway, world population, development, temperature, weather-calendar, cocoa, and land-use views were visually inspected, and the production console reported no warnings, errors, or browser issues.
+- Responsive pass: the homepage and explorer were inspected at 1440×900, 1024×768, and 390×844. Graph/code/data tabs, compact header controls, the bottom AI entry, the full-height AI conversation, chart titles, date axes, the subway map, and two-line gallery titles remained usable without horizontal or full-page overflow.
 
 ## Remaining seams
 
