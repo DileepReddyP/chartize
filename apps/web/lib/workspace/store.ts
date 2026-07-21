@@ -107,7 +107,11 @@ const MapViewportSchema = z.object({
   panX: z.number().min(-4).max(4),
   panY: z.number().min(-4).max(4),
 });
-const AiMessageSchema = z.object({ role: z.enum(["user", "assistant"]), text: z.string() });
+const AiMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  text: z.string(),
+  approval: z.enum(["local_changes"]).optional(),
+});
 const AiOpenInputSchema = z.object({
   contextNote: z.string().max(4000),
   placement: z.enum(["left", "right"]),
@@ -491,7 +495,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
 
 const initialDraft = makeInitialWorkspaceDraft();
 const initialQuery = serializeDraft(initialDraft);
-const DEFAULT_AI_PREFERENCES: AiResponsePreferences = { hypothesize: true, webSearch: true, dataAccess: true, concise: true, challenge: false, technical: false };
+const DEFAULT_AI_PREFERENCES: AiResponsePreferences = { hypothesize: true, webSearch: true, dataAccess: true, allowLocalChanges: false, concise: true, challenge: false, technical: false };
 const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   id: "workspace-1",
   title: initialDraft.title || "Presidential approval, daily average",
@@ -1234,6 +1238,9 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       aiMessage: "",
       aiHistory: [...branchHistory, { role: "user", text: request }],
       aiPrompt: "",
+      aiPreferences: initialState.aiPreferences.allowLocalChanges
+        ? { ...initialState.aiPreferences, allowLocalChanges: false }
+        : initialState.aiPreferences,
     });
     try {
       const { requestOverride: _requestOverride, retryAssistantIndex: _retryAssistantIndex, ...context } = submission;
@@ -1296,7 +1303,11 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       ].filter(Boolean).join("\n\n");
       set((state) => ({
         aiUsage: usage,
-        aiHistory: [...state.aiHistory, { role: "assistant", text: reply }],
+        aiHistory: [...state.aiHistory, {
+          role: "assistant",
+          text: reply,
+          approval: body.kind === "explanation" ? body.approval : undefined,
+        }],
       }));
     } catch (cause) {
       if (get().activeWorkspaceId === startedWorkspace) {

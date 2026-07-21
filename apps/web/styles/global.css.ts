@@ -274,9 +274,13 @@ globalStyle(".ai-message-body th", { color: vars.color.tealDark, fontWeight: 620
 globalStyle(".ai-message-body strong", { display: "inline", margin: 0, padding: 0, color: vars.color.ink, fontSize: "inherit", fontWeight: 620, letterSpacing: 0, textTransform: "none" });
 globalStyle(".ai-message-body code", { padding: "1px 3px", background: "rgb(60 187 177 / 13%)", color: vars.color.tealDark, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: ".9em" });
 globalStyle(".ai-message-body a", { color: vars.color.tealDark, fontWeight: 590, textDecorationColor: vars.color.teal, textUnderlineOffset: "2px" });
-globalStyle(".ai-message-redo", { gridColumn: 2, justifySelf: "start", display: "flex", alignItems: "center", gap: "4px", marginTop: "3px", padding: "3px 4px 2px 0", border: 0, borderBottom: `1px solid transparent`, background: "transparent", color: vars.color.muted, cursor: "pointer", fontSize: "7.5px", fontWeight: 560, textTransform: "lowercase" });
+globalStyle(".ai-message-actions", { gridColumn: 2, justifySelf: "start", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "5px 11px", marginTop: "3px" });
+globalStyle(".ai-message-redo", { display: "flex", alignItems: "center", gap: "4px", padding: "3px 4px 2px 0", border: 0, borderBottom: `1px solid transparent`, background: "transparent", color: vars.color.muted, cursor: "pointer", fontSize: "7.5px", fontWeight: 560, textTransform: "lowercase" });
 globalStyle(".ai-message-redo:hover", { borderBottomColor: vars.color.teal, color: vars.color.tealDark });
 globalStyle(".ai-message-redo svg", { width: "12px", height: "12px", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" });
+globalStyle(".ai-inline-approval", { display: "flex", alignItems: "center", gap: "5px", color: vars.color.ink, cursor: "pointer", fontSize: "7.5px", fontWeight: 580, lineHeight: 1.2, textTransform: "lowercase" });
+globalStyle(".ai-inline-approval input", { width: "12px", height: "12px", margin: 0, accentColor: vars.color.tealDark });
+globalStyle(".ai-inline-approval:has(input:checked)", { color: vars.color.tealDark });
 globalKeyframes("ai-thinking-pulse", { "0%, 80%, 100%": { transform: "translateY(0)", opacity: .32 }, "40%": { transform: "translateY(-3px)", opacity: 1 } });
 globalKeyframes("ai-context-arrive", { from: { transform: "translateY(7px)", opacity: 0 }, to: { transform: "translateY(0)", opacity: 1 } });
 globalStyle(".ai-thinking", { display: "grid", gridTemplateColumns: "28px auto minmax(0, 1fr) max-content", alignItems: "center", gap: "9px", margin: "0 0 8px", padding: "9px 13px 9px 10px", borderLeft: `3px solid ${vars.color.teal}`, background: "linear-gradient(90deg, rgb(221 245 242 / 68%), rgb(255 255 255 / 35%))", color: vars.color.tealDark, fontSize: "8px", fontWeight: 520 });
@@ -333,6 +337,7 @@ globalStyle(".ai-settings > div > header small", { color: vars.color.muted, font
 globalStyle(".ai-settings > div > label", { display: "grid", gridTemplateColumns: "15px minmax(0, 1fr)", gap: "8px", alignItems: "start", padding: "8px 11px", borderBottom: `1px solid ${vars.color.line}`, cursor: "pointer" });
 globalStyle(".ai-settings > div > label:last-child", { borderBottom: 0 });
 globalStyle(".ai-settings > div > label.ai-data-setting", { background: "rgb(60 187 177 / 8%)" });
+globalStyle(".ai-settings > div > label.ai-local-change-setting", { background: "rgb(238 66 102 / 6%)" });
 globalStyle(".ai-settings input", { margin: "2px 0 0", accentColor: vars.color.tealDark });
 globalStyle(".ai-settings label span", { minWidth: 0, display: "grid", gap: "2px" });
 globalStyle(".ai-settings label b", { color: vars.color.ink, fontSize: "9px", fontWeight: 560, textTransform: "lowercase" });
@@ -340,6 +345,7 @@ globalStyle(".ai-settings-cluster", { display: "flex", alignItems: "center", ove
 globalStyle(".ai-active-options", { display: "flex", alignItems: "center", gap: "1px" });
 globalStyle(".ai-active-options > span", { width: "22px", height: "22px", display: "grid", placeItems: "center", color: vars.color.tealDark });
 globalStyle(".ai-active-options > span:nth-child(3n)", { color: vars.color.amethyst });
+globalStyle(".ai-active-options > .ai-local-change-option", { color: vars.color.watermelon });
 globalStyle(".ai-active-options svg", { width: "13px", height: "13px", fill: "none", stroke: "currentColor", strokeWidth: 1.55, strokeLinecap: "round", strokeLinejoin: "round" });
 globalStyle(".ai-settings label small", { color: vars.color.muted, fontSize: "7.5px", lineHeight: 1.35 });
 globalStyle(".ai-research-ready", { display: "flex", alignItems: "center", gap: "5px", color: vars.color.tealDark, fontSize: "7px", fontWeight: 580, textTransform: "lowercase" });

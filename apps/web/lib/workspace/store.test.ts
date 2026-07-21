@@ -9,7 +9,7 @@ describe("Chartize workspace store", () => {
     expect(parsed.codePaneRatio).toBe(0.56);
     expect(parsed.workspacePane).toBe("chart");
     expect(parsed.draft.axisLabels).toMatchObject({ x: "Poll Date", y: "Approval" });
-    expect(parsed.aiPreferences).toEqual({ hypothesize: true, webSearch: true, dataAccess: true, concise: true, challenge: false, technical: false });
+    expect(parsed.aiPreferences).toEqual({ hypothesize: true, webSearch: true, dataAccess: true, allowLocalChanges: false, concise: true, challenge: false, technical: false });
   });
 
   it("rejects panel sizes outside the Zod constraints", () => {
@@ -203,6 +203,113 @@ describe("Chartize workspace store", () => {
         aiUsage: previous.aiUsage,
         query: previous.query,
         runtimeErrors: previous.runtimeErrors,
+        requestAiTurn: previous.requestAiTurn,
+      });
+    }
+  });
+
+  it("consumes local-change permission after one AI send", async () => {
+    const previous = useChartizeWorkspace.getState();
+    const requestAiTurn = vi.fn(async (_request: AiTurnRequest) => ({
+      kind: "explanation" as const,
+      explanation: "The local change is ready.",
+      assumptions: [],
+      warnings: [],
+      sources: [],
+      researched: false,
+      workspaceActions: [],
+      usage: {
+        models: ["test"],
+        calls: 1,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+      },
+    }));
+
+    useChartizeWorkspace.setState({
+      catalogLoaded: true,
+      aiBusy: false,
+      aiPrompt: "Apply the proposed cleanup.",
+      aiHistory: [],
+      aiPreferences: { ...previous.aiPreferences, allowLocalChanges: true },
+      requestAiTurn,
+    });
+
+    try {
+      await useChartizeWorkspace.getState().submitAiTurn({
+        task: "generate",
+        context: "general",
+        contextNote: "uploaded data",
+        schema: [],
+        availableSources: [],
+        view: { title: "", subtitle: "", sources: [] },
+      });
+
+      expect(requestAiTurn.mock.calls[0]?.[0].preferences.allowLocalChanges).toBe(true);
+      expect(useChartizeWorkspace.getState().aiPreferences.allowLocalChanges).toBe(false);
+    } finally {
+      useChartizeWorkspace.setState({
+        catalogLoaded: previous.catalogLoaded,
+        aiBusy: previous.aiBusy,
+        aiPrompt: previous.aiPrompt,
+        aiHistory: previous.aiHistory,
+        aiUsage: previous.aiUsage,
+        aiPreferences: previous.aiPreferences,
+        requestAiTurn: previous.requestAiTurn,
+      });
+    }
+  });
+
+  it("retains a local-change approval request beside the assistant response", async () => {
+    const previous = useChartizeWorkspace.getState();
+    const requestAiTurn = vi.fn(async (_request: AiTurnRequest) => ({
+      kind: "explanation" as const,
+      approval: "local_changes" as const,
+      explanation: "I prepared the cleanup but did not apply it.",
+      assumptions: [],
+      warnings: [],
+      sources: [],
+      researched: false,
+      workspaceActions: [],
+      usage: {
+        models: ["test"], calls: 1, inputTokens: 0, cachedInputTokens: 0,
+        cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0,
+      },
+    }));
+
+    useChartizeWorkspace.setState({
+      catalogLoaded: true,
+      aiBusy: false,
+      aiPrompt: "Clean this upload.",
+      aiHistory: [],
+      requestAiTurn,
+    });
+
+    try {
+      await useChartizeWorkspace.getState().submitAiTurn({
+        task: "generate",
+        context: "general",
+        contextNote: "uploaded data",
+        schema: [],
+        availableSources: [],
+        view: { title: "", subtitle: "", sources: [] },
+      });
+
+      expect(useChartizeWorkspace.getState().aiHistory.at(-1)).toMatchObject({
+        role: "assistant",
+        approval: "local_changes",
+      });
+    } finally {
+      useChartizeWorkspace.setState({
+        catalogLoaded: previous.catalogLoaded,
+        aiBusy: previous.aiBusy,
+        aiPrompt: previous.aiPrompt,
+        aiHistory: previous.aiHistory,
+        aiUsage: previous.aiUsage,
         requestAiTurn: previous.requestAiTurn,
       });
     }

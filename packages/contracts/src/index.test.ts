@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { AiStreamEventSchema, AiTurnEnvelopeSchema, DatasetManifestSchema, GgsqlDraftSchema } from "./index";
+import { AiExplanationResponseSchema, AiStreamEventSchema, AiTurnEnvelopeSchema, DatasetManifestSchema, GgsqlDraftSchema } from "./index";
 
 describe("GgsqlDraftSchema", () => {
   it("fills safe defaults", () => {
@@ -46,10 +46,30 @@ describe("AI continuation transport", () => {
         sources: [{ title: "MTA", url: "https://www.mta.info/" }],
       },
     };
-    expect(AiTurnEnvelopeSchema.parse(base).researchContext?.memo).toContain("already gathered");
+    const parsed = AiTurnEnvelopeSchema.parse(base);
+    expect(parsed.researchContext?.memo).toContain("already gathered");
+    expect(parsed.preferences.allowLocalChanges).toBe(false);
   });
 
   it("validates streamed progress and final-result envelopes", () => {
     expect(AiStreamEventSchema.parse({ type: "progress", message: "searching sources…" }).type).toBe("progress");
+  });
+
+  it("marks an explanation that needs one-send local-change approval", () => {
+    const response = AiExplanationResponseSchema.parse({
+      kind: "explanation",
+      approval: "local_changes",
+      explanation: "The proposed change was not applied.",
+      assumptions: [],
+      warnings: [],
+      sources: [],
+      researched: false,
+      workspaceActions: [],
+      usage: {
+        models: ["test"], calls: 1, inputTokens: 0, cachedInputTokens: 0,
+        cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0,
+      },
+    });
+    expect(response.approval).toBe("local_changes");
   });
 });

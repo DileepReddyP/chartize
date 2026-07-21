@@ -92,6 +92,11 @@ function RoleIcon({ role }: { role: AiConversationMessage["role"] }) {
   );
 }
 
+function requestsLocalChangeApproval(message: AiConversationMessage) {
+  return message.approval === "local_changes"
+    || /browser-local data (?:change|mutation)[^\n.]{0,100}(?:not apply|without explicit permission)/i.test(message.text);
+}
+
 export function AiAssistant({
   context,
   placement,
@@ -220,17 +225,30 @@ export function AiAssistant({
               <b>{message.role === "user" ? "you" : "chartize ai"}</b>
               <MessageBody text={message.text} />
               {message.role === "assistant" && (
-                <button
-                  type="button"
-                  className="ai-message-redo"
-                  title="Redo from the preceding prompt"
-                  aria-label="Redo this response from the preceding prompt"
-                  onClick={() => onRetry(index)}
-                  disabled={busy}
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7H4V3M4.6 7A8 8 0 0 1 18.8 5.2M16 17h4v4m-.6-4A8 8 0 0 1 5.2 18.8" /></svg>
-                  redo
-                </button>
+                <div className="ai-message-actions">
+                  <button
+                    type="button"
+                    className="ai-message-redo"
+                    title="Redo from the preceding prompt"
+                    aria-label="Redo this response from the preceding prompt"
+                    onClick={() => onRetry(index)}
+                    disabled={busy}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7H4V3M4.6 7A8 8 0 0 1 18.8 5.2M16 17h4v4m-.6-4A8 8 0 0 1 5.2 18.8" /></svg>
+                    redo
+                  </button>
+                  {requestsLocalChangeApproval(message) && (
+                    <label className="ai-inline-approval">
+                      <input
+                        name={`ai-allow-local-changes-${index}`}
+                        type="checkbox"
+                        checked={preferences.allowLocalChanges}
+                        onChange={(event) => onPreferences({ ...preferences, allowLocalChanges: event.target.checked })}
+                      />
+                      <span>allow local changes once</span>
+                    </label>
+                  )}
+                </div>
               )}
             </article>
           ))}
@@ -299,6 +317,9 @@ export function AiAssistant({
                     {preferences.dataAccess && <span title="Browser data access" aria-label="Browser data access is active">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="3" /><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6" /></svg>
                     </span>}
+                    {preferences.allowLocalChanges && <span className="ai-local-change-option" title="Local data changes allowed for the next send" aria-label="Local data changes are allowed for the next send">
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6" /><ellipse cx="12" cy="6" rx="7.5" ry="3" /><path d="m9 15 2 2 4-5" /></svg>
+                    </span>}
                     {preferences.hypothesize && <span title="Helpful hypotheses" aria-label="Hypotheses are active">
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M8.2 14.5A6 6 0 1 1 15.8 14.5c-.9.7-1.3 1.4-1.3 2.5h-5c0-1.1-.4-1.8-1.3-2.5Z" /></svg>
                     </span>}
@@ -315,6 +336,7 @@ export function AiAssistant({
                     <label><input name="ai-hypothesize" type="checkbox" checked={preferences.hypothesize} onChange={(event) => onPreferences({ ...preferences, hypothesize: event.target.checked })} /><span><b>offer hypotheses</b><small>use clearly labeled historical or outside context</small></span></label>
                     <label><input name="ai-web-search" type="checkbox" checked={preferences.webSearch} onChange={(event) => onPreferences({ ...preferences, webSearch: event.target.checked })} /><span><b>search and ground</b><small>look up causal, historical, and current questions on the live web</small></span></label>
                     <label><input name="ai-data-access" type="checkbox" checked={preferences.dataAccess} onChange={(event) => onPreferences({ ...preferences, dataAccess: event.target.checked })} /><span><b>use workspace data</b><small>let the assistant query sources cached in this browser</small></span></label>
+                    <label className="ai-local-change-setting"><input name="ai-allow-local-changes" type="checkbox" checked={preferences.allowLocalChanges} onChange={(event) => onPreferences({ ...preferences, allowLocalChanges: event.target.checked })} /><span><b>allow local data changes</b><small>one send only · write to this workspace's derived browser-local copy</small></span></label>
                     <label><input name="ai-concise" type="checkbox" checked={preferences.concise} onChange={(event) => onPreferences({ ...preferences, concise: event.target.checked })} /><span><b>keep it concise</b><small>lead with the answer and trim repeated caveats</small></span></label>
                     <label><input name="ai-challenge" type="checkbox" checked={preferences.challenge} onChange={(event) => onPreferences({ ...preferences, challenge: event.target.checked })} /><span><b>challenge my framing</b><small>surface weak assumptions and alternative readings</small></span></label>
                     <label><input name="ai-technical" type="checkbox" checked={preferences.technical} onChange={(event) => onPreferences({ ...preferences, technical: event.target.checked })} /><span><b>show technical detail</b><small>include methodology and GGSQL mechanics</small></span></label>

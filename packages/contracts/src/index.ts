@@ -252,10 +252,13 @@ export const AiResponsePreferencesSchema = z.object({
   hypothesize: z.boolean(),
   webSearch: z.boolean(),
   dataAccess: z.boolean().default(true),
+  allowLocalChanges: z.boolean().default(false),
   concise: z.boolean(),
   challenge: z.boolean(),
   technical: z.boolean(),
 });
+
+export const AiApprovalRequestSchema = z.enum(["local_changes"]);
 
 export const AiWorkspaceDataResultSchema = z.object({
   sql: z.string().min(1).max(20_000),
@@ -324,6 +327,7 @@ export const AiDataRequestResponseSchema = z.object({
 export const AiExplanationResponseSchema = z.object({
   kind: z.literal("explanation"),
   explanation: z.string(),
+  approval: AiApprovalRequestSchema.optional(),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
   sources: z.array(AiCitationSchema),
@@ -378,6 +382,7 @@ export type AiWorkspaceAction = z.infer<typeof AiWorkspaceActionSchema>;
 export type AiUsage = z.infer<typeof AiUsageSchema>;
 export type AiDataRequest = z.infer<typeof AiDataRequestSchema>;
 export type AiResponsePreferences = z.infer<typeof AiResponsePreferencesSchema>;
+export type AiApprovalRequest = z.infer<typeof AiApprovalRequestSchema>;
 export type AiWorkspaceDataResult = z.infer<typeof AiWorkspaceDataResultSchema>;
 export type AiTurnRequest = z.infer<typeof AiTurnRequestSchema>;
 export type AiRuntimeError = z.infer<typeof AiRuntimeErrorSchema>;
