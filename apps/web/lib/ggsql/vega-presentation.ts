@@ -99,6 +99,81 @@ function withoutExplicitlyUntitledAxis(channel: unknown) {
   return value.title === null ? { ...value, axis: null } : channel;
 }
 
+function withSaneInlineLogDomain(channel: unknown, rows: Array<Record<string, unknown>>) {
+  if (!channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
+  const value = channel as Record<string, unknown>;
+  const field = typeof value.field === "string" ? value.field : "";
+  const scale = value.scale;
+  if (!field || !scale || typeof scale !== "object" || Array.isArray(scale)) return channel;
+  const scaleValue = scale as Record<string, unknown>;
+  const domain = scaleValue.domain;
+  if (scaleValue.type !== "log" || !Array.isArray(domain) || domain.length < 2) return channel;
+  const values = rows
+    .map((row) => typeof row[field] === "number" ? row[field] as number : Number(row[field]))
+    .filter((entry) => Number.isFinite(entry) && entry > 0);
+  if (!values.length) return channel;
+  const dataMinimum = Math.min(...values);
+  const dataMaximum = Math.max(...values);
+  const numericDomain = domain.filter((entry): entry is number => typeof entry === "number");
+  const invalidDomain = numericDomain.length < 2;
+  const domainMinimum = invalidDomain ? dataMinimum : Math.min(...numericDomain);
+  const domainMaximum = invalidDomain ? dataMaximum : Math.max(...numericDomain);
+  const brokenMinimum = invalidDomain || !Number.isFinite(domainMinimum) || domainMinimum <= 0 || domainMinimum < dataMinimum / 1_000_000;
+  const wastefulMaximum = invalidDomain || (Number.isFinite(domainMaximum) && domainMaximum > dataMaximum * 5);
+  if (!brokenMinimum && !wastefulMaximum) return channel;
+
+  const axis = value.axis;
+  const repairedAxis = axis && typeof axis === "object" && !Array.isArray(axis)
+    ? (() => {
+        const { labelExpr: _labelExpr, values: _values, ...rest } = axis as Record<string, unknown>;
+        return { ...rest, format: rest.format ?? "~s" };
+      })()
+    : axis;
+  return {
+    ...value,
+    ...(repairedAxis === undefined ? {} : { axis: repairedAxis }),
+    scale: {
+      ...scaleValue,
+      domain: [brokenMinimum ? dataMinimum : domainMinimum, wastefulMaximum ? dataMaximum : domainMaximum],
+      nice: false,
+    },
+  };
+}
+
+function withCompactLargeNumberLegend(channel: unknown, rows: Array<Record<string, unknown>>) {
+  if (!channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
+  const value = channel as Record<string, unknown>;
+  const field = typeof value.field === "string" ? value.field : "";
+  if (!field || value.legend === null) return channel;
+  const numbers = rows
+    .map((row) => row[field])
+    .filter((entry) => entry !== null && entry !== undefined && entry !== "")
+    .map(Number)
+    .filter((entry) => Number.isFinite(entry));
+  if (!numbers.length || Math.max(...numbers.map(Math.abs)) < 1_000_000) return channel;
+  const legend = value.legend && typeof value.legend === "object" && !Array.isArray(value.legend)
+    ? value.legend as Record<string, unknown>
+    : {};
+  const { labelExpr: _generatedLabels, ...rest } = legend;
+  return { ...value, legend: { ...rest, format: "~s" } };
+}
+
+function withSparseDenseDiscreteAxis(channel: unknown, rows: Array<Record<string, unknown>>) {
+  if (!channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
+  const value = channel as Record<string, unknown>;
+  if (!["nominal", "ordinal"].includes(String(value.type)) || typeof value.field !== "string" || value.axis === null) return channel;
+  const unique = [...new Set(rows.map((row) => row[value.field as string]).filter((entry) => entry !== null && entry !== undefined))];
+  if (unique.length <= 36) return channel;
+  const stride = Math.ceil(unique.length / 10);
+  const values = unique.filter((_entry, index) => index % stride === 0);
+  const last = unique.at(-1);
+  if (last !== undefined && values.at(-1) !== last) values.push(last);
+  const axis = value.axis && typeof value.axis === "object" && !Array.isArray(value.axis)
+    ? value.axis as Record<string, unknown>
+    : {};
+  return { ...value, axis: { ...axis, values, labelAngle: 0, labelOverlap: "greedy", labelSeparation: 8 } };
+}
+
 function makeThresholdStroke(y: { scale?: { domain?: unknown } }, threshold: ChartThreshold) {
   const domain = y.scale?.domain;
   if (!Array.isArray(domain) || domain.length < 2 || !domain.every((value) => typeof value === "number")) {
@@ -150,7 +225,12 @@ function styleSpecNode(
   threshold?: ChartThreshold,
   domains?: ChartDomains,
   legendTitles?: ChartLegendTitles,
+  inheritedRows: Array<Record<string, unknown>> = [],
 ): Record<string, unknown> {
+  const data = node.data as { values?: unknown } | undefined;
+  const rows = Array.isArray(data?.values)
+    ? data.values.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : inheritedRows;
   const encoding = node.encoding as Record<string, unknown> | undefined;
   const mark = typeof node.mark === "string" ? node.mark : (node.mark as { type?: string } | undefined)?.type;
   const y = encoding?.y as { field?: unknown; title?: unknown; scale?: { domain?: unknown } } | undefined;
@@ -181,11 +261,11 @@ function styleSpecNode(
           text: encoding.text && typeof encoding.text === "object" && !Array.isArray(encoding.text)
             ? { ...(encoding.text as Record<string, unknown>), type: "nominal" }
             : encoding.text,
-          x: withDomain(withoutExplicitlyUntitledAxis(withOrdinalDateLabels(encoding.x)), domains?.x),
-          y: withDomain(withoutExplicitlyUntitledAxis(encoding.y), domains?.y),
+          x: withDomain(withoutExplicitlyUntitledAxis(withSparseDenseDiscreteAxis(withOrdinalDateLabels(withSaneInlineLogDomain(encoding.x, rows)), rows)), domains?.x),
+          y: withDomain(withoutExplicitlyUntitledAxis(withSaneInlineLogDomain(encoding.y, rows)), domains?.y),
           color: withLegendTitle(replaceDefaultBlack(encoding.color, chartColors.tealDark), legendTitles?.colour, ["color", "colour"]),
-          fill: withLegendTitle(withSignedDivergingMidpoint(replaceDefaultBlack(encoding.fill, chartColors.teal)), legendTitles?.fill, ["fill"]),
-          size: withLegendTitle(encoding.size, legendTitles?.size, ["size"]),
+          fill: withLegendTitle(withCompactLargeNumberLegend(withSignedDivergingMidpoint(replaceDefaultBlack(encoding.fill, chartColors.teal)), rows), legendTitles?.fill, ["fill"]),
+          size: withLegendTitle(withCompactLargeNumberLegend(encoding.size, rows), legendTitles?.size, ["size"]),
           shape: withLegendTitle(encoding.shape, legendTitles?.shape, ["shape"]),
           stroke: withLegendTitle(thresholdStroke ?? replaceDefaultBlack(withoutDuplicateTextStroke(encoding), chartColors.tealDark), legendTitles?.colour, ["stroke", "color", "colour"]),
           strokeDash: withLegendTitle(encoding.strokeDash, legendTitles?.linetype, ["strokedash", "linetype"]),
@@ -198,13 +278,127 @@ function styleSpecNode(
   for (const key of ["layer", "concat", "hconcat", "vconcat"] as const) {
     const children = styled[key];
     if (Array.isArray(children)) {
-      styled[key] = children.map((child) => child && typeof child === "object" ? styleSpecNode(child as Record<string, unknown>, threshold, domains, legendTitles) : child);
+      styled[key] = children.map((child) => child && typeof child === "object" ? styleSpecNode(child as Record<string, unknown>, threshold, domains, legendTitles, rows) : child);
     }
   }
   if (styled.spec && typeof styled.spec === "object" && !Array.isArray(styled.spec)) {
-    styled.spec = styleSpecNode(styled.spec as Record<string, unknown>, threshold, domains, legendTitles);
+    styled.spec = styleSpecNode(styled.spec as Record<string, unknown>, threshold, domains, legendTitles, rows);
   }
   return styled;
+}
+
+interface TaperedLinewidthKey {
+  title: string;
+  minimum: number;
+  maximum: number;
+}
+
+/**
+ * Vega's symbol legend for a quantitative geoshape stroke width can collapse
+ * to bare numeric labels because the source mark is unfilled. A small trail
+ * is both more literal and more compact: its width grows continuously from
+ * the observed minimum to maximum and it remains part of exported SVG/PNG.
+ */
+function withTaperedLinewidthKey(input: Record<string, unknown>) {
+  if (!input.projection || !Array.isArray(input.layer)) return input;
+  let key: TaperedLinewidthKey | undefined;
+  const stripLegend = (
+    node: Record<string, unknown>,
+    inheritedRows: Array<Record<string, unknown>>,
+  ): Record<string, unknown> => {
+    const data = node.data as { values?: unknown } | undefined;
+    const rows = Array.isArray(data?.values)
+      ? data.values.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+      : inheritedRows;
+    const encoding = node.encoding as Record<string, unknown> | undefined;
+    const width = encoding?.strokeWidth;
+    let next = node;
+    if (!key && width && typeof width === "object" && !Array.isArray(width)) {
+      const channel = width as Record<string, unknown>;
+      const field = typeof channel.field === "string" ? channel.field : "";
+      const values = field
+        ? rows
+            .map((row) => row[field])
+            .filter((value) => value !== null && value !== undefined && value !== "")
+            .map(Number)
+            .filter((value) => Number.isFinite(value))
+        : [];
+      if (values.length && channel.legend !== null) {
+        key = {
+          title: typeof channel.title === "string" && channel.title.trim() ? channel.title.trim() : "Line width",
+          minimum: Math.min(...values),
+          maximum: Math.max(...values),
+        };
+        next = { ...node, encoding: { ...encoding, strokeWidth: { ...channel, legend: null } } };
+      }
+    }
+    for (const collection of ["layer", "concat", "hconcat", "vconcat"] as const) {
+      const children = next[collection];
+      if (Array.isArray(children)) {
+        next = {
+          ...next,
+          [collection]: children.map((child) => child && typeof child === "object"
+            ? stripLegend(child as Record<string, unknown>, rows)
+            : child),
+        };
+      }
+    }
+    return next;
+  };
+
+  const rows = (input.data as { values?: unknown } | undefined)?.values;
+  const normalizedRows = Array.isArray(rows)
+    ? rows.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const stripped = stripLegend(input, normalizedRows);
+  if (!key || key.minimum === key.maximum || !Array.isArray(stripped.layer)) return stripped;
+
+  const precision = key.maximum - key.minimum < 10 ? 1 : 0;
+  const number = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: precision });
+  const x = (field: string) => ({ field, type: "quantitative", scale: { domain: [0, 1] }, axis: null });
+  const y = (field: string) => ({ field, type: "quantitative", scale: { domain: [0, 1] }, axis: null });
+  const legendLayers: Array<Record<string, unknown>> = [
+    {
+      description: "linewidth legend title",
+      data: { values: [{ __ggsql_legend_x__: .775, __ggsql_legend_y__: .155, __ggsql_legend_label__: key.title }] },
+      mark: { type: "text", align: "left", baseline: "middle", color: chartColors.ink, font: "system-ui", fontSize: 11, fontWeight: 550 },
+      encoding: { x: x("__ggsql_legend_x__"), y: y("__ggsql_legend_y__"), text: { field: "__ggsql_legend_label__", type: "nominal" } },
+    },
+    {
+      description: "tapered linewidth legend",
+      data: { values: [
+        { __ggsql_legend_x__: .79, __ggsql_legend_y__: .095, __ggsql_legend_width__: key.minimum },
+        { __ggsql_legend_x__: .965, __ggsql_legend_y__: .095, __ggsql_legend_width__: key.maximum },
+      ] },
+      mark: { type: "trail", color: chartColors.muted },
+      encoding: {
+        x: x("__ggsql_legend_x__"),
+        y: y("__ggsql_legend_y__"),
+        size: { field: "__ggsql_legend_width__", type: "quantitative", scale: { domain: [key.minimum, key.maximum], range: [1.5, 11] }, legend: null },
+        order: { field: "__ggsql_legend_x__", type: "quantitative" },
+      },
+    },
+    {
+      description: "linewidth legend values",
+      data: { values: [
+        { __ggsql_legend_x__: .79, __ggsql_legend_y__: .055, __ggsql_legend_label__: number(key.minimum) },
+        { __ggsql_legend_x__: .965, __ggsql_legend_y__: .055, __ggsql_legend_label__: number(key.maximum) },
+      ] },
+      mark: { type: "text", align: "center", baseline: "middle", color: chartColors.muted, font: "ui-monospace", fontSize: 8 },
+      encoding: { x: x("__ggsql_legend_x__"), y: y("__ggsql_legend_y__"), text: { field: "__ggsql_legend_label__", type: "nominal" } },
+    },
+  ];
+  const resolve = stripped.resolve && typeof stripped.resolve === "object" && !Array.isArray(stripped.resolve)
+    ? stripped.resolve as Record<string, unknown>
+    : {};
+  const scale = resolve.scale && typeof resolve.scale === "object" && !Array.isArray(resolve.scale)
+    ? resolve.scale as Record<string, unknown>
+    : {};
+  return {
+    ...stripped,
+    layer: [...stripped.layer, ...legendLayers],
+    resolve: { ...resolve, scale: { ...scale, x: "independent", y: "independent", size: "independent" } },
+  };
 }
 
 function mapPointFields(node: Record<string, unknown>, fields = new Map<string, MapPointFields>()) {
@@ -232,7 +426,7 @@ function mapPointFields(node: Record<string, unknown>, fields = new Map<string, 
 }
 
 function withChartizePresentation(spec: Record<string, unknown>, threshold?: ChartThreshold, domains?: ChartDomains, legendTitles?: ChartLegendTitles) {
-  const normalized = styleSpecNode(spec, threshold, domains, legendTitles);
+  const normalized = withTaperedLinewidthKey(styleSpecNode(spec, threshold, domains, legendTitles));
   delete normalized.title;
   const config = (normalized.config ?? {}) as Record<string, unknown>;
   const axis = (config.axis ?? {}) as Record<string, unknown>;
@@ -247,6 +441,9 @@ function withChartizePresentation(spec: Record<string, unknown>, threshold?: Cha
       gridWidth: 1,
       labelColor: chartColors.muted,
       labelFont: "system-ui",
+      labelLimit: 130,
+      labelOverlap: "greedy",
+      labelSeparation: 8,
       tickColor: chartColors.line,
       titleColor: chartColors.ink,
       titleFont: "system-ui",

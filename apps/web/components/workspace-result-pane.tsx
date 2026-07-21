@@ -159,7 +159,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
               </details>
               <details className="preview-menu" data-dismiss-on-outside>
                 <summary className="icon-button tools-action" title="Tools" aria-label="Tools"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg></summary>
-                <div><span>view tools</span><button onClick={() => void state.shareWorkspace()}>copy share url</button><button onClick={state.resetChartZoom}>fit full chart</button></div>
+                <div><span>view tools</span><button onClick={() => void state.shareWorkspace()}>copy share url</button><button onClick={view.isMap ? state.resetMapViewport : state.resetChartZoom}>fit full view</button></div>
               </details>
             </div>
           </div>
@@ -196,6 +196,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
                       onMapZoom={state.zoomMap}
                       onChartZoom={gestureZoom}
                       onChartPan={gesturePan}
+                      onResetView={view.isMap ? state.resetMapViewport : state.resetChartZoom}
                       onRegionSelect={state.selectChartRegion}
                       onMapFeatureSelect={state.selectMapFeature}
                       onVisualItemsSelect={state.setMapFeatureSelections}
@@ -223,8 +224,26 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
           {state.showLoadingMask && <div className="pane-loading-mask" role="status"><div className="spinner" /><span>running query…</span></div>}
         </div>
 
+        <label className="compact-chart-ai-entry">
+          <span aria-hidden="true">✦</span>
+          <input
+            readOnly
+            id="chartize-compact-ai-entry"
+            name="chartize-compact-ai-entry"
+            aria-label="Ask Chartize about this visualization"
+            placeholder={view.isBlankWorkspace ? "Describe the graph, map, or model you want…" : "Ask what this means, or tell Chartize what to change…"}
+            onFocus={(event) => promoteAi(
+              `${view.aiViewNote} ${view.isBlankWorkspace ? "The visualization canvas is blank; help build from the available sources." : "The current chart, query, source catalog, and any active selection are attached."}`,
+              "left",
+              view.isBlankWorkspace ? "general" : "chart",
+              event.currentTarget,
+            )}
+          />
+          <b>ask</b>
+        </label>
+
         {state.aiMessage && !state.aiOpen && <button className="status-toast" type="button" onClick={() => state.setAiMessage("")}>{state.aiMessage}</button>}
-        <footer className="chart-footer"><span>{view.activeSources.join(" + ")}</span><span><i className={`status-dot ${state.engineState}`} /> browser data engine</span></footer>
+        <footer className="chart-footer"><span>{view.activeSources.join(" + ")}</span><span><i className={`status-dot ${state.engineState}`} /> {state.engineState === "loading" ? "preparing data" : state.engineState === "error" ? "data unavailable" : "data ready"}</span></footer>
       </article>
     </section>
   );

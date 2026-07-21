@@ -13,6 +13,7 @@ describe("Chartize Vega presentation", () => {
     }, undefined, { x: ["2026-01-01", "2026-02-01"] });
     expect(spec.title).toBeUndefined();
     expect((spec.encoding as { x: { scale: { domain: unknown[] } } }).x.scale.domain).toEqual(["2026-01-01", "2026-02-01"]);
+    expect((spec.config as { axis: Record<string, unknown> }).axis).toMatchObject({ labelLimit: 130, labelOverlap: "greedy", labelSeparation: 8 });
   });
 
   it("colors a single approval line red below 50 and teal above it", () => {
@@ -81,6 +82,30 @@ describe("Chartize Vega presentation", () => {
     expect(layer.encoding.size.title).toBe("Sample size");
   });
 
+  it("replaces a map linewidth legend with an exportable tapered key", () => {
+    const spec = presentChartSpec({
+      data: { values: [{ geometry: { type: "LineString", coordinates: [[-74, 40], [-73, 41]] }, riders: null }, { geometry: { type: "LineString", coordinates: [[-74, 40], [-73, 41]] }, riders: 22 }, { geometry: { type: "LineString", coordinates: [[-74, 40], [-73, 41]] }, riders: 75 }] },
+      projection: { type: "mercator" },
+      layer: [{
+        mark: "geoshape",
+        encoding: {
+          shape: { field: "geometry", type: "geojson" },
+          strokeWidth: { field: "riders", title: "linewidth", type: "quantitative" },
+        },
+      }],
+    }, undefined, undefined, undefined, { linewidth: "Peak riders (M)" });
+    const layers = spec.layer as Array<{ description?: string; encoding?: { strokeWidth?: { title: string; legend: unknown } } }>;
+    const linewidth = layers[0]!.encoding!.strokeWidth!;
+
+    expect(linewidth.title).toBe("Peak riders (M)");
+    expect(linewidth.legend).toBeNull();
+    expect(layers.some(({ description }) => description === "tapered linewidth legend")).toBe(true);
+    expect(layers.some(({ description }) => description === "linewidth legend values")).toBe(true);
+    expect(layers.some(({ description }) => description === "linewidth legend background")).toBe(false);
+    const labels = layers.find(({ description }) => description === "linewidth legend values") as unknown as { data: { values: Array<{ __ggsql_legend_label__: string }> } };
+    expect(labels.data.values.map(({ __ggsql_legend_label__ }) => __ggsql_legend_label__)).toEqual(["22", "75"]);
+  });
+
   it("centers a red-yellow-green scale on zero for signed map values", () => {
     const spec = presentChartSpec({
       mark: "rect",
@@ -104,6 +129,76 @@ describe("Chartize Vega presentation", () => {
     });
     expect((spec.encoding as { x: { axis: unknown }; y: { axis: unknown } }).x.axis).toBeNull();
     expect((spec.encoding as { x: { axis: unknown }; y: { axis: unknown } }).y.axis).toBeNull();
+  });
+
+  it("repairs GGSQL log domains that begin at the smallest positive float", () => {
+    const spec = presentChartSpec({
+      data: { values: [
+        { x: 1_983, y: 66 },
+        { x: 20_481, y: 79 },
+        { x: 136_500, y: 84 },
+      ] },
+      mark: "point",
+      encoding: {
+        x: {
+          field: "x",
+          type: "quantitative",
+          axis: { values: [5e-308, 1e-47, 100_000], labelExpr: "broken generated labels" },
+          scale: { type: "log", domain: [Number.MIN_VALUE, 136_500], zero: false },
+        },
+        y: { field: "y", type: "quantitative" },
+      },
+    });
+    const x = (spec.encoding as { x: { axis: Record<string, unknown>; scale: { domain: number[]; nice: boolean } } }).x;
+    expect(x.scale.domain).toEqual([1_983, 136_500]);
+    expect(x.scale.nice).toBe(false);
+    expect(x.axis.values).toBeUndefined();
+    expect(x.axis.labelExpr).toBeUndefined();
+    expect(x.axis.format).toBe("~s");
+  });
+
+  it("removes excessive empty space from an inferred logarithmic domain", () => {
+    const spec = presentChartSpec({
+      data: { values: [{ income: 2_000 }, { income: 136_500 }] },
+      mark: "point",
+      encoding: { x: { field: "income", scale: { type: "log", domain: [1_000, 1_000_000] } } },
+    });
+    expect((spec.encoding as { x: { scale: { domain: number[] } } }).x.scale.domain).toEqual([1_000, 136_500]);
+  });
+
+  it("repairs a nonnumeric logarithmic domain from its inline values", () => {
+    const spec = presentChartSpec({
+      data: { values: [{ income: 2_000 }, { income: 136_500 }] },
+      mark: "point",
+      encoding: { x: { field: "income", scale: { type: "log", domain: ["minimum", "maximum"] } } },
+    });
+    expect((spec.encoding as { x: { scale: { domain: number[] } } }).x.scale.domain).toEqual([2_000, 136_500]);
+  });
+
+  it("formats million-scale quantitative legends without generated raw-number labels", () => {
+    const spec = presentChartSpec({
+      data: { values: [{ population: 1_000_000 }, { population: 8_000_000_000 }] },
+      mark: "point",
+      encoding: {
+        size: { field: "population", legend: { labelExpr: "datum.label", values: [1_000_000, 8_000_000_000] } },
+      },
+    });
+    const legend = (spec.encoding as { size: { legend: Record<string, unknown> } }).size.legend;
+    expect(legend.format).toBe("~s");
+    expect(legend.labelExpr).toBeUndefined();
+  });
+
+  it("keeps dense discrete time axes readable", () => {
+    const years = Array.from({ length: 86 }, (_entry, index) => String(1940 + index));
+    const spec = presentChartSpec({
+      data: { values: years.map((year) => ({ year, anomaly: 0 })) },
+      mark: "bar",
+      encoding: { x: { field: "year", type: "nominal", axis: { labelAngle: -90 } }, y: { field: "anomaly" } },
+    });
+    const axis = (spec.encoding as { x: { axis: { values: string[]; labelAngle: number } } }).x.axis;
+    expect(axis.labelAngle).toBe(0);
+    expect(axis.values.length).toBeLessThanOrEqual(11);
+    expect(axis.values.at(-1)).toBe("2025");
   });
 
   it("preserves GGSQL's projected camera so text and geoshapes share one translation", () => {

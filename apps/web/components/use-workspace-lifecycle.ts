@@ -20,6 +20,7 @@ function decodeShareState(value: string) {
 export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) {
   const firstDraft = useMemo(() => makeInitialWorkspaceDraft(), []);
   const initialized = useRef(false);
+  const openedAiFromUrl = useRef(false);
   const [sessionReady, setSessionReady] = useState(false);
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     engineState: workspace.engineState,
@@ -51,6 +52,20 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
         state.setDraft(draft);
         state.setQuery(query);
         await state.runQuery(query);
+      } else if (new URLSearchParams(window.location.search).get("workspace") === "active") {
+        const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+        const loadedExploreDirectly = (() => {
+          try { return !navigation || new URL(navigation.name).pathname === window.location.pathname; }
+          catch { return true; }
+        })();
+        // A client-side home-card handoff already put the requested workspace
+        // in memory. A hard refresh has a fresh store, so restore the autosave
+        // before honoring the same `workspace=active` URL.
+        if (loadedExploreDirectly && await state.restoreWorkspaceSession()) {
+          await useChartizeWorkspace.getState().runQuery();
+        } else {
+          await state.runQuery();
+        }
       } else if (await state.restoreWorkspaceSession()) {
         await useChartizeWorkspace.getState().runQuery();
       } else {
@@ -152,9 +167,13 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
   }, []);
 
   useEffect(() => {
+    if (!sessionReady || openedAiFromUrl.current) return;
     const openAssistant = () => promoteAi(`${aiViewNote} Current query and source catalog are attached.`, "left", "general");
     window.addEventListener("chartize:open-ai", openAssistant);
-    if (new URLSearchParams(window.location.search).get("ai") === "general") openAssistant();
+    if (new URLSearchParams(window.location.search).get("ai") === "general") {
+      openedAiFromUrl.current = true;
+      openAssistant();
+    }
     return () => window.removeEventListener("chartize:open-ai", openAssistant);
-  }, [aiViewNote, promoteAi]);
+  }, [aiViewNote, promoteAi, sessionReady]);
 }

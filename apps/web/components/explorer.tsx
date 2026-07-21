@@ -17,8 +17,10 @@ export function Explorer() {
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     leftPaneRatio: workspace.leftPaneRatio,
     codePaneRatio: workspace.codePaneRatio,
+    workspacePane: workspace.workspacePane,
     setLeftPaneRatio: workspace.setLeftPaneRatio,
     setCodePaneRatio: workspace.setCodePaneRatio,
+    setWorkspacePane: workspace.setWorkspacePane,
     setFocusArea: workspace.setFocusArea,
     openAi: workspace.openAi,
   })));
@@ -77,10 +79,26 @@ export function Explorer() {
   return (
     <main className="workbench" ref={workbenchRef}>
       <div
-        className="workbench-grid dwim-layout"
+        className={`workbench-grid dwim-layout workspace-pane-${state.workspacePane}`}
+        data-workspace-pane={state.workspacePane}
         ref={workbenchGridRef}
         style={{ "--left-pane-size": `${state.leftPaneRatio * 100}%` } as CSSProperties}
       >
+        <nav className="compact-workspace-tabs" aria-label="Workspace views" role="tablist">
+          {(["chart", "code", "data"] as const).map((pane, index) => (
+            <button
+              key={pane}
+              type="button"
+              role="tab"
+              aria-selected={state.workspacePane === pane}
+              className={state.workspacePane === pane ? "active" : ""}
+              onClick={() => state.setWorkspacePane(pane)}
+            >
+              <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              <b>{pane === "chart" ? "graph" : pane === "code" ? "code" : "data"}</b>
+            </button>
+          ))}
+        </nav>
         <aside className="editor-workspace" aria-label="GGSQL editor">
           <div
             className="editor-stack"

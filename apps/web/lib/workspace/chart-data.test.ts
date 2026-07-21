@@ -133,6 +133,37 @@ describe("chart workspace data", () => {
     });
   });
 
+  it("uses the specific country rather than its broad region as a point label", () => {
+    expect(visualItemSelectionFromDatum({
+      region: "North America",
+      country: "Saint Kitts and Nevis",
+      gdp_per_capita: 30_616.578,
+      life_expectancy: 72.145,
+    }, { x: 220, y: 140 })).toMatchObject({
+      title: "Saint Kitts and Nevis",
+    });
+  });
+
+  it("keeps selected-item details analytical rather than renderer-specific", () => {
+    expect(visualItemSelectionFromDatum({
+      route_label: "3",
+      route: "3",
+      service_name: "7 Avenue Express",
+      extra_minutes: "1.4672298137302937",
+      passenger_millions: "35.85316471777344",
+      route_text_tone: "light",
+      route_color: "#EE352E",
+    }, { x: 220, y: 140 })).toMatchObject({
+      title: "7 Avenue Express",
+      values: [
+        { field: "route", value: "3" },
+        { field: "service_name", value: "7 Avenue Express" },
+        { field: "extra_minutes", value: "1.467" },
+        { field: "passenger_millions", value: "35.853" },
+      ],
+    });
+  });
+
   it("adds computed query aliases to the visual builder fields", () => {
     const fields = visualFieldsFromPreview(
       [{ name: "geometry", dataType: "GEOMETRY", nullable: false, semanticType: "geometry" }],

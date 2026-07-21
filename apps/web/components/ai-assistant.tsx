@@ -1,6 +1,5 @@
 "use client";
 
-import type { AiUsage } from "@chartize/contracts";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
@@ -19,7 +18,6 @@ interface AiAssistantProps {
   ready: boolean;
   status: string;
   history: AiConversationMessage[];
-  usage: AiUsage | null;
   focusVersion: number;
   includeSamples: boolean;
   preferences: AiResponsePreferences;
@@ -65,17 +63,6 @@ function MessageBody({ text }: { text: string }) {
   );
 }
 
-function compactTokenCount(value: number) {
-  if (value < 1_000) return String(value);
-  return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)}k`;
-}
-
-function usageLabel(usage: AiUsage | null) {
-  if (!usage) return "";
-  const models = usage.models.map((model) => model.replace(/^gpt-5\.6-/, "")).join(" + ");
-  return `${models} · ${compactTokenCount(usage.totalTokens)} tokens`;
-}
-
 function ThinkingElapsed() {
   const [elapsedMs, setElapsedMs] = useState(0);
   useEffect(() => {
@@ -113,7 +100,6 @@ export function AiAssistant({
   ready,
   status,
   history,
-  usage,
   focusVersion,
   includeSamples,
   preferences,
@@ -201,10 +187,6 @@ export function AiAssistant({
     return () => cancelAnimationFrame(frame);
   }, [composerMode]);
 
-  const usageSummary = usageLabel(usage);
-  const usageTitle = usage
-    ? `${usage.calls} API call${usage.calls === 1 ? "" : "s"} · ${usage.inputTokens.toLocaleString()} input · ${usage.cachedInputTokens.toLocaleString()} cached · ${usage.outputTokens.toLocaleString()} output · ${usage.reasoningTokens.toLocaleString()} reasoning`
-    : undefined;
   const submit = () => {
     if (busy || !prompt.trim() || !ready) return;
     scrollToLatest("smooth");
@@ -226,7 +208,7 @@ export function AiAssistant({
         <header className="ai-surface-header">
           <div className="ai-title-lockup">
             <span className="ai-spark" aria-hidden="true">ai</span>
-            <div><h2>chartize ai</h2><small title={usageTitle}>{copy.mode}{usageSummary ? ` · ${usageSummary}` : ""}</small></div>
+            <div><h2>chartize ai</h2><small>{copy.mode}</small></div>
           </div>
           <button type="button" title="Close" aria-label="Close AI conversation" onClick={onClose}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
@@ -302,7 +284,7 @@ export function AiAssistant({
               <div className="ai-composer-tools">
                 <label className="ai-attach-data" title="Attach browser-local data">
                   <AttachmentIcon /><span>attach data</span>
-                  <input aria-label="Attach data files to this conversation" type="file" multiple accept={DATA_FILE_ACCEPT} onChange={(event) => { void onFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
+                  <input name="chartize-conversation-data-files" aria-label="Attach data files to this conversation" type="file" multiple accept={DATA_FILE_ACCEPT} onChange={(event) => { void onFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
                 </label>
                 {!ready && <span className="ai-catalog-loading">loading data catalog…</span>}
               </div>

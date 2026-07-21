@@ -1,7 +1,7 @@
 "use client";
 
 import type { FieldMetadata } from "@chartize/contracts";
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { sourceAlias, type QuerySection, type VisualPointState } from "@/lib/ggsql/query-context";
 import { fieldsForAesthetic, guidanceForMark, patchForMark, type VisualAesthetic } from "@/lib/ggsql/visual-guidance";
 import type { WorkspaceSource } from "@/lib/workspace/view-model";
@@ -53,6 +53,60 @@ export function SourceTiles({ sources, activeSources, onSource, onRemoveSource, 
   );
 }
 
+interface SearchableSourcePickerProps extends Omit<SourceTilesProps, "compact" | "onRemoveSource"> {}
+
+export function SearchableSourcePicker({ sources, activeSources, onSource, loading }: SearchableSourcePickerProps) {
+  const [search, setSearch] = useState("");
+  const normalized = search.trim().toLocaleLowerCase();
+  const visible = useMemo(() => sources
+    .filter((source) => !normalized || [source.title, source.id, source.description, source.namespace]
+      .some((value) => value.toLocaleLowerCase().includes(normalized)))
+    .sort((left, right) => {
+      const selectedOrder = Number(activeSources.includes(right.id)) - Number(activeSources.includes(left.id));
+      return selectedOrder || left.title.localeCompare(right.title);
+    }), [activeSources, normalized, sources]);
+
+  return (
+    <div className="dwim-source-search" aria-busy={loading}>
+      <label>
+        <span aria-hidden="true">⌕</span>
+        <input
+          name="source-search"
+          type="search"
+          value={search}
+          placeholder="search datasets, namespaces, or descriptions"
+          autoComplete="off"
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        <small>{visible.length}/{sources.length}</small>
+      </label>
+      <div className="dwim-source-results" role="listbox" aria-label="Available data sources" aria-multiselectable="true">
+        {visible.map((source) => {
+          const active = activeSources.includes(source.id);
+          return (
+            <button
+              key={source.id}
+              type="button"
+              role="option"
+              aria-selected={active}
+              className={active ? "active" : ""}
+              disabled={source.disabled && !active}
+              title={source.disabled ? "A query cannot mix published and browser-only sources." : source.description}
+              onClick={() => onSource(source.id, !active)}
+            >
+              <i aria-hidden="true">{active ? "✓" : "+"}</i>
+              <span><b>{source.title}</b><small>{source.id}</small></span>
+              <em>{source.rows === undefined ? "browser" : source.rows.toLocaleString()}</em>
+            </button>
+          );
+        })}
+        {!visible.length && <p>No sources match “{search}”.</p>}
+      </div>
+      {loading && <div className="source-search-loading" role="status"><span className="spinner" /><span>loading data sources…</span></div>}
+    </div>
+  );
+}
+
 interface ColumnPickerProps {
   sources: DwimSource[];
   activeSources: string[];
@@ -63,7 +117,43 @@ interface ColumnPickerProps {
 }
 
 export function ColumnPicker({ sources, activeSources, selectedFields, onColumn, onRemoveColumn, compact }: ColumnPickerProps) {
+  const [search, setSearch] = useState("");
   const selected = [...selectedFields];
+  const normalized = search.trim().toLocaleLowerCase();
+  const sourceSections = activeSources.flatMap((sourceId, sourceIndex) => {
+    const source = sources.find((candidate) => candidate.id === sourceId);
+    if (!source) return [];
+    const fields = source.fields.filter((field) => !normalized || `${field.name} ${field.dataType}`.toLocaleLowerCase().includes(normalized));
+    return [{ source, sourceIndex, fields }];
+  });
+
+  const fieldButtons = sourceSections.map(({ source, sourceIndex, fields }) => {
+    const alias = sourceAlias(source.id, sourceIndex);
+    return (
+      <section key={source.id}>
+        <header><b>{source.title}</b><span>{fields.length}/{source.fields.length} columns</span></header>
+        <div>
+          {fields.map((field) => {
+            const qualified = `${alias}__${field.name}`;
+            const active = selectedFields.has(qualified) || (sourceIndex === 0 && selectedFields.has(field.name));
+            return (
+              <button
+                key={field.name}
+                type="button"
+                className={active ? "active" : ""}
+                aria-pressed={active}
+                onClick={() => onColumn(source.id, field, !active)}
+              >
+                <span aria-hidden="true">{active ? "✓" : "+"}</span><b>{field.name}</b><small>{field.dataType.toLocaleLowerCase()}</small>
+              </button>
+            );
+          })}
+          {!fields.length && <p>No matching columns.</p>}
+        </div>
+      </section>
+    );
+  });
+
   return (
     <div className={`dwim-column-control ${compact ? "compact" : ""}`}>
       {!compact && (
@@ -75,32 +165,17 @@ export function ColumnPicker({ sources, activeSources, selectedFields, onColumn,
           ))}
         </div>
       )}
-      <details className="dwim-column-picker" data-dismiss-on-outside>
-        <summary title="Add a field to SELECT" aria-label="Add a field to SELECT">+</summary>
-        <div className="dwim-column-menu">
-          {activeSources.map((sourceId, sourceIndex) => {
-            const source = sources.find((candidate) => candidate.id === sourceId);
-            if (!source) return null;
-            const alias = sourceAlias(source.id, sourceIndex);
-            return (
-              <section key={source.id}>
-                <header><b>{source.title}</b><span>{source.id}</span></header>
-                <div>
-                  {source.fields.map((field) => {
-                    const qualified = `${alias}__${field.name}`;
-                    const active = selectedFields.has(qualified) || (sourceIndex === 0 && selectedFields.has(field.name));
-                    return (
-                      <button key={field.name} type="button" className={active ? "active" : ""} onClick={() => onColumn(source.id, field, !active)}>
-                        <span>{active ? "✓" : "+"}</span>{field.name}<small>{field.dataType.toLocaleLowerCase()}</small>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
+      {compact ? (
+        <details className="dwim-column-picker" data-dismiss-on-outside>
+          <summary title="Add a field to SELECT" aria-label="Add a field to SELECT">+</summary>
+          <div className="dwim-column-menu">{fieldButtons}</div>
+        </details>
+      ) : (
+        <div className="dwim-column-browser">
+          <label><span aria-hidden="true">⌕</span><input name="column-search" type="search" value={search} placeholder="search selected source columns" autoComplete="off" onChange={(event) => setSearch(event.target.value)} /></label>
+          <div className="dwim-column-menu">{activeSources.length ? fieldButtons : <p className="dwim-column-empty">Select a source to inspect its columns.</p>}</div>
         </div>
-      </details>
+      )}
     </div>
   );
 }
@@ -136,7 +211,7 @@ const positions = ["identity", "stack", "dodge", "jitter"];
 const scaleTypes = ["", "continuous", "discrete", "binned", "ordinal", "identity"];
 const transforms = ["", "date", "log10", "sqrt", "reverse"];
 const palettes = ["", "ggsql", "tableau10", "viridis", "kelly22", "greys", "ylgnbu", "bugn", "rdpu", "batlow", "hawaii", "roma", "vik", "turku"];
-const projections = ["", "cartesian", "polar", "mercator", "orthographic", "equalearth", "albers", "lambert", "crs"];
+const projections = ["", "cartesian", "polar", "geographic", "mercator", "orthographic", "natural", "robinson", "mollweide", "albers", "lambert", "crs"];
 const smoothMethods = ["", "nw", "ols", "tls"];
 const smoothKernels = ["", "gaussian", "epanechnikov", "triangular", "rectangular", "biweight", "cosine"];
 const lineTypes = ["", "solid", "dashed", "dotted", "dotdash"];
@@ -270,7 +345,7 @@ export function DwimPanel(props: DwimPanelProps) {
         <div className="dwim-body sql-controls">
           <section className="dwim-source-section">
             <InspectorSectionHeading index="01" title="sources" value={`${props.activeSources.length} selected`} />
-            <SourceTiles sources={props.sources} activeSources={props.activeSources} onSource={props.onSource} loading={props.catalogLoading} />
+            <SearchableSourcePicker sources={props.sources} activeSources={props.activeSources} onSource={props.onSource} loading={props.catalogLoading} />
             <label className="dwim-upload">
               <input name="user-datasets" type="file" multiple accept=".csv,.tsv,.json,.ndjson,.parquet,.geoparquet,.geojson,.zip" onChange={(event) => event.target.files && props.onFiles(event.target.files)} />
               <span>＋ add user dataset</span><small>csv · parquet · geojson</small>
@@ -316,7 +391,7 @@ export function DwimPanel(props: DwimPanelProps) {
           </section>
 
           <section className="visual-primary-section">
-            <InspectorSectionHeading index="03" title="channels" value="source columns here taken from sql query" />
+            <InspectorSectionHeading index="03" title="channels" value="available from this query" />
             <div className="visual-primary-grid visual-channel-grid">
               {props.visual.mark === "spatial" ? (
                 <>

@@ -48,13 +48,13 @@ export function DataUploadControl({
           <p>Choose files, inspect the raw rows together, and decide what should be cleaned before anything is changed.</p>
           <label className="data-upload-primary">
             choose files to profile
-            <input aria-label="Choose data files to profile with Chartize AI" type="file" multiple accept={DATA_FILE_ACCEPT} disabled={disabled || busy} onChange={(event) => { void importFiles(event.target.files, "conversation"); event.currentTarget.value = ""; }} />
+            <input name="chartize-ai-data-files" aria-label="Choose data files to profile with Chartize AI" type="file" multiple accept={DATA_FILE_ACCEPT} disabled={disabled || busy} onChange={(event) => { void importFiles(event.target.files, "conversation"); event.currentTarget.value = ""; }} />
           </label>
         </section>
         <footer>
           <label>
             import raw for manual cleaning
-            <input aria-label="Choose data files to import for manual cleaning" type="file" multiple accept={DATA_FILE_ACCEPT} disabled={disabled || busy} onChange={(event) => { void importFiles(event.target.files, "manual"); event.currentTarget.value = ""; }} />
+            <input name="chartize-manual-data-files" aria-label="Choose data files to import for manual cleaning" type="file" multiple accept={DATA_FILE_ACCEPT} disabled={disabled || busy} onChange={(event) => { void importFiles(event.target.files, "manual"); event.currentTarget.value = ""; }} />
           </label>
           <small>csv · parquet · geojson · shapefile zip</small>
         </footer>

@@ -37,7 +37,7 @@ async function handle(request: LocalWorkerRequest): Promise<unknown> {
   switch (request.type) {
     case "init": {
       setSpatialiteExtensionUrl(request.spatialiteUrl);
-      emitProgress(request.id, { phase: "starting", message: "starting browser data engine…" });
+      emitProgress(request.id, { phase: "starting", message: "preparing your data…" });
       const [engine, datasets, localDatasets] = await Promise.all([
         workspaceEngine(request.workspaceId),
         loadWorkerCatalog(request.id, emitProgress),

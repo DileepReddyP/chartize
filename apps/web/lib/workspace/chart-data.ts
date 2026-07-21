@@ -32,13 +32,16 @@ function mapFeatureValue(value: unknown) {
   if (typeof value === "string" || typeof value === "boolean") {
     const text = String(value);
     if (typeof value === "string" && /^(?:null|undefined)$/i.test(text.trim())) return "";
+    if (typeof value === "string" && /^-?\d+\.\d+$/.test(text.trim())) {
+      return Number(text).toLocaleString("en-US", { maximumFractionDigits: 3 });
+    }
     return text.length > 1000 ? `${text.slice(0, 999)}…` : text;
   }
   return "";
 }
 
 function mapFieldPriority(field: string, value: unknown) {
-  if (/^(?:name|namelsad|geoname|locationname|county|county_name|place|place_name|area|area_name)$/i.test(field)) return 100;
+  if (/^(?:name|namelsad|geoname|locationname|entity|country|country_name|city|city_name|county|county_name|place|place_name|area|area_name)$/i.test(field)) return 100;
   if (/^(?:state|state_name|region|region_name)$/i.test(field)) return 90;
   if (/(?:geoid|fips|statefp|countyfp|postal|abbr|code|id)$/i.test(field)) return 80;
   if (/label|title/i.test(field)) return 60;
@@ -51,18 +54,23 @@ function recordSelection(
   rowIndex?: number,
   fallbackTitle = "selected data point",
 ): VisualItemSelection | null {
-  const geographyName = /^(?:name|namelsad|geoname|locationname|county|county_name|place|place_name|area|area_name|state|state_name|region|region_name)$/i;
-  const candidates = Object.entries(datum)
+  const geographyName = /^(?:name|namelsad|geoname|locationname|entity|country|country_name|city|city_name|county|county_name|place|place_name|area|area_name|state|state_name|region|region_name)$/i;
+  const scalarEntries = Object.entries(datum)
     .filter(([field, value]) => (
       !field.startsWith("__ggsql_")
       && !/(?:^|_)(?:geometry|geom|wkb|geojson)$/i.test(field)
+      && !/(?:^|_)(?:color|colour|tone)$/i.test(field)
       && !(field === "type" && /^(?:feature|featurecollection|polygon|multipolygon)$/i.test(String(value)))
       && !/^(?:label_)?(?:lon|lat|longitude|latitude)$/i.test(field)
       && (value instanceof Date || ["string", "number", "boolean"].includes(typeof value))
       && value !== ""
       && value !== null
       && value !== undefined
-    ))
+    ));
+  const candidates = scalarEntries
+    .filter(([field, value]) => !/_label$/i.test(field) || !scalarEntries.some(([otherField, otherValue]) => (
+      otherField !== field && !/_label$/i.test(otherField) && otherValue === value
+    )))
     .map(([field, value], index) => ({ field, value, index, priority: mapFieldPriority(field, value) }))
     .sort((left, right) => right.priority - left.priority || left.index - right.index)
     .slice(0, 16)

@@ -158,7 +158,7 @@ export function serializeDraft(draft: GgsqlDraft): string {
   for (const [aesthetic, label] of Object.entries(draft.axisLabels)) {
     if (label) labels.push(`${aesthetic} => ${quoteLiteral(label)}`);
   }
-  const namedProjections = new Set(["cartesian", "polar", "mercator", "orthographic", "equalearth", "albers", "lambert"]);
+  const namedProjections = new Set(["cartesian", "polar", "geographic", "mercator", "orthographic", "natural", "robinson", "mollweide", "albers", "lambert"]);
   const projection = draft.projection
     ? namedProjections.has(draft.projection.toLocaleLowerCase())
       ? `\nPROJECT TO ${draft.projection}`
@@ -226,7 +226,7 @@ export function makeDefaultDraft(source = "ggsql:penguins"): GgsqlDraft {
       },
     ],
     title: "How penguin measurements cluster by species",
-    subtitle: "A built-in dataset confirms that the GGSQL engine is running locally.",
+    subtitle: "Compare bill measurements and body mass across three penguin species.",
     limit: 5000,
     projection: "",
     tooltipFields: ["species", "island"],

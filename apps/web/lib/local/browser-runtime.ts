@@ -23,7 +23,7 @@ let initialization: Promise<Awaited<ReturnType<LocalEngineClient["init"]>>> | nu
 let progressHandler: ((progress: BrowserEngineProgress) => void) | undefined;
 
 function engine() {
-  if (!client) throw new Error("The browser data engine has not initialized.");
+  if (!client) throw new Error("Chartize is still preparing your data. Try again in a moment.");
   return client;
 }
 

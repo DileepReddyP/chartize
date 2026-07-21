@@ -28,6 +28,7 @@ export interface ChartRegionSelection {
 
 interface ChartViewProps {
   spec: Record<string, unknown> | null;
+  interactive?: boolean;
   exportTitle?: string;
   exportSubtitle?: string;
   onError: (message: string) => void;
@@ -42,6 +43,7 @@ interface ChartViewProps {
   onMapZoom?: (factor: number) => void;
   onChartZoom?: (factor: number) => void;
   onChartPan?: (horizontal: number, vertical: number) => void;
+  onResetView?: () => void;
   mapFeatureSelections?: VisualItemSelection[];
   onMapFeatureSelect?: (selection: VisualItemSelection | null, additive?: boolean) => void;
   onVisualItemsSelect?: (selections: VisualItemSelection[]) => void;
@@ -71,6 +73,35 @@ function normalizedPixels(pixels: SelectionPixels): SelectionPixels {
     x1: Math.max(pixels.x0, pixels.x1),
     y1: Math.max(pixels.y0, pixels.y1),
   };
+}
+
+function compactSelectionValue(value: unknown) {
+  if (value instanceof Date) return value.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  if (typeof value === "number") return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (typeof value === "string") {
+    const date = /^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/.test(value) ? new Date(value) : null;
+    if (date && Number.isFinite(date.getTime())) return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    return value.length > 32 ? `${value.slice(0, 31)}…` : value;
+  }
+  return String(value ?? "");
+}
+
+function compactVisualItemDetails(selection: VisualItemSelection) {
+  return selection.values
+    .filter(({ value }) => value !== selection.title)
+    .slice(0, 2)
+    .map(({ field, value }) => `${field.replaceAll("_", " ")} ${value}`)
+    .join(" · ");
+}
+
+function compactRegionDetails(selection: ChartRegionSelection, count: number, mapMode: boolean) {
+  const range = (label: string, values?: [unknown, unknown]) => values
+    ? `${label} ${compactSelectionValue(values[0])}–${compactSelectionValue(values[1])}`
+    : "";
+  const countLabel = count
+    ? `${count.toLocaleString()} ${mapMode ? (count === 1 ? "place" : "places") : (count === 1 ? "data point" : "data points")}`
+    : "";
+  return [countLabel, range("x", selection.x), range("y", selection.y)].filter(Boolean).join(" · ") || "selected chart area";
 }
 
 type SceneMark = { marktype?: string; role?: string };
@@ -121,6 +152,7 @@ function visualItemsInside(
 
 export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function ChartView({
   spec,
+  interactive = true,
   exportTitle = "",
   exportSubtitle = "",
   onError,
@@ -135,6 +167,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
   onMapZoom,
   onChartZoom,
   onChartPan,
+  onResetView,
   mapFeatureSelections = [],
   onMapFeatureSelect,
   onVisualItemsSelect,
@@ -386,6 +419,9 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
 
   const activeVisualItem = mapFeatureSelections.at(-1) ?? null;
   const itemNoun = mapMode ? "place" : "data point";
+  const directlyLabeledItems = mapFeatureSelections.length <= 8
+    ? new Set(mapFeatureSelections.map(({ key }) => key))
+    : new Set(activeVisualItem ? [activeVisualItem.key] : []);
 
   useLayoutEffect(() => {
     const root = interaction.current;
@@ -436,14 +472,22 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     <div
       ref={interaction}
       className={`chart-interaction ${mapMode ? "map-interaction" : ""}${mapDragging ? " is-panning" : ""}`}
-      tabIndex={0}
-      aria-label={mapMode ? "Map. Drag or scroll to pan, pinch to zoom, and hold Shift while dragging to select a region." : "Chart. Scroll or pinch to zoom, scroll sideways to pan, and drag to select a region."}
-      onKeyDown={(event) => { if (event.key === "Escape") { setInteractionState({ kind: "idle" }); onRegionSelect?.(null); onMapFeatureSelect?.(null); } }}
-      onPointerDown={startSelection}
-      onPointerMove={moveGesture}
-      onPointerUp={finishGesture}
-      onPointerCancel={() => setInteractionState({ kind: "idle" })}
-      onWheel={wheel}
+      tabIndex={interactive ? 0 : -1}
+      aria-label={!interactive ? (mapMode ? "Map visualization" : "Chart visualization") : mapMode ? "Map. Drag or scroll to pan, pinch to zoom, hold Shift while dragging to select a region, and double-click to reset." : "Chart. Scroll or pinch to zoom, scroll sideways to pan, drag to select a region, and double-click to reset."}
+      onKeyDown={interactive ? (event) => { if (event.key === "Escape") { setInteractionState({ kind: "idle" }); onRegionSelect?.(null); onMapFeatureSelect?.(null); } } : undefined}
+      onPointerDown={interactive ? startSelection : undefined}
+      onPointerMove={interactive ? moveGesture : undefined}
+      onPointerUp={interactive ? finishGesture : undefined}
+      onPointerCancel={interactive ? () => setInteractionState({ kind: "idle" }) : undefined}
+      onWheel={interactive ? wheel : undefined}
+      onDoubleClickCapture={interactive ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setInteractionState({ kind: "idle" });
+        onRegionSelect?.(null);
+        onMapFeatureSelect?.(null);
+        onResetView?.();
+      } : undefined}
     >
       <div
         className="chart-embed"
@@ -452,13 +496,20 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
       />
       {activeVisualItem && (
         <>
-          {!selection && mapFeatureSelections.slice(-80).map((selection) => (
+          {!selection && mapFeatureSelections.slice(-80).map((visualItem) => (
             <span
-              key={selection.key}
+              key={visualItem.key}
               className="map-feature-pin"
               aria-hidden="true"
-              style={{ left: selection.pixels.x, top: selection.pixels.y }}
-            />
+              style={{ left: visualItem.pixels.x, top: visualItem.pixels.y }}
+            >
+              {directlyLabeledItems.has(visualItem.key) && (
+                <span className={`visual-item-label${visualItem.pixels.x > (interaction.current?.clientWidth ?? 1000) * .62 ? " to-left" : ""}`}>
+                  <b>{visualItem.title}</b>
+                  {compactVisualItemDetails(visualItem) && <small>{compactVisualItemDetails(visualItem)}</small>}
+                </span>
+              )}
+            </span>
           ))}
           <aside
             ref={itemInspector}
@@ -472,6 +523,11 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
             </header>
             <dl>{activeVisualItem.values.map(({ field, value }) => <div key={field}><dt>{field}</dt><dd>{value}</dd></div>)}</dl>
             <p className="map-feature-selection-hint">shift-click another {itemNoun} to add or remove it</p>
+            <div className="map-feature-actions">
+              <button type="button" onClick={() => void navigator.clipboard.writeText([activeVisualItem.title, ...activeVisualItem.values.map(({ field, value }) => `${field}\t${value}`)].join("\n"))}>copy details</button>
+              {mapFeatureSelections.length > 1 && <button type="button" onClick={() => onMapFeatureSelect?.(activeVisualItem, false)}>keep only this</button>}
+              <button type="button" onClick={() => onMapFeatureSelect?.(activeVisualItem, true)}>remove</button>
+            </div>
             <label className={`map-feature-ask ai-promoter${mapFeatureAiActive ? " active" : ""}`}>
               <span aria-hidden="true">✦</span>
               <input
@@ -506,6 +562,7 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
             className={`chart-brush ${persistent ? "persistent" : "draft"}`}
             style={{ left: pixels.x0, top: pixels.y0, width: pixels.x1 - pixels.x0, height: pixels.y1 - pixels.y0 }}
           >
+            {persistent && selection && <span className="chart-brush-summary"><b>{mapMode ? "selected area" : "selected range"}</b><small>{compactRegionDetails(selection, mapFeatureSelections.length, mapMode)}</small></span>}
             {persistent && (["nw", "ne", "sw", "se"] as const).map((handle) => (
               <button
                 key={handle}

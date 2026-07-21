@@ -23,6 +23,19 @@ interface DataGridProps {
 
 interface Cell { row: number; column: number }
 
+const GEOMETRY_COLUMN = /(?:^|_)(?:geometry|geom|wkb|geojson)$/i;
+const MAX_CELL_CHARACTERS = 180;
+
+export function displayGridCell(column: string, value: unknown) {
+  if (value === null || value === undefined) return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (!text) return "";
+  if (GEOMETRY_COLUMN.test(column)) return "geometry";
+  return text.length > MAX_CELL_CHARACTERS
+    ? `${text.slice(0, MAX_CELL_CHARACTERS - 1)}…`
+    : text;
+}
+
 export function DataGrid({ data, loading, selectedColumns, sort, onSort, onAddColumn, onLoadMore, onSelection, streamKey }: DataGridProps) {
   const [anchor, setAnchor] = useState<Cell | null>(null);
   const [focus, setFocus] = useState<Cell | null>(null);
@@ -105,7 +118,7 @@ export function DataGrid({ data, loading, selectedColumns, sort, onSort, onAddCo
                         onSelection?.(null);
                       }}
                       onPointerEnter={() => dragging.current && setFocus({ row: rowIndex, column: columnIndex })}
-                    >{row[columnIndex] ?? ""}</td>
+                    >{displayGridCell(column, row[columnIndex])}</td>
                   ))}
                 </tr>
               ))}

@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
+import { HomeGallery } from "@/components/home-gallery";
 
 export default function Home() {
-  redirect("/explore");
+  return <HomeGallery />;
 }
-

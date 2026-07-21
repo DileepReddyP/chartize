@@ -74,10 +74,14 @@ describe("visualization examples", () => {
     expect(VISUALIZATION_EXAMPLES.find((example) => example.id === "mta-route-delay-map")?.query)
       .toContain("SUM(\"num_passengers\" *");
     const landUse = VISUALIZATION_EXAMPLES.find((example) => example.id === "us-land-use-square")?.query;
-    expect(landUse).toContain("chartize:us_states_2025");
     expect(landUse).toContain("'48 States'");
     expect(landUse).toContain("BuildMbr");
-    expect(landUse).toContain("mainland_states");
-    expect(landUse).toContain("PROJECT TO albers");
+    expect(landUse).toContain("ST_Contains");
+    expect(landUse).toContain("ST_Centroid");
+    expect(landUse).toContain('ST_AsBinary(g."cell_geometry")');
+    expect(landUse).not.toContain('ST_AsBinary(ST_Intersection(g."cell_geometry"');
+    expect(landUse).toContain("DRAW tile");
+    expect(landUse).toContain("x => null, y => null");
+    expect(landUse).not.toContain("PROJECT TO albers");
   });
 });

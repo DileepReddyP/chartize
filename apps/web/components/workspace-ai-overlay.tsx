@@ -20,7 +20,6 @@ export function WorkspaceAiOverlay() {
     aiBusy: workspace.aiBusy,
     aiMessage: workspace.aiMessage,
     aiHistory: workspace.aiHistory,
-    aiUsage: workspace.aiUsage,
     aiFocusVersion: workspace.aiFocusVersion,
     includeSamples: workspace.includeSamples,
     aiPreferences: workspace.aiPreferences,
@@ -74,7 +73,6 @@ export function WorkspaceAiOverlay() {
       ready={state.catalogLoaded}
       status={state.aiMessage}
       history={state.aiHistory}
-      usage={state.aiUsage}
       focusVersion={state.aiFocusVersion}
       includeSamples={state.includeSamples}
       preferences={state.aiPreferences}

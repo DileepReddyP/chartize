@@ -7,6 +7,7 @@ describe("Chartize workspace store", () => {
     const parsed = WorkspaceSnapshotSchema.parse(useChartizeWorkspace.getState());
     expect(parsed.leftPaneRatio).toBe(0.44);
     expect(parsed.codePaneRatio).toBe(0.56);
+    expect(parsed.workspacePane).toBe("chart");
     expect(parsed.draft.axisLabels).toMatchObject({ x: "Poll Date", y: "Approval" });
     expect(parsed.aiPreferences).toEqual({ hypothesize: true, webSearch: true, dataAccess: true, concise: true, challenge: false, technical: false });
   });
@@ -56,6 +57,20 @@ describe("Chartize workspace store", () => {
       mapFeatureSelections: [],
       chartSelection: { pixels: { x0: 10, y0: 12, x1: 100, y1: 120 }, x: [1, 5], y: [40, 50] },
     });
+  });
+
+  it("coordinates the compact graph, code, and data views through Zustand", () => {
+    const store = useChartizeWorkspace.getState();
+    store.setWorkspacePane("code");
+    expect(useChartizeWorkspace.getState()).toMatchObject({ workspacePane: "code", focusArea: "code" });
+
+    useChartizeWorkspace.getState().setWorkspacePane("data");
+    expect(useChartizeWorkspace.getState()).toMatchObject({ workspacePane: "data", focusArea: "table" });
+
+    useChartizeWorkspace.getState().setResultTab("selected");
+    useChartizeWorkspace.getState().setWorkspacePane("chart");
+    expect(useChartizeWorkspace.getState()).toMatchObject({ workspacePane: "chart", focusArea: "chart", resultTab: "chart" });
+    expect(WorkspaceSnapshotSchema.safeParse(useChartizeWorkspace.getState()).success).toBe(true);
   });
 
   it("starts a genuinely empty visualization workspace", () => {

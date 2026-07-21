@@ -12,6 +12,24 @@ interface WorkspaceSelectionActionsProps {
   onZoomSelection?: () => void;
 }
 
+function tabularText(columns: string[], rows: unknown[][]) {
+  return [columns, ...rows].map((row) => row.map((value) => String(value ?? "")).join("\t")).join("\n");
+}
+
+function csvText(columns: string[], rows: unknown[][]) {
+  const cell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  return [columns, ...rows].map((row) => row.map(cell).join(",")).join("\n");
+}
+
+function downloadSelection(columns: string[], rows: unknown[][]) {
+  const url = URL.createObjectURL(new Blob([csvText(columns, rows)], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `chartize-selection-${Date.now()}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelection }: WorkspaceSelectionActionsProps) {
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     selectionOrigin: workspace.selectionOrigin,
@@ -52,6 +70,13 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
       ? "Ask about the places in this selected area…"
       : "Ask what changed in this selected range…";
   const activeAiContext = state.aiOpen && state.aiContext === "chart" && state.aiContextNote === context;
+  const selectedTable = selectedGrid
+    ? { columns: selectedGrid.columns, rows: selectedGrid.rows }
+    : view.mapSelectedData?.rows.length
+      ? { columns: view.mapSelectedData.columns, rows: view.mapSelectedData.rows }
+      : view.chartSelectionDetails.rows.length
+        ? { columns: view.chartSelectionData.columns, rows: view.chartSelectionDetails.rows }
+        : null;
   const clear = () => {
     state.setGridSelection(null);
     state.setChartSelection(null);
@@ -68,7 +93,8 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
         {selectedChart?.x && selectedChart.y && onZoomSelection && <button type="button" onClick={onZoomSelection}>zoom to selection</button>}
         {state.chartDomainHistory.length > 0 && <button type="button" onClick={state.zoomChartOut}>zoom out</button>}
         {selectedGrid && origin === "dock" && <button type="button" onClick={() => selectedGrid.columns.forEach(state.addColumnFromTable)}>add fields to sql</button>}
-        {selectedGrid && <button type="button" onClick={() => void navigator.clipboard.writeText([selectedGrid.columns, ...selectedGrid.rows].map((row) => row.join("\t")).join("\n"))}>copy cells</button>}
+        {selectedTable && <button type="button" onClick={() => void navigator.clipboard.writeText(tabularText(selectedTable.columns, selectedTable.rows))}>copy selected data</button>}
+        {selectedTable && <button type="button" onClick={() => downloadSelection(selectedTable.columns, selectedTable.rows)}>download selection</button>}
         <button type="button" onClick={clear}>clear selection</button>
       </div>
     </aside>

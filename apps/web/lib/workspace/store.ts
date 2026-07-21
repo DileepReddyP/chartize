@@ -63,6 +63,7 @@ import {
 export type ResultTab = "chart" | "selected";
 export type TableSort = { column: string; direction: "asc" | "desc" } | null;
 export type FocusArea = "code" | "chart" | "table";
+export type WorkspacePane = "chart" | "code" | "data";
 export type AiPlacement = "left" | "right";
 export type AiContext = "code" | "chart" | "general";
 export type AiPhase = "idle" | "activating" | "active";
@@ -118,6 +119,7 @@ const LeftPaneRatioSchema = z.number().min(0.3).max(0.7);
 const CodePaneRatioSchema = z.number().min(0.32).max(0.72);
 const EditorFontSizeSchema = z.number().int().min(10).max(24);
 const FocusAreaSchema = z.enum(["code", "chart", "table"]);
+const WorkspacePaneSchema = z.enum(["chart", "code", "data"]);
 const WorkspaceActionsSchema = z.array(AiWorkspaceActionSchema).max(16);
 
 export const WorkspaceDocumentSchema = z.object({
@@ -256,6 +258,7 @@ export const WorkspaceSnapshotSchema = z.object({
   mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(MAX_VISUAL_ITEM_SELECTIONS).default([]),
   resultStatus: z.string(),
   focusArea: FocusAreaSchema,
+  workspacePane: WorkspacePaneSchema,
   editorFontSize: EditorFontSizeSchema,
   editorFocusVersion: z.number().int().nonnegative(),
   aiOpen: z.boolean(),
@@ -465,6 +468,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   setMapFeatureSelections: (value: MapFeatureSelectionState[]) => void;
   setResultStatus: (value: string) => void;
   setFocusArea: (value: FocusArea) => void;
+  setWorkspacePane: (value: WorkspacePane) => void;
   setEditorFontSize: (value: number) => void;
   setAiOpen: (value: boolean) => void;
   setAiPhase: (value: AiPhase) => void;
@@ -552,6 +556,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   mapFeatureSelections: [],
   resultStatus: "",
   focusArea: "chart",
+  workspacePane: "chart",
   editorFontSize: 13,
   editorFocusVersion: 0,
   aiOpen: false,
@@ -634,6 +639,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     mapFeatureSelections: document.mapFeatureSelections,
     resultStatus: "",
     focusArea: document.focusArea,
+    workspacePane: "chart",
     editorFontSize: document.editorFontSize,
     editorFocusVersion: focusVersion,
     aiOpen: false,
@@ -756,7 +762,9 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   ...initialSnapshot,
 
   initializeBrowserEngine: async (spatialiteUrl) => {
-    if (get().engineState === "ready") return;
+    // Fast Refresh can preserve the ready worker while replacing the Zustand
+    // snapshot. Rehydrate the catalog unless both halves of bootstrap agree.
+    if (get().engineState === "ready" && get().catalogLoaded) return;
     set({ engineState: "loading" });
     setBrowserRuntimeProgressHandler((progress) => {
       if (progress.phase === "thinking") set({ aiMessage: progress.message });
@@ -1468,6 +1476,12 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   setMapFeatureSelections: (mapFeatureSelections) => set({ mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(MAX_VISUAL_ITEM_SELECTIONS).parse(mapFeatureSelections) }),
   setResultStatus: (resultStatus) => set({ resultStatus }),
   setFocusArea: (focusArea) => set({ focusArea }),
+  setWorkspacePane: (workspacePane) => set({
+    workspacePane: WorkspacePaneSchema.parse(workspacePane),
+    focusArea: workspacePane === "chart" ? "chart" : workspacePane === "code" ? "code" : "table",
+    ...(workspacePane === "chart" ? { resultTab: "chart" as const } : {}),
+    ...(workspacePane !== "code" ? { editorContext: null, inlineAnchors: null } : {}),
+  }),
   setEditorFontSize: (editorFontSize) => set({ editorFontSize: EditorFontSizeSchema.parse(editorFontSize) }),
   setAiOpen: (aiOpen) => set({ aiOpen }),
   setAiPhase: (aiPhase) => set({ aiPhase }),
