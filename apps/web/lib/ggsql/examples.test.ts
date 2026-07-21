@@ -76,12 +76,16 @@ describe("visualization examples", () => {
     const landUse = VISUALIZATION_EXAMPLES.find((example) => example.id === "us-land-use-square")?.query;
     expect(landUse).toContain("'48 States'");
     expect(landUse).toContain("BuildMbr");
-    expect(landUse).toContain("ST_Contains");
-    expect(landUse).toContain("ST_Centroid");
-    expect(landUse).toContain('ST_AsBinary(g."cell_geometry")');
-    expect(landUse).not.toContain('ST_AsBinary(ST_Intersection(g."cell_geometry"');
-    expect(landUse).toContain("DRAW tile");
-    expect(landUse).toContain("x => null, y => null");
-    expect(landUse).not.toContain("PROJECT TO albers");
+    expect(landUse).toContain('ST_Intersection(g."cell_geometry", m."mainland_geometry")');
+    expect(landUse).toContain('ST_AsBinary(c."cell_geometry")');
+    expect(landUse).toContain('ST_Area("cell_geometry")');
+    expect(landUse).toContain("DRAW spatial");
+    expect(landUse).not.toContain("DRAW tile");
+    expect(landUse).toContain("PROJECT TO albers");
+
+    const landShares = VISUALIZATION_EXAMPLES.find((example) => example.id === "us-land-use-shares")?.query;
+    expect(landShares).toContain('100.0 * "thousand_acres"');
+    expect(landShares).toContain("DRAW bar");
+    expect(landShares).toContain("'48 States'");
   });
 });

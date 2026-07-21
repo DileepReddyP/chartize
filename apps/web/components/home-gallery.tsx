@@ -11,7 +11,7 @@ import { StaticChartPreview } from "./static-chart-preview";
 const HOME_SECTIONS = [
   { id: "signals", index: "01", eyebrow: "signals in motion" },
   { id: "context", index: "02", eyebrow: "the wider pattern" },
-  { id: "everyday", index: "03", eyebrow: "the surprisingly measurable" },
+  { id: "everyday", index: "03", eyebrow: "the world in proportion" },
 ] as const;
 
 type StoryState = { status: "queued" | "loading" | "ready" | "error"; spec: Record<string, unknown> | null; error: string };
@@ -168,7 +168,7 @@ export function HomeGallery() {
             </div>
           </section>
         ))}
-        <footer className="home-footer"><span>Chartize</span><p>follow the evidence · keep the source close · make the question visible</p><button type="button" onClick={() => window.location.assign("/explore")}>start with a blank grid →</button></footer>
+        <footer className="home-footer"><span>Chartize</span><Link href="/about">about</Link></footer>
       </div>
     </main>
   );

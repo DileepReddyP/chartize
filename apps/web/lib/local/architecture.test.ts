@@ -48,6 +48,8 @@ describe("local-first browser boundary", () => {
     expect(gallery).not.toContain("requestAnimationFrame");
     expect(gallery).not.toContain("router.push");
     expect(gallery).toContain("window.location.assign");
+    expect(gallery).toContain('href="/about"');
+    expect(gallery).not.toContain("follow the evidence");
     expect(preview).toContain("view.toSVG()");
     expect(preview).toContain("embedded.finalize()");
     expect(preview).not.toContain("requestAnimationFrame");

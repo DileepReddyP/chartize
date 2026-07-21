@@ -13,4 +13,15 @@ describe("homepage example handoff", () => {
     expect(homeStoryForExample("../../not-an-example")).toBeUndefined();
     expect(homeStoryForExample(null)).toBeUndefined();
   });
+
+  it("promotes the weather calendar and pairs both land-use views", () => {
+    expect(HOME_STORIES.slice(0, 3).map((story) => story.id)).toEqual([
+      "approval-uncertainty",
+      "mta-route-delay-map",
+      "june-temperature-heatmap",
+    ]);
+    const landStories = HOME_STORIES.filter((story) => story.id.startsWith("us-land-use-"));
+    expect(landStories.map((story) => story.id)).toEqual(["us-land-use-square", "us-land-use-shares"]);
+    expect(landStories.reduce((columns, story) => columns + story.columns, 0)).toBe(12);
+  });
 });

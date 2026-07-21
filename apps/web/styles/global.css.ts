@@ -120,8 +120,8 @@ globalStyle(".home-proposition-brand", { display: "inline-flex", alignItems: "ce
 globalStyle(".home-proposition-brand .brand-mark", { width: "13px", height: "13px" });
 globalStyle(".home-proposition-brand b", { fontSize: "18px", fontWeight: 650, letterSpacing: "-.045em" });
 globalStyle(".home-proposition h1", { margin: 0, fontSize: "clamp(15px, 1.7vw, 24px)", fontWeight: 390, lineHeight: 1.05, letterSpacing: "-.035em", textAlign: "center", textTransform: "lowercase", "@media": { "screen and (max-width: 760px)": { gridColumn: "1 / -1", gridRow: 1, textAlign: "left" } } });
-globalStyle(".home-proposition button, .home-footer button", { minHeight: "31px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", padding: "6px 9px", border: 0, borderLeft: `3px solid ${vars.color.teal}`, borderRadius: 0, background: vars.color.ink, color: vars.color.panel, cursor: "pointer", fontSize: "8px", fontWeight: 560, textTransform: "lowercase" });
-globalStyle(".home-proposition button:hover, .home-footer button:hover", { background: vars.color.tealDark });
+globalStyle(".home-proposition button", { minHeight: "31px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", padding: "6px 9px", border: 0, borderLeft: `3px solid ${vars.color.teal}`, borderRadius: 0, background: vars.color.ink, color: vars.color.panel, cursor: "pointer", fontSize: "8px", fontWeight: 560, textTransform: "lowercase" });
+globalStyle(".home-proposition button:hover", { background: vars.color.tealDark });
 globalStyle(".home-editorial-section", { borderBottom: `1px solid ${vars.color.strongLine}` });
 globalStyle(".home-editorial-heading", { minHeight: "29px", display: "flex", alignItems: "center", padding: "6px clamp(14px, 2vw, 28px)", borderBottom: `1px solid ${vars.color.line}`, background: "rgb(255 255 255 / 74%)", backdropFilter: "blur(5px)" });
 globalStyle(".home-editorial-heading h2", { margin: 0, color: vars.color.tealDark, fontFamily: "ui-monospace, monospace", fontSize: "8px", fontWeight: 620, lineHeight: 1.4, letterSpacing: ".025em", textTransform: "lowercase" });
@@ -158,10 +158,10 @@ globalStyle(".home-story > footer button", { minHeight: "27px", padding: "4px 7p
 globalStyle(".home-story > footer button:hover", { background: vars.color.ink, color: vars.color.panel });
 globalStyle(".home-story > footer button.ask", { borderLeftColor: vars.color.teal, background: vars.color.tealPale, color: vars.color.tealDark });
 globalStyle(".home-story > footer button.ask:hover", { background: vars.color.tealDark, color: vars.color.panel });
-globalStyle(".home-footer", { minHeight: "92px", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", alignItems: "center", gap: "24px", padding: "18px clamp(14px, 3vw, 40px)", borderTop: `1px solid ${vars.color.strongLine}`, background: vars.color.ink, color: vars.color.panel });
-globalStyle(".home-footer > span", { fontSize: "25px", fontWeight: 320, letterSpacing: "-.05em", textTransform: "lowercase" });
-globalStyle(".home-footer p", { margin: 0, color: vars.color.line, fontSize: "8px", textTransform: "lowercase" });
-globalStyle(".home-footer button", { borderLeftColor: vars.color.watermelon, background: "rgb(255 255 255 / 8%)" });
+globalStyle(".home-footer", { minHeight: "56px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "24px", padding: "12px clamp(14px, 3vw, 40px)", borderTop: `1px solid ${vars.color.strongLine}`, background: vars.color.ink, color: vars.color.panel });
+globalStyle(".home-footer > span", { fontSize: "20px", fontWeight: 320, letterSpacing: "-.05em", textTransform: "lowercase" });
+globalStyle(".home-footer > a", { color: vars.color.panel, fontFamily: "ui-monospace, monospace", fontSize: "9px", fontWeight: 560, textDecoration: "none", textTransform: "lowercase" });
+globalStyle(".home-footer > a:hover", { color: vars.color.teal });
 globalStyle(".run-button", { minWidth: "80px", minHeight: "31px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", border: 0, borderRadius: "2px", background: vars.color.teal, color: vars.color.ink, cursor: "pointer", fontSize: "10px", fontWeight: 560, textTransform: "lowercase" });
 globalStyle(".run-button:hover", { background: vars.color.tealDark, color: vars.color.panel });
 globalStyle(".run-button > span", { fontSize: "8px" });

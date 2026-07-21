@@ -31,8 +31,8 @@ LABEL title => 'Presidential approval, daily average', subtitle => 'Modeled nati
   {
     id: "approval-uncertainty",
     category: "range",
-    title: "approval and disapproval · uncertainty",
-    description: "Compare both daily averages while keeping approval uncertainty visible.",
+    title: "presidential approval and disapproval · uncertainty",
+    description: "Compare presidential approval and disapproval daily averages while keeping approval uncertainty visible.",
     source: "chartize:presidential_approval_average",
     tags: ["ribbon", "layers", "uncertainty"],
     query: `SELECT "end_date", "approve", "disapprove", "approve_lower_ci", "approve_upper_ci", 50 AS "majority"
@@ -297,7 +297,7 @@ PROJECT TO albers
     id: "mta-route-delay-map",
     category: "transit",
     title: "subway delays · where riders lose time",
-    description: "See where peak-period delays affect the most riders across the subway network.",
+    description: "See which New York subway routes combine longer peak-period delays with the most riders.",
     source: "chartize:mta_subway_service_lines",
     tags: ["MTA", "map", "weighted join"],
     query: `WITH route_delay AS (
@@ -425,7 +425,7 @@ PROJECT TO mercator`,
     id: "june-temperature-heatmap",
     category: "climate",
     title: "New York weather · June 2026",
-    description: "Read a month of Central Park temperatures as a familiar calendar.",
+    description: "Read Central Park’s June 2026 daily temperatures in a familiar calendar.",
     source: "chartize:nyc_central_park_weather_2024_2026",
     tags: ["NOAA", "tile", "calendar"],
     query: `WITH june AS (
@@ -494,7 +494,7 @@ LABEL title => 'A year of New York temperatures', subtitle => 'Typical daily low
     id: "world-population-map",
     category: "world",
     title: "world population · 2023",
-    description: "Explore how the world’s population is distributed across countries.",
+    description: "See how the world’s estimated 2023 population is distributed across countries.",
     source: "chartize:world_population",
     tags: ["world", "population", "choropleth"],
     query: `SELECT c."geometry" AS "geometry", p."Population" AS "population",
@@ -515,7 +515,7 @@ PROJECT TO robinson`,
     id: "world-development-bubbles",
     category: "world",
     title: "health, prosperity, and population",
-    description: "Compare income, longevity, and population across countries without assuming causation.",
+    description: "Compare 2023 income, life expectancy, and population across countries without treating correlation as causation.",
     source: "chartize:world_gdp_per_capita",
     tags: ["GDP", "life expectancy", "bubbles"],
     query: `SELECT g."Entity" AS "country", g."GDP per capita" AS "gdp_per_capita",
@@ -540,7 +540,7 @@ LABEL title => 'Does prosperity travel with longer lives?', subtitle => 'Countri
     id: "world-temperature-stripes",
     category: "climate",
     title: "global warming · year by year",
-    description: "Follow annual global temperature departures from a recent baseline.",
+    description: "Follow yearly global temperature anomalies relative to the 1991–2020 average.",
     source: "chartize:world_temperature_anomalies",
     tags: ["climate", "bar", "diverging"],
     query: `SELECT CAST("Year" AS TEXT) AS "year", "Temperature anomaly" AS "anomaly",
@@ -581,7 +581,7 @@ PROJECT TO robinson`,
     id: "cocoa-top-countries",
     category: "food",
     title: "cocoa supply · top countries",
-    description: "Rank countries by the cocoa-bean food supply available per person.",
+    description: "Compare 2023 cocoa-bean food availability per person—supply, not retail chocolate purchases.",
     source: "chartize:world_cocoa_supply",
     tags: ["cocoa", "ranking", "fun"],
     query: `SELECT CASE WHEN "Entity" = 'Cote d''Ivoire' THEN 'Côte d’Ivoire' ELSE "Entity" END AS "country",
@@ -602,14 +602,14 @@ LABEL title => 'Where cocoa-bean supply is highest', subtitle => '2023 food supp
   {
     id: "us-land-use-square",
     category: "composition",
-    title: "U.S. land use · unit atlas",
-    description: "See how major uses divide the contiguous United States into equal-area tiles.",
+    title: "U.S. land use · composition atlas",
+    description: "See national land-use shares clipped to the contiguous U.S. border; cells do not show local land cover.",
     source: "chartize:usda_major_land_uses",
-    tags: ["USDA", "unit map", "composition"],
+    tags: ["USDA", "spatial grid", "composition"],
     query: `WITH categories AS (
   SELECT CASE "Land use"
       WHEN 'Grassland pasture and range' THEN 'Grass + range' WHEN 'Forest-use land (all)' THEN 'Forest'
-      WHEN 'Total cropland' THEN 'Cropland' WHEN 'All special uses of land' THEN 'Parks + special uses'
+      WHEN 'Total cropland' THEN 'Cropland' WHEN 'All special uses of land' THEN 'Special uses'
       WHEN 'Miscellaneous other land' THEN 'Other' ELSE 'Urban' END AS "land_use",
     CAST("Value" AS DOUBLE) AS "thousand_acres",
     CASE "Land use"
@@ -642,18 +642,20 @@ LABEL title => 'Where cocoa-bean supply is highest', subtitle => '2023 food supp
   SELECT CAST("cell_number" % 64 AS INTEGER) AS "grid_column",
     CAST(floor("cell_number" / 64.0) AS INTEGER) AS "grid_row",
     BuildMbr(
-      -125.0 + (CAST("cell_number" % 64 AS INTEGER) + 0.08) * 0.921875,
-      24.0 + (CAST(floor("cell_number" / 64.0) AS INTEGER) + 0.08) * 0.928571,
-      -125.0 + (CAST("cell_number" % 64 AS INTEGER) + 0.92) * 0.921875,
-      24.0 + (CAST(floor("cell_number" / 64.0) AS INTEGER) + 0.92) * 0.928571
+      -125.0 + CAST("cell_number" % 64 AS INTEGER) * 0.921875,
+      24.0 + CAST(floor("cell_number" / 64.0) AS INTEGER) * 0.928571,
+      -125.0 + (CAST("cell_number" % 64 AS INTEGER) + 1.0) * 0.921875,
+      24.0 + (CAST(floor("cell_number" / 64.0) AS INTEGER) + 1.0) * 0.928571
     ) AS "cell_geometry"
   FROM numbers
-), mainland_grid AS (
+), clipped_grid AS (
   SELECT g."grid_column", g."grid_row",
-    ST_AsBinary(g."cell_geometry") AS "cell_geometry"
+    ST_Intersection(g."cell_geometry", m."mainland_geometry") AS "cell_geometry"
   FROM grid AS g
   CROSS JOIN mainland AS m
-  WHERE ST_Contains(m."mainland_geometry", ST_Centroid(g."cell_geometry")) = 1
+), mainland_grid AS (
+  SELECT * FROM clipped_grid
+  WHERE ST_Area("cell_geometry") > 0.001
 ), ranked_cells AS (
   SELECT *, ROW_NUMBER() OVER (
       ORDER BY "grid_row" DESC, "grid_column"
@@ -661,9 +663,9 @@ LABEL title => 'Where cocoa-bean supply is highest', subtitle => '2023 food supp
     COUNT(*) OVER () AS "cell_count"
   FROM mainland_grid
 ), assigned_cells AS (
-  SELECT printf('%02d', c."grid_column") AS "grid_column",
-    printf('%02d', c."grid_row") AS "grid_row", s."land_use",
-    ROUND(1000.0 * s."total_acres" / c."cell_count") AS "acres_per_tile"
+  SELECT ST_AsBinary(c."cell_geometry") AS "geometry",
+    c."grid_column", c."grid_row", c."cell_index", s."land_use",
+    ROUND(s."total_acres" / c."cell_count") AS "thousand_acres_per_cell"
   FROM ranked_cells AS c
   JOIN segments AS s
     ON c."cell_index" >= floor(c."cell_count" * s."starting_acres" / s."total_acres")
@@ -672,11 +674,55 @@ LABEL title => 'Where cocoa-bean supply is highest', subtitle => '2023 food supp
 SELECT * FROM assigned_cells
 
 VISUALISE
-DRAW tile
-  MAPPING "grid_column" AS x, "grid_row" AS y, "land_use" AS fill
-  SETTING stroke => '#ffffff', linewidth => 0.7, opacity => 0.98
-SCALE DISCRETE fill FROM ('Grass + range', 'Forest', 'Cropland', 'Parks + special uses', 'Other', 'Urban') TO ('#d4aa55', '#356b59', '#ee4266', '#93b85c', '#c9d0ce', '#6575a4')
-LABEL title => 'How the contiguous U.S. uses its land', subtitle => 'Each square represents an equal share of 1.89 billion acres in 2017 · composition, not the tile’s physical location', x => null, y => null, fill => 'Major land use'`,
+DRAW spatial
+  MAPPING "geometry" AS geometry, "land_use" AS fill
+  SETTING stroke => '#ffffff', linewidth => 0.35, opacity => 0.98
+SCALE DISCRETE fill FROM ('Grass + range', 'Forest', 'Cropland', 'Special uses', 'Other', 'Urban') TO ('#d4aa55', '#356b59', '#ee4266', '#93b85c', '#c9d0ce', '#6575a4')
+LABEL title => 'How the contiguous U.S. divides its land', subtitle => '2017 USDA national shares · cells show composition, not local land cover', fill => 'Major land use'
+PROJECT TO albers
+  SETTING origin => (-96, 37.5), parallel => (29.5, 45.5)`,
+  },
+  {
+    id: "us-land-use-shares",
+    category: "composition",
+    title: "U.S. land use · exact shares",
+    description: "Compare the exact national acreage shares encoded by the land-use atlas.",
+    source: "chartize:usda_major_land_uses",
+    tags: ["USDA", "ranked bars", "composition"],
+    query: `WITH categories AS (
+  SELECT CASE "Land use"
+      WHEN 'Grassland pasture and range' THEN 'Grass + range' WHEN 'Forest-use land (all)' THEN 'Forest'
+      WHEN 'Total cropland' THEN 'Cropland' WHEN 'All special uses of land' THEN 'Special uses'
+      WHEN 'Miscellaneous other land' THEN 'Other' ELSE 'Urban' END AS "land_use",
+    CAST("Value" AS DOUBLE) AS "thousand_acres",
+    CASE "Land use"
+      WHEN 'Grassland pasture and range' THEN '#d4aa55' WHEN 'Forest-use land (all)' THEN '#356b59'
+      WHEN 'Total cropland' THEN '#ee4266' WHEN 'All special uses of land' THEN '#93b85c'
+      WHEN 'Miscellaneous other land' THEN '#c9d0ce' ELSE '#6575a4' END AS "bar_color",
+    CASE "Land use"
+      WHEN 'Grassland pasture and range' THEN 1 WHEN 'Forest-use land (all)' THEN 2
+      WHEN 'Total cropland' THEN 3 WHEN 'All special uses of land' THEN 4
+      WHEN 'Miscellaneous other land' THEN 5 ELSE 6 END AS "display_order"
+  FROM chartize:usda_major_land_uses
+  WHERE "Region or State" = '48 States' AND "Year" = 2017
+    AND "Land use" IN ('Grassland pasture and range', 'Forest-use land (all)', 'Total cropland',
+      'All special uses of land', 'Land in urban areas', 'Miscellaneous other land')
+), shares AS (
+  SELECT *, 100.0 * "thousand_acres" / SUM("thousand_acres") OVER () AS "share_percent"
+  FROM categories
+)
+SELECT "land_use", "thousand_acres", "share_percent", "bar_color"
+FROM shares
+ORDER BY "display_order"
+
+VISUALISE
+DRAW bar
+  MAPPING "land_use" AS x, "share_percent" AS y, "bar_color" AS fill
+  SETTING stroke => '#ffffff'
+SCALE DISCRETE x FROM ('Grass + range', 'Forest', 'Cropland', 'Special uses', 'Other', 'Urban')
+SCALE IDENTITY fill
+SCALE y RENAMING * => '{:num %.0f}%'
+LABEL title => 'What uses the most land?', subtitle => '2017 USDA totals for the contiguous U.S. · exact shares behind the atlas', x => 'Land use', y => 'Share of U.S. land'`,
   },
 ];
 
