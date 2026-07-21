@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { sourceAlias, type QuerySection, type VisualPointState } from "@/lib/ggsql/query-context";
 import { fieldsForAesthetic, guidanceForMark, patchForMark, type VisualAesthetic } from "@/lib/ggsql/visual-guidance";
 import type { WorkspaceSource } from "@/lib/workspace/view-model";
+import { PopupCloseButton } from "./popup-close-button";
 
 export type DwimSource = WorkspaceSource;
 
@@ -320,7 +321,7 @@ export function DwimPanel(props: DwimPanelProps) {
     <aside className={`dwim-panel section-${props.section}`} style={style} aria-label={`${copy.title} actions`}>
       <header className="dwim-heading" data-index={copy.index}>
         <div><span>{copy.eyebrow}</span><h2>{copy.title}</h2></div>
-        <button type="button" onClick={props.onClose} aria-label="Close contextual actions">×</button>
+        <PopupCloseButton size="compact" onClick={props.onClose} label="Close contextual actions" />
       </header>
 
       <label className="dwim-command ai-promoter">

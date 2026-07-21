@@ -3,6 +3,7 @@
 import { useShallow } from "zustand/react/shallow";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
 import type { WorkspaceViewModel } from "@/lib/workspace/view-model";
+import { PopupCloseButton } from "./popup-close-button";
 import type { PromoteAi } from "./workspace-code-pane";
 
 interface WorkspaceSelectionActionsProps {
@@ -112,7 +113,7 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
 
   return (
     <aside className={`result-context${activeAiContext ? " active-ai-context" : ""}`} aria-label="Chart selection inspector">
-      <header><div><span>{selectedChart ? "selected region" : selectedGrid ? "selected cells" : "selected mark"}</span><h2>{selectionTitle}</h2><p>{selectionSummary}</p></div><button type="button" aria-label="Close selection inspector" onClick={clear}>×</button></header>
+      <header><div><span>{selectedChart ? "selected region" : selectedGrid ? "selected cells" : "selected mark"}</span><h2>{selectionTitle}</h2><p>{selectionSummary}</p></div><PopupCloseButton size="compact" onClick={clear} label="Close selection inspector" /></header>
       <div className="result-context-body">
         {showItemDetails && visualSelections.length > 1 && (
           <nav className="result-context-items" aria-label={`Selected ${itemNoun}s`}>

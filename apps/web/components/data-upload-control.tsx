@@ -26,8 +26,9 @@ export function DataUploadControl({
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [busy, setBusy] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
 
-  const importFiles = async (input: FileList | null, mode: DataUploadMode) => {
+  const importFiles = async (input: FileList | File[] | null, mode: DataUploadMode) => {
     const files = Array.from(input ?? []).slice(0, 20);
     if (!files.length) return;
     setBusy(true);
@@ -46,14 +47,38 @@ export function DataUploadControl({
       </summary>
       <div className="data-upload-menu">
         <header><i>up</i><span><b>bring your own data</b><small>local to this browser</small></span></header>
-        <section>
-          <AttachmentIcon />
+        <section
+          className={dropActive ? "drop-active" : undefined}
+          onDragEnter={(event) => {
+            if (disabled || busy || !event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setDropActive(true);
+          }}
+          onDragOver={(event) => {
+            if (disabled || busy || !event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            event.stopPropagation();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDragLeave={(event) => {
+            if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDropActive(false);
+          }}
+          onDrop={(event) => {
+            if (disabled || busy || !event.dataTransfer.types.includes("Files")) return;
+            event.preventDefault();
+            event.stopPropagation();
+            setDropActive(false);
+            void importFiles(filesFromDrop(event), "conversation");
+          }}
+        >
           <strong>start with chartize ai</strong>
           <p>Choose files, inspect the raw rows together, and decide what should be cleaned before anything is changed.</p>
           <label className="data-upload-primary">
-            choose files to profile
+            <AttachmentIcon />choose files to profile
             <input name="chartize-ai-data-files" aria-label="Choose data files to profile with Chartize AI" type="file" multiple accept={DATA_FILE_ACCEPT} disabled={disabled || busy} onChange={(event) => { void importFiles(event.target.files, "conversation"); event.currentTarget.value = ""; }} />
           </label>
+          <small className="data-upload-drop-hint">or drop files anywhere in this area</small>
         </section>
         <footer>
           <label>

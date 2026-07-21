@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AiContext, AiConversationMessage, AiPlacement, AiResponsePreferences } from "@/lib/workspace/store";
 import { AttachmentIcon, DATA_FILE_ACCEPT, filesFromDrop } from "./data-upload-control";
+import { PopupCloseButton } from "./popup-close-button";
 
 export type { AiConversationMessage } from "@/lib/workspace/store";
 
@@ -210,9 +211,7 @@ export function AiAssistant({
             <span className="ai-spark" aria-hidden="true">ai</span>
             <div><h2>chartize ai</h2><small>{copy.mode}</small></div>
           </div>
-          <button type="button" title="Close" aria-label="Close AI conversation" onClick={onClose}>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
-          </button>
+          <PopupCloseButton onClick={onClose} label="Close AI conversation" />
         </header>
         <div ref={conversationRef} className="ai-conversation" aria-live="polite">
           {history.map((message, index) => (
