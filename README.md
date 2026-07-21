@@ -6,6 +6,21 @@ Chartize is a self-hosted, local-first visualization studio for exploring public
 
 ![Chartize homepage with live polling, transit, world, climate, food, and land-use views](./docs/images/chartize-home.webp)
 
+## How Codex built Chartize
+
+Chartize was designed and implemented end to end in one long-running Codex collaboration powered by `gpt-5.6-sol` at maximum reasoning. The primary build session spanned July 16–21, 2026 and contains more than 250 rounds of product direction, implementation, visual review, and verification. I supplied the product goals, data-story ideas, design judgment, and course corrections; Codex worked directly in the repository to research the problem, propose and challenge technical approaches, write the application, run it, inspect failures, and revise the result.
+
+This was not a one-shot scaffold. The working product emerged through a repeated build-observe-correct loop:
+
+- Codex researched the hackathon, GGSQL, browser data engines, public datasets, and the relevant OpenAI APIs, then turned that research into an implementation plan and working vertical slices.
+- It built the Next.js/React workspace, Monaco editing experience, Zustand/Zod state model, visualization controls, dataset pipeline, Chartize AI tool loop, example gallery, responsive layouts, tests, documentation, and VPS deployment configuration.
+- It used a real Chrome session throughout development to click through the product, exercise Chartize AI, inspect charts and browser diagnostics, compare screenshots at laptop and mobile widths, and reproduce interaction bugs rather than treating compilation as proof that the experience worked.
+- It ran type checks, unit and browser acceptance tests, production builds, and code-quality audits, then committed the work in focused checkpoints and helped package the standalone Next.js build for PM2 and Nginx.
+
+The conversation also drove major architectural decisions. Chartize began with a separate Rust data service, but browser testing and a security review exposed a cleaner boundary: GGSQL and SQL should execute inside a Web Worker, Dexie/IndexedDB should own local datasets and workspace isolation, and the server should expose only fixed catalog and exact-version artifact reads. Codex carried that pivot through the application, tests, data artifacts, and documentation. The same process shaped the DWIM-inspired contextual interface, explicit authorization for local AI mutations, one independent AI conversation per workspace, static homepage previews, and the selection model shared by maps and ordinary charts.
+
+GPT-5.6 therefore appears in two distinct roles: `gpt-5.6-sol` powered the Codex agent that developed and verified the project, while the latency-oriented `gpt-5.6-luna` powers the in-product Chartize AI described below.
+
 ## How GPT-5.6 powers Chartize
 
 Chartize uses `gpt-5.6-luna` through the OpenAI Responses API as a workspace agent, not as a detached chat box. Each turn is structured and Zod-validated. The model receives the active GGSQL, chart description, available schemas, and only the selection or sample context the user enables.
