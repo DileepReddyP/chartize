@@ -6,7 +6,7 @@ import * as vegaRuntime from "vega";
 import type { TablePreview } from "@chartize/contracts";
 import type { MapViewport } from "@/lib/ggsql/geo-fit";
 import { pngWithHeader, svgWithHeader } from "@/lib/ggsql/chart-export";
-import { presentChartSpec, type ChartLegendTitles, type ChartThreshold } from "@/lib/ggsql/vega-presentation";
+import { presentChartSpec, type ChartDomains, type ChartLegendTitles, type ChartThreshold } from "@/lib/ggsql/vega-presentation";
 import {
   MAX_VISUAL_ITEM_SELECTIONS,
   visualItemSelectionFromDatum,
@@ -21,8 +21,8 @@ export interface ChartViewHandle {
 
 export interface ChartRegionSelection {
   pixels: { x0: number; y0: number; x1: number; y1: number };
-  x?: [unknown, unknown];
-  y?: [unknown, unknown];
+  x?: [unknown, unknown] | undefined;
+  y?: [unknown, unknown] | undefined;
 }
 
 interface ChartViewProps {
@@ -32,7 +32,7 @@ interface ChartViewProps {
   exportSubtitle?: string;
   onError: (message: string) => void;
   threshold?: ChartThreshold;
-  domains?: { x?: [unknown, unknown]; y?: [unknown, unknown] };
+  domains?: ChartDomains;
   legendTitles?: ChartLegendTitles;
   selection?: ChartRegionSelection | null;
   onRegionSelect?: (selection: ChartRegionSelection | null) => void;

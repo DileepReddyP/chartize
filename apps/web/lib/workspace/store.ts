@@ -1,9 +1,11 @@
 import {
+  AiConversationMessageSchema,
   AiResponsePreferencesSchema,
   AiRuntimeErrorSchema,
   AiTurnRequestSchema,
   AiUsageSchema,
   AiWorkspaceActionSchema,
+  DEFAULT_AI_RESPONSE_PREFERENCES,
   DatasetManifestSchema,
   FieldMetadataSchema,
   GgsqlDraftSchema,
@@ -17,6 +19,7 @@ import {
   type AiResponsePreferences,
   type AiRuntimeError,
   type AiTurnRequest,
+  type AiConversationMessage as ContractAiConversationMessage,
 } from "@chartize/contracts";
 import { z } from "zod";
 import { create } from "zustand";
@@ -107,11 +110,6 @@ const MapViewportSchema = z.object({
   panX: z.number().min(-4).max(4),
   panY: z.number().min(-4).max(4),
 });
-const AiMessageSchema = z.object({
-  role: z.enum(["user", "assistant"]),
-  text: z.string(),
-  approval: z.enum(["local_changes"]).optional(),
-});
 const AiOpenInputSchema = z.object({
   contextNote: z.string().max(4000),
   placement: z.enum(["left", "right"]),
@@ -149,7 +147,7 @@ export const WorkspaceDocumentSchema = z.object({
   aiContextNote: z.string(),
   aiPrompt: z.string(),
   aiMessage: z.string(),
-  aiHistory: z.array(AiMessageSchema),
+  aiHistory: z.array(AiConversationMessageSchema),
   aiUsage: AiUsageSchema.nullable(),
   includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
@@ -177,7 +175,7 @@ export type ChartSelectionState = z.infer<typeof ChartSelectionSchema>;
 export type ChartDomainsState = z.infer<typeof ChartDomainsSchema>;
 export type MapViewportState = z.infer<typeof MapViewportSchema>;
 export type MapFeatureSelectionState = MapFeatureSelection;
-export type AiConversationMessage = z.infer<typeof AiMessageSchema>;
+export type AiConversationMessage = ContractAiConversationMessage;
 export type AiCompletedResponse = BrowserAiCompletedResponse;
 export type WorkspaceDocument = z.infer<typeof WorkspaceDocumentSchema>;
 export type VisualPointUpdate = Partial<VisualPointState>;
@@ -273,7 +271,7 @@ export const WorkspaceSnapshotSchema = z.object({
   aiPrompt: z.string(),
   aiBusy: z.boolean(),
   aiMessage: z.string(),
-  aiHistory: z.array(AiMessageSchema),
+  aiHistory: z.array(AiConversationMessageSchema),
   aiUsage: AiUsageSchema.nullable(),
   aiFocusVersion: z.number().int().nonnegative(),
   includeSamples: z.boolean(),
@@ -331,7 +329,6 @@ let loadingMaskTimer: ReturnType<typeof setTimeout> | null = null;
 let fullTableSequence = 0;
 let lastPersistedSession = "";
 const fullTableCache = new Map<string, TablePreview>();
-const RESULT_RELATION_PAGE_SIZE = 100;
 
 function addRuntimeError(current: AiRuntimeError[], next: AiRuntimeError) {
   const parsed = AiRuntimeErrorSchema.parse(next);
@@ -495,7 +492,18 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
 
 const initialDraft = makeInitialWorkspaceDraft();
 const initialQuery = serializeDraft(initialDraft);
-const DEFAULT_AI_PREFERENCES: AiResponsePreferences = { hypothesize: true, webSearch: true, dataAccess: true, allowLocalChanges: false, concise: true, challenge: false, technical: false };
+const DEFAULT_AI_PREFERENCES: AiResponsePreferences = DEFAULT_AI_RESPONSE_PREFERENCES;
+
+function persistentAiPreferences(preferences: AiResponsePreferences): AiResponsePreferences {
+  return preferences.allowLocalChanges
+    ? { ...preferences, allowLocalChanges: false }
+    : preferences;
+}
+
+function requestHistory(messages: AiConversationMessage[]) {
+  return messages.slice(-12).map(({ role, text }) => ({ role, text: text.slice(0, 6000) }));
+}
+
 const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   id: "workspace-1",
   title: initialDraft.title || "Presidential approval, daily average",
@@ -609,7 +617,7 @@ function captureWorkspaceDocument(state: WorkspaceSnapshot): WorkspaceDocument {
     aiHistory: state.aiHistory,
     aiUsage: state.aiUsage,
     includeSamples: state.includeSamples,
-    aiPreferences: state.aiPreferences,
+    aiPreferences: persistentAiPreferences(state.aiPreferences),
     runtimeErrors: state.runtimeErrors,
     workspaceActions: state.workspaceActions,
   });
@@ -658,7 +666,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     aiUsage: document.aiUsage,
     aiFocusVersion: focusVersion,
     includeSamples: document.includeSamples,
-    aiPreferences: document.aiPreferences,
+    aiPreferences: persistentAiPreferences(document.aiPreferences),
     runtimeErrors: document.runtimeErrors,
     workspaceActions: document.workspaceActions,
   };
@@ -721,19 +729,23 @@ function mergeWorkspaceActions(current: AiWorkspaceAction[], next: AiWorkspaceAc
 }
 
 function migrateWorkspaceDocument(document: WorkspaceDocument) {
+  const safeDocument = WorkspaceDocumentSchema.parse({
+    ...document,
+    aiPreferences: persistentAiPreferences(document.aiPreferences),
+  });
   try {
-    const separated = separateWorkspaceProgram(document.query);
-    if (!separated.setupSql) return document;
+    const separated = separateWorkspaceProgram(safeDocument.query);
+    if (!separated.setupSql) return safeDocument;
     return WorkspaceDocumentSchema.parse({
-      ...document,
+      ...safeDocument,
       query: separated.query,
-      workspaceActions: mergeWorkspaceActions(document.workspaceActions, [{
+      workspaceActions: mergeWorkspaceActions(safeDocument.workspaceActions, [{
         sql: separated.setupSql,
         purpose: "Rebuild the derived browser-local data used by this visualization.",
       }]),
     });
   } catch {
-    return document;
+    return safeDocument;
   }
 }
 
@@ -755,9 +767,9 @@ function workspaceActivated(get: () => ChartizeWorkspaceState, run = true) {
     if (state.engineState !== "ready") return;
     const workspaceId = state.activeWorkspaceId;
     void replayWorkspaceActions(workspaceId, state.workspaceActions)
-      .then(() => {
+      .then(async () => {
         const current = get();
-        if (current.activeWorkspaceId === workspaceId) return current.runQuery(current.query);
+        if (current.activeWorkspaceId === workspaceId) await current.runQuery(current.query);
       })
       .catch((cause) => get().setError(cause instanceof Error ? cause.message : String(cause)));
   });
@@ -854,17 +866,13 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           };
           resultRelation = selectedData;
           if (compactColumns.length && selectedData.totalRows > selectedData.rows.length) {
-            const relationRows = [...compactRows];
             const relationLimit = Math.min(selectedData.totalRows, RESULT_RELATION_LIMIT);
-            while (relationRows.length < relationLimit) {
-              if (runId !== browserRunSequence) return { ok: false, error: "A newer query replaced this run." };
-              const page = await runtimeExecuteWorkspaceSql(
-                workspaceId,
-                `SELECT ${compactColumns.map(quoteIdentifier).join(", ")} FROM (${resultSql}) AS chartize_result_relation LIMIT ${RESULT_RELATION_PAGE_SIZE} OFFSET ${relationRows.length}`,
-              );
-              if (!page.rows.length) break;
-              relationRows.push(...page.rows.slice(0, relationLimit - relationRows.length));
-            }
+            const relation = await runtimeExecuteWorkspaceSql(
+              workspaceId,
+              `SELECT ${compactColumns.map(quoteIdentifier).join(", ")} FROM (${resultSql}) AS chartize_result_relation LIMIT ${relationLimit}`,
+            );
+            const relationRows = (relation.rows.length >= compactRows.length ? relation.rows : compactRows)
+              .slice(0, relationLimit);
             resultRelation = {
               columns: compactColumns,
               rows: relationRows,
@@ -1101,7 +1109,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const sort = sortInput === null ? null : z.object({ column: z.string().min(1).max(300), direction: z.enum(["asc", "desc"]) }).parse(sortInput);
     const requestId = ++fullTableSequence;
     const published = get().catalogDatasets.find((dataset) => `chartize:${dataset.slug}` === source || dataset.tableName === source);
-    const key = `${published?.version ?? "browser"}:${source}:${offset}:${sort?.column ?? ""}:${sort?.direction ?? ""}`;
+    const key = `${workspaceId}:${published?.version ?? "browser"}:${source}:${offset}:${sort?.column ?? ""}:${sort?.direction ?? ""}`;
     const commit = (table: TablePreview) => set((state) => state.activeWorkspaceId === workspaceId ? ({
       fullData: append
         ? { ...table, offset: 0, rows: [...state.fullData.rows, ...table.rows] }
@@ -1203,10 +1211,11 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   },
   requestAiTurn: async (input) => {
     const request = AiTurnRequestSchema.parse(input);
+    const workspaceId = get().activeWorkspaceId;
     try {
-      return await requestBrowserAiTurn(get().activeWorkspaceId, request);
+      return await requestBrowserAiTurn(workspaceId, request);
     } finally {
-      set({ aiMessage: "" });
+      if (get().activeWorkspaceId === workspaceId) set({ aiMessage: "" });
     }
   },
   submitAiTurn: async (input) => {
@@ -1232,7 +1241,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         ? "Explain the current GGSQL, including how its VISUALISE clauses produce this chart."
         : "Explain the current chart and the GGSQL that produces it."
       : "Repair the current query.");
-    const history = branchHistory.slice(-12);
+    const history = requestHistory(branchHistory);
     set({
       aiBusy: true,
       aiMessage: "",
@@ -1256,6 +1265,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       if (get().activeWorkspaceId !== startedWorkspace) return;
       let usage = body.usage;
       if (body.workspaceActions.length) {
+        fullTableCache.clear();
         set((state) => ({ workspaceActions: mergeWorkspaceActions(state.workspaceActions, body.workspaceActions) }));
       }
       if (body.kind === "visualization") {
@@ -1272,7 +1282,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
             contextNote: `The candidate GGSQL failed in the browser engine. Fix every diagnostic observed in this turn, especially the latest one:\n${repairDiagnostics.map((diagnostic, index) => `${index + 1}. ${diagnostic}`).join("\n")}`,
             request: `Repair the candidate GGSQL completely while preserving this request: ${request}`,
             currentQuery: body.query,
-            preferences: { ...initialState.aiPreferences, webSearch: false },
+            preferences: { ...initialState.aiPreferences, webSearch: false, allowLocalChanges: false },
             runtimeErrors: addRuntimeError(turnInput.runtimeErrors, {
               stage: "query",
               message: runResult.error,

@@ -264,6 +264,88 @@ describe("Chartize workspace store", () => {
     }
   });
 
+  it("does not carry one-send permission across workspaces", () => {
+    const previous = useChartizeWorkspace.getState();
+    const originalWorkspaceId = previous.activeWorkspaceId;
+    useChartizeWorkspace.setState({
+      aiPreferences: { ...previous.aiPreferences, allowLocalChanges: true },
+    });
+
+    try {
+      useChartizeWorkspace.getState().openWorkspace({ title: "permission boundary" }, { run: false });
+      expect(useChartizeWorkspace.getState().aiPreferences.allowLocalChanges).toBe(false);
+
+      useChartizeWorkspace.getState().switchWorkspace(originalWorkspaceId);
+      expect(useChartizeWorkspace.getState().aiPreferences.allowLocalChanges).toBe(false);
+    } finally {
+      useChartizeWorkspace.setState({
+        activeWorkspaceId: previous.activeWorkspaceId,
+        workspaceDocuments: previous.workspaceDocuments,
+        aiPreferences: previous.aiPreferences,
+        query: previous.query,
+        draft: previous.draft,
+        dockSource: previous.dockSource,
+      });
+    }
+  });
+
+  it("removes local-change permission from automatic repair rounds", async () => {
+    const previous = useChartizeWorkspace.getState();
+    const requestAiTurn = vi.fn()
+      .mockResolvedValueOnce({
+        kind: "visualization" as const,
+        query: "SELECT 1 AS value\n\nVISUALISE\nDRAW point\nMAPPING value AS y",
+        draft: previous.draft,
+        explanation: "I prepared the requested chart.",
+        assumptions: [], warnings: [], sources: [], researched: false, workspaceActions: [],
+        usage: { models: ["test"], calls: 1, inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 },
+      })
+      .mockResolvedValueOnce({
+        kind: "explanation" as const,
+        explanation: "The candidate needs a repair.",
+        assumptions: [], warnings: [], sources: [], researched: false, workspaceActions: [],
+        usage: { models: ["test"], calls: 1, inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 },
+      });
+    const runQuery = vi.fn().mockResolvedValue({ ok: false as const, error: "test query failure" });
+
+    useChartizeWorkspace.setState({
+      catalogLoaded: true,
+      aiBusy: false,
+      aiPrompt: "Build a derived chart.",
+      aiHistory: [],
+      aiPreferences: { ...previous.aiPreferences, allowLocalChanges: true },
+      requestAiTurn,
+      runQuery,
+    });
+
+    try {
+      await useChartizeWorkspace.getState().submitAiTurn({
+        task: "generate",
+        context: "general",
+        contextNote: "test chart",
+        schema: [],
+        availableSources: [],
+        view: { title: "", subtitle: "", sources: [] },
+      });
+
+      expect(requestAiTurn).toHaveBeenCalledTimes(2);
+      expect(requestAiTurn.mock.calls[0]?.[0].preferences.allowLocalChanges).toBe(true);
+      expect(requestAiTurn.mock.calls[1]?.[0].task).toBe("repair");
+      expect(requestAiTurn.mock.calls[1]?.[0].preferences.allowLocalChanges).toBe(false);
+    } finally {
+      useChartizeWorkspace.setState({
+        catalogLoaded: previous.catalogLoaded,
+        aiBusy: previous.aiBusy,
+        aiPrompt: previous.aiPrompt,
+        aiHistory: previous.aiHistory,
+        aiUsage: previous.aiUsage,
+        aiPreferences: previous.aiPreferences,
+        requestAiTurn: previous.requestAiTurn,
+        runQuery: previous.runQuery,
+      });
+    }
+  });
+
   it("retains a local-change approval request beside the assistant response", async () => {
     const previous = useChartizeWorkspace.getState();
     const requestAiTurn = vi.fn(async (_request: AiTurnRequest) => ({

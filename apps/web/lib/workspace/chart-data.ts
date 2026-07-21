@@ -18,8 +18,8 @@ export const MapFeatureSelectionSchema = VisualItemSelectionSchema;
 export type MapFeatureSelection = VisualItemSelection;
 
 interface ChartSelection {
-  x?: [unknown, unknown];
-  y?: [unknown, unknown];
+  x?: [unknown, unknown] | undefined;
+  y?: [unknown, unknown] | undefined;
 }
 
 function mapFeatureValue(value: unknown) {

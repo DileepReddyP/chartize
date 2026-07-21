@@ -118,7 +118,7 @@ export function guidanceForMark(mark: string, visual: VisualPointState, fields: 
           ? `${visual.x} is a date. Use a numeric field for the distribution, or keep a line chart to show change over time.`
           : "This mark bins x and calculates its own count or density; it does not need a y field.",
         patch: patchForMark(mark, visual, fields),
-        action: numeric[0] ? `use ${numeric[0].name}` : undefined,
+        ...(numeric[0] ? { action: `use ${numeric[0].name}` } : {}),
       };
     }
     return { tone: "ready", summary: `${mark} will bin ${visual.x}`, detail: mark === "histogram" ? "Y is computed as count." : "Y is computed as density." };
@@ -127,19 +127,19 @@ export function guidanceForMark(mark: string, visual: VisualPointState, fields: 
     const ready = field(visual.x) && field(visual.y) && isNumericField(field(visual.x)!) && isNumericField(field(visual.y)!);
     return ready
       ? { tone: "ready", summary: `${visual.y} modeled against ${visual.x}`, detail: "Choose OLS for a linear fit or NW for a flexible curve." }
-      : { tone: "attention", summary: "smooth needs numeric x and y fields", detail: "Dates are not accepted directly by this statistical mark. Project time as a number in SQL if it is truly the predictor.", patch: patchForMark(mark, visual, fields), action: numeric.length >= 2 ? "use numeric pair" : undefined };
+      : { tone: "attention", summary: "smooth needs numeric x and y fields", detail: "Dates are not accepted directly by this statistical mark. Project time as a number in SQL if it is truly the predictor.", patch: patchForMark(mark, visual, fields), ...(numeric.length >= 2 ? { action: "use numeric pair" } : {}) };
   }
   if (mark === "spatial") {
     const ready = field(visual.geometry) && isGeometryField(field(visual.geometry)!);
     return ready
       ? { tone: "ready", summary: `${visual.geometry} defines the map`, detail: "Fill or colour can encode any other selected SQL field." }
-      : { tone: "attention", summary: "spatial needs a geometry field", detail: "Return a geometry/WKB column in SELECT, then map it to geometry.", patch: patchForMark(mark, visual, fields), action: fields.some(isGeometryField) ? "use geometry" : undefined };
+      : { tone: "attention", summary: "spatial needs a geometry field", detail: "Return a geometry/WKB column in SELECT, then map it to geometry.", patch: patchForMark(mark, visual, fields), ...(fields.some(isGeometryField) ? { action: "use geometry" } : {}) };
   }
   if (mark === "ribbon") {
     const ready = visual.x && field(visual.yMin) && field(visual.yMax) && isNumericField(field(visual.yMin)!) && isNumericField(field(visual.yMax)!);
     return ready
       ? { tone: "ready", summary: `${visual.yMin}–${visual.yMax} forms the band`, detail: "Add a line layer separately when you also want the estimate." }
-      : { tone: "attention", summary: "ribbon needs x, y min, and y max", detail: "Both bounds must be numeric columns returned by SQL.", patch: patchForMark(mark, visual, fields), action: numeric.length >= 2 ? "use numeric bounds" : undefined };
+      : { tone: "attention", summary: "ribbon needs x, y min, and y max", detail: "Both bounds must be numeric columns returned by SQL.", patch: patchForMark(mark, visual, fields), ...(numeric.length >= 2 ? { action: "use numeric bounds" } : {}) };
   }
   if (["line", "path", "area", "bar"].includes(mark)) {
     const ready = Boolean(visual.x && visual.y && field(visual.x) && field(visual.y));

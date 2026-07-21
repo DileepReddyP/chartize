@@ -12,6 +12,7 @@ import {
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { compactAiContext, compactHistory, isComplexVisualizationRequest, isExplanationRequest, requestedResearchItemCount, shouldResearch } from "@/lib/ai/context";
+import { authorizesLocalChange } from "@/lib/ai/local-change-policy";
 import { ModelAgentResponseSchema, draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse, sanitizeModelText, separateWorkspaceProgram } from "@/lib/ai/model-output";
 import { CHARTIZE_AGENT_INSTRUCTIONS, CHARTIZE_AI_INSTRUCTIONS, chartizePreferenceInstructions, chartizeTurnInstructions } from "@/lib/ai/prompts";
 import { structuredResponse } from "@/lib/ai/provider";
@@ -101,7 +102,7 @@ async function completeAiTurn(body: AiTurnEnvelope, onProgress?: (message: strin
     ];
     const complexRequest = isComplexVisualizationRequest(body.request, body.currentQuery, body.task);
     const answerOnly = isExplanationRequest(body.request) || /\b(?:do\s+not|don't|without)\s+(?:change|edit|update|modify)(?:ing)?\b/i.test(body.request);
-    const mutationAuthorized = body.preferences.allowLocalChanges || authorizesLocalMutation(body);
+    const mutationAuthorized = authorizesLocalChange(body);
     const agentInstructions = answerOnly && body.task !== "repair" ? CHARTIZE_AGENT_INSTRUCTIONS : CHARTIZE_AI_INSTRUCTIONS;
     const instructions = `${agentInstructions}\n\n${chartizeTurnInstructions(body.context, body.task)}\n${chartizePreferenceInstructions(body.preferences)}\n${mutationAuthorized ? "LOCAL WORKSPACE ACTIONS: The user explicitly authorized a browser-local data change. Put repeatable DDL/DML only in workspaceActions and keep query to one SELECT/WITH plus VISUALISE." : "LOCAL WORKSPACE ACTIONS: Not authorized in this turn. workspaceActions must be empty and query must remain non-mutating."}\n${body.researchContext ? "LIVE RESEARCH: Already completed earlier in this same user turn. Do not invoke or request another search. Use the attached evidence memo and preserve its source grounding while combining it with the new browser-data results." : researchRequired ? `LIVE RESEARCH: Required in this same agent turn. Before searching, identify the smallest distinct set of questions needed; issue the focused queries together in one search action when possible instead of serially searching synonyms. Use at least ${researchTarget} relevant dated finding${researchTarget === 1 ? "" : "s"}, and cite the direct source for every distinct finding rather than letting one citation appear to support unrelated claims. Never claim lookup was unavailable after the tool completes.` : body.preferences.webSearch ? "LIVE RESEARCH: Available but not mandatory. Use it only when outside facts would materially improve this request; do not search for local-data cleanup, syntax repair, chart styling, arithmetic, or a calculation the browser workspace can answer." : "LIVE RESEARCH: Disabled. Do not imply that you searched."}\n${hasCurrentQuery ? "The active query is available regardless of which pane opened the conversation. Keep its source and unrelated layers unless the user asks to change them." : "BLANK WORKSPACE: There is no active query or source. For a visualization request, select every source needed from the catalog and return a complete executable visualization in one turn. Do not inherit another workspace's subject, source, title, or fields."}\nWhen returning an edit or data request, use only these exact source IDs: ${JSON.stringify(allowedSources)}.`;
     const functionTools = createVisualizationFunctionTools();
@@ -112,7 +113,7 @@ async function completeAiTurn(body: AiTurnEnvelope, onProgress?: (message: strin
       input,
       webSearch: webSearchEnabled,
       requiredWebSearch: researchRequired,
-      maxBuiltInToolCalls: webSearchEnabled ? 1 : undefined,
+      ...(webSearchEnabled ? { maxBuiltInToolCalls: 1 } : {}),
       continueAfterRequiredWebSearch: researchRequired && complexRequest && !answerOnly,
       // A multi-finding turn keeps the direct pages returned by web search in
       // addition to inline citations. Structured JSON can otherwise retain a
@@ -125,7 +126,7 @@ async function completeAiTurn(body: AiTurnEnvelope, onProgress?: (message: strin
       // A required web search can occupy the first response round. Complex
       // drawing work may then consult the compact visualization cookbook.
       maxToolRounds: answerOnly ? 4 : (complexRequest ? 6 : 4),
-      onProgress,
+      ...(onProgress ? { onProgress } : {}),
     });
 
     const turnSources = mergeSources(body.researchContext?.sources ?? [], modelResponse.sources);
@@ -154,16 +155,15 @@ async function completeAiTurn(body: AiTurnEnvelope, onProgress?: (message: strin
       modelResponse.output.warnings,
       { researched: turnResearched, sources: turnSources },
     );
-    const modelWorkspaceActions = body.task === "repair" ? [] : modelResponse.output.workspaceActions;
-    if (modelWorkspaceActions.length && !mutationAuthorized) {
-      return AiExplanationResponseSchema.parse({
+    const localChangeApproval = (message: string, actions: AiWorkspaceAction[] = []) => (
+      AiExplanationResponseSchema.parse({
         kind: "explanation",
         approval: "local_changes",
         explanation: [
           grounded.explanation.replaceAll("?utm_source=openai", ""),
-          "I prepared a browser-local data change but did not apply it. Enable **allow local changes once** beside **redo**, then retry. You can also grant the same one-send permission from the gear beside Send. The raw upload and every `chartize:` source remain unchanged.",
-          modelWorkspaceActions.length
-            ? `Proposed local action${modelWorkspaceActions.length === 1 ? "" : "s"}:\n${modelWorkspaceActions.map((action) => `- ${action.purpose}`).join("\n")}`
+          message,
+          actions.length
+            ? `Proposed local action${actions.length === 1 ? "" : "s"}:\n${actions.map((action) => `- ${action.purpose}`).join("\n")}`
             : "",
         ].filter(Boolean).join("\n\n"),
         assumptions,
@@ -172,7 +172,14 @@ async function completeAiTurn(body: AiTurnEnvelope, onProgress?: (message: strin
         researched: turnResearched,
         workspaceActions: [],
         usage: initialUsage,
-      });
+      })
+    );
+    const modelWorkspaceActions = body.task === "repair" ? [] : modelResponse.output.workspaceActions;
+    if (modelWorkspaceActions.length && !mutationAuthorized) {
+      return localChangeApproval(
+        "I prepared a browser-local data change but did not apply it. Enable **allow local changes once** beside **redo**, then retry. You can also grant the same one-send permission from the gear beside Send. The raw upload and every `chartize:` source remain unchanged.",
+        modelWorkspaceActions,
+      );
     }
     if (modelResponse.output.action === "answer") {
       return AiExplanationResponseSchema.parse({
@@ -195,20 +202,9 @@ async function completeAiTurn(body: AiTurnEnvelope, onProgress?: (message: strin
       ? [{ sql: separated.setupSql, purpose: "Prepare the derived browser-local data used by this visualization." }]
       : [];
     if (extractedActions.length && !mutationAuthorized) {
-      return AiExplanationResponseSchema.parse({
-        kind: "explanation",
-        approval: "local_changes",
-        explanation: [
-          grounded.explanation.replaceAll("?utm_source=openai", ""),
-          "This visualization needs a derived browser-local data change, so I stopped before applying it. Enable **allow local changes once** beside **redo**, then retry. You can also grant the same one-send permission from the gear beside Send. The raw upload and every `chartize:` source remain unchanged.",
-        ].join("\n\n"),
-        assumptions,
-        warnings: grounded.warnings,
-        sources: turnSources,
-        researched: turnResearched,
-        workspaceActions: [],
-        usage: initialUsage,
-      });
+      return localChangeApproval(
+        "This visualization needs a derived browser-local data change, so I stopped before applying it. Enable **allow local changes once** beside **redo**, then retry. You can also grant the same one-send permission from the gear beside Send. The raw upload and every `chartize:` source remain unchanged.",
+      );
     }
     const workspaceActions = z.array(AiWorkspaceActionSchema).max(4).parse([
       ...modelWorkspaceActions,
@@ -234,18 +230,6 @@ async function completeAiTurn(body: AiTurnEnvelope, onProgress?: (message: strin
       workspaceActions,
       usage,
     });
-}
-
-function authorizesLocalMutation(body: AiTurnEnvelope) {
-  const denied = /\b(?:do\s+not|don't|without|no)\b[^.\n]{0,50}\b(?:mutat|persist|modify|overwrite|change)\w*/i;
-  const explicit = (text: string) => !denied.test(text) && (
-    /\b(?:clean|deduplicate|dedupe|impute|persist|save)\w*\s+(?:this|the|my|that|these|those|a|an)?\s*(?:file|data|dataset|table|values|rows|copy|source)\b/i.test(text)
-    || /\b(?:apply|execute|perform|commit|make|do)\b[^.\n]{0,80}\b(?:clean(?:ing|up)?|deduplicat\w*|imput\w*|mutation|local changes?)\b/i.test(text)
-    || /\b(?:create|save|persist)\b[^.\n]{0,80}\b(?:cleaned|derived|local|temporary|temp)\b/i.test(text)
-  );
-  if (explicit(body.request)) return true;
-  if (!/^(?:ok(?:ay)?|yes|do it|apply it|go ahead|proceed|finish (?:it|that)|continue)\b/i.test(body.request.trim())) return false;
-  return body.history.slice(-6).some((message) => message.role === "user" && explicit(message.text));
 }
 
 function streamAiTurn(body: AiTurnEnvelope) {

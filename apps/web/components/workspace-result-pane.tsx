@@ -182,7 +182,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
                       exportTitle={view.visualState.title || state.draft.title}
                       exportSubtitle={view.visualState.subtitle || state.draft.subtitle}
                       onError={state.setError}
-                      threshold={view.activeSource.includes("presidential_approval_average") ? APPROVAL_THRESHOLD : undefined}
+                      {...(view.activeSource.includes("presidential_approval_average") ? { threshold: APPROVAL_THRESHOLD } : {})}
                       domains={state.chartDomains}
                       legendTitles={view.chartLegendTitles}
                       selection={state.chartSelection}

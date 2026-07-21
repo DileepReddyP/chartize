@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { StructuredFunctionTool } from "./provider";
 import {
   VISUALIZATION_TIP_TOPICS,

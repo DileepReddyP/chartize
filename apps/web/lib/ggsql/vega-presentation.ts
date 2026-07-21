@@ -16,8 +16,8 @@ export interface ChartThreshold {
 }
 
 export interface ChartDomains {
-  x?: [unknown, unknown];
-  y?: [unknown, unknown];
+  x?: [unknown, unknown] | undefined;
+  y?: [unknown, unknown] | undefined;
 }
 
 export interface ChartLegendTitles {

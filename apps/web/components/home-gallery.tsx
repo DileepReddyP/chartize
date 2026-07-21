@@ -60,7 +60,7 @@ function HomeStory({ definition, example, state, onOpen, onAsk, onError }: {
           <StaticChartPreview
             spec={presentedSpec}
             label={`${example.title}. ${example.description}`}
-            mapViewport={example.id === "mta-route-delay-map" ? MTA_HOME_VIEWPORT : undefined}
+            {...(example.id === "mta-route-delay-map" ? { mapViewport: MTA_HOME_VIEWPORT } : {})}
             onError={reportError}
           />
         ) : state.status === "error" ? (

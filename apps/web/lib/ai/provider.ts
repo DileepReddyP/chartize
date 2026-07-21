@@ -136,7 +136,7 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
       instructions: options.instructions,
       input,
       text: { format: zodTextFormat(options.schema, options.name) },
-      max_output_tokens: options.maxOutputTokens,
+      ...(options.maxOutputTokens === undefined ? {} : { max_output_tokens: options.maxOutputTokens }),
       ...(options.maxBuiltInToolCalls ? { max_tool_calls: options.maxBuiltInToolCalls } : {}),
       ...(promptCaching ? {
         prompt_cache_key: options.cacheKey,

@@ -258,7 +258,27 @@ export const AiResponsePreferencesSchema = z.object({
   technical: z.boolean(),
 });
 
+export const DEFAULT_AI_RESPONSE_PREFERENCES = Object.freeze(AiResponsePreferencesSchema.parse({
+  hypothesize: true,
+  webSearch: true,
+  dataAccess: true,
+  allowLocalChanges: false,
+  concise: true,
+  challenge: false,
+  technical: false,
+}));
+
 export const AiApprovalRequestSchema = z.enum(["local_changes"]);
+
+export const AiConversationMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  text: z.string(),
+  approval: AiApprovalRequestSchema.optional(),
+});
+
+const AiTurnHistoryMessageSchema = AiConversationMessageSchema
+  .pick({ role: true, text: true })
+  .extend({ text: z.string().max(6000) });
 
 export const AiWorkspaceDataResultSchema = z.object({
   sql: z.string().min(1).max(20_000),
@@ -304,10 +324,7 @@ export const AiTurnRequestSchema = z.object({
     columns: z.array(z.string().max(300)).max(100),
     rows: z.array(z.array(z.string().max(3000)).max(100)).max(20),
   }).optional(),
-  history: z.array(z.object({
-    role: z.enum(["user", "assistant"]),
-    text: z.string().max(6000),
-  })).max(24),
+  history: z.array(AiTurnHistoryMessageSchema).max(24),
   runtimeErrors: z.array(AiRuntimeErrorSchema).max(8).default([]),
 });
 
@@ -383,6 +400,7 @@ export type AiUsage = z.infer<typeof AiUsageSchema>;
 export type AiDataRequest = z.infer<typeof AiDataRequestSchema>;
 export type AiResponsePreferences = z.infer<typeof AiResponsePreferencesSchema>;
 export type AiApprovalRequest = z.infer<typeof AiApprovalRequestSchema>;
+export type AiConversationMessage = z.infer<typeof AiConversationMessageSchema>;
 export type AiWorkspaceDataResult = z.infer<typeof AiWorkspaceDataResultSchema>;
 export type AiTurnRequest = z.infer<typeof AiTurnRequestSchema>;
 export type AiRuntimeError = z.infer<typeof AiRuntimeErrorSchema>;
