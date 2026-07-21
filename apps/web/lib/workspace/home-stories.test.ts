@@ -24,4 +24,10 @@ describe("homepage example handoff", () => {
     expect(landStories.map((story) => story.id)).toEqual(["us-land-use-square", "us-land-use-shares"]);
     expect(landStories.reduce((columns, story) => columns + story.columns, 0)).toBe(12);
   });
+
+  it("gives every card its own opening Chartize question", () => {
+    const questions = HOME_STORIES.map((story) => story.ask.trim());
+    expect(questions.every(Boolean)).toBe(true);
+    expect(new Set(questions).size).toBe(HOME_STORIES.length);
+  });
 });

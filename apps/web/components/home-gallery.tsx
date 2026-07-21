@@ -73,7 +73,7 @@ function HomeStory({ definition, example, state, onOpen, onAsk, onError }: {
         <p>{example.description}</p>
         <div>
           <button type="button" onClick={onOpen}>open in explorer <span aria-hidden="true">↗</span></button>
-          {definition.ask && <button className="ask" type="button" onClick={onAsk}><span aria-hidden="true">✦</span> ask chartize</button>}
+          <button className="ask" type="button" onClick={onAsk}><span aria-hidden="true">✦</span> ask chartize</button>
         </div>
       </footer>
     </article>
