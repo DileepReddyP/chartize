@@ -61,8 +61,25 @@ describe("local-first browser boundary", () => {
     const lifecycle = await source("components/use-workspace-lifecycle.ts");
     expect(lifecycle).toContain('search.get("new") === "blank"');
     expect(lifecycle).toContain("await state.restoreWorkspaceSession().catch(() => false)");
-    expect(lifecycle).toContain("openWorkspace(undefined, { run: false })");
+    expect(lifecycle).toContain("openWorkspace(undefined, { run: false, replacePristineBootstrap: true })");
     expect(lifecycle).toContain('searchParams.delete("new")');
     expect(lifecycle.indexOf('search.get("new") === "blank"')).toBeLessThan(lifecycle.indexOf("restoreWorkspaceSession()"));
+  });
+
+  it("keeps a first-time direct explorer session blank", async () => {
+    const lifecycle = await source("components/use-workspace-lifecycle.ts");
+    expect(lifecycle).not.toContain('slug === "presidential_approval_average"');
+    expect(lifecycle).not.toContain("state.catalogDatasets[0]");
+  });
+
+  it("restores saved workspaces before consuming a homepage example", async () => {
+    const lifecycle = await source("components/use-workspace-lifecycle.ts");
+    const exampleBranch = lifecycle.slice(
+      lifecycle.indexOf("} else if (homeExample)"),
+      lifecycle.indexOf('} else if (search.get("workspace") === "active")'),
+    );
+    expect(exampleBranch).toContain("await state.restoreWorkspaceSession().catch(() => false)");
+    expect(exampleBranch).toContain("replacePristineBootstrap: true");
+    expect(exampleBranch).toContain('searchParams.delete("example")');
   });
 });

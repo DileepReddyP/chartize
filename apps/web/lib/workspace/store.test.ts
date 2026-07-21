@@ -8,8 +8,34 @@ describe("Chartize workspace store", () => {
     expect(parsed.leftPaneRatio).toBe(0.44);
     expect(parsed.codePaneRatio).toBe(0.56);
     expect(parsed.workspacePane).toBe("chart");
-    expect(parsed.draft.axisLabels).toMatchObject({ x: "Poll Date", y: "Approval" });
+    expect(parsed.query).toBe("");
+    expect(parsed.dockSource).toBe("");
+    expect(parsed.draft).toMatchObject({ source: "", title: "", axisLabels: { x: "", y: "" } });
     expect(parsed.aiPreferences).toEqual({ hypothesize: true, webSearch: true, dataAccess: true, allowLocalChanges: false, concise: true, challenge: false, technical: false });
+  });
+
+  it("replaces bootstrap-only state for the first explicit homepage choice", () => {
+    const previous = useChartizeWorkspace.getState();
+    try {
+      useChartizeWorkspace.setState({
+        workspaceDocuments: [{
+          ...previous.workspaceDocuments[0]!,
+          focusArea: "table",
+          selectionOrigin: "dock",
+          runtimeErrors: [{ stage: "table", message: "Chartize is still preparing your data. Try again in a moment." }],
+        }],
+      });
+      useChartizeWorkspace.getState().openWorkspace(
+        { title: "Homepage example", query: "SELECT 1" },
+        { run: false, replacePristineBootstrap: true },
+      );
+      const state = useChartizeWorkspace.getState();
+      expect(state.workspaceDocuments).toHaveLength(1);
+      expect(state.workspaceDocuments[0]).toMatchObject({ title: "Homepage example", query: "SELECT 1" });
+      expect(state.activeWorkspaceId).toBe(state.workspaceDocuments[0]?.id);
+    } finally {
+      useChartizeWorkspace.setState(previous, true);
+    }
   });
 
   it("rejects panel sizes outside the Zod constraints", () => {

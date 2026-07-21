@@ -7,7 +7,6 @@ import { VISUALIZATION_EXAMPLES } from "@/lib/ggsql/examples";
 import { workspaceInputForExample } from "@/lib/workspace/example-workspace";
 import { homeStoryForExample } from "@/lib/workspace/home-stories";
 import {
-  BUILTIN_DATASETS,
   WorkspaceShareStateSchema,
   makeInitialWorkspaceDraft,
   useChartizeWorkspace,
@@ -28,10 +27,8 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     engineState: workspace.engineState,
     catalogLoaded: workspace.catalogLoaded,
-    catalogDatasets: workspace.catalogDatasets,
     initializeBrowserEngine: workspace.initializeBrowserEngine,
     runQuery: workspace.runQuery,
-    applyDataset: workspace.applyDataset,
     setDraft: workspace.setDraft,
     setQuery: workspace.setQuery,
     persistWorkspaceSession: workspace.persistWorkspaceSession,
@@ -66,15 +63,19 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
         // running the previous chart, appends a fresh document, then leaves a
         // stable URL so refresh restores it rather than creating another one.
         await state.restoreWorkspaceSession().catch(() => false);
-        useChartizeWorkspace.getState().openWorkspace(undefined, { run: false });
+        useChartizeWorkspace.getState().openWorkspace(undefined, { run: false, replacePristineBootstrap: true });
         const cleanUrl = new URL(window.location.href);
         cleanUrl.searchParams.delete("new");
         window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
       } else if (homeExample) {
+        await state.restoreWorkspaceSession().catch(() => false);
         const workspace = useChartizeWorkspace.getState();
-        workspace.openWorkspace(workspaceInputForExample(homeExample), { run: false });
+        workspace.openWorkspace(workspaceInputForExample(homeExample), { run: false, replacePristineBootstrap: true });
         if (search.get("ai") === "general" && homeStory?.ask) workspace.setAiPrompt(homeStory.ask);
         await useChartizeWorkspace.getState().runQuery(homeExample.query);
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("example");
+        window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
       } else if (search.get("workspace") === "active") {
         const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
         const loadedExploreDirectly = (() => {
@@ -91,21 +92,6 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
         }
       } else if (await state.restoreWorkspaceSession()) {
         await useChartizeWorkspace.getState().runQuery();
-      } else {
-        const featured = state.catalogDatasets.find((dataset) => dataset.slug === "presidential_approval_average") ?? state.catalogDatasets[0];
-        if (featured?.slug === "presidential_approval_average") {
-          const query = serializeDraft(firstDraft);
-          state.setDraft(firstDraft);
-          state.setQuery(query);
-          await state.runQuery(query);
-        } else if (featured) {
-          state.applyDataset(`chartize:${featured.slug}`, featured, false);
-          await useChartizeWorkspace.getState().runQuery();
-        } else {
-          const fallback = BUILTIN_DATASETS[0]!;
-          state.applyDataset(fallback.tableName, fallback, false);
-          await useChartizeWorkspace.getState().runQuery();
-        }
       }
       if (!cancelled) setSessionReady(true);
     };

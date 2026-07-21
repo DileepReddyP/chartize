@@ -444,7 +444,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   persistWorkspaceSession: () => Promise<void>;
   restoreWorkspaceSession: () => Promise<boolean>;
   shareWorkspace: () => Promise<void>;
-  openWorkspace: (input?: NewWorkspaceInput, options?: { run?: boolean }) => void;
+  openWorkspace: (input?: NewWorkspaceInput, options?: { run?: boolean; replacePristineBootstrap?: boolean }) => void;
   switchWorkspace: (id: string) => void;
   closeWorkspace: (id: string) => void;
   setDraft: (value: Updater<GgsqlDraft>) => void;
@@ -492,6 +492,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
 
 const initialDraft = makeInitialWorkspaceDraft();
 const initialQuery = serializeDraft(initialDraft);
+const bootstrapDraft = makeBlankDraft();
 const DEFAULT_AI_PREFERENCES: AiResponsePreferences = DEFAULT_AI_RESPONSE_PREFERENCES;
 
 function persistentAiPreferences(preferences: AiResponsePreferences): AiResponsePreferences {
@@ -506,11 +507,11 @@ function requestHistory(messages: AiConversationMessage[]) {
 
 const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   id: "workspace-1",
-  title: initialDraft.title || "Presidential approval, daily average",
+  title: "untitled visualization",
   createdAt: "initial",
-  draft: initialDraft,
-  query: initialQuery,
-  dockSource: "chartize:presidential_approval_average",
+  draft: bootstrapDraft,
+  query: "",
+  dockSource: "",
   resultTab: "chart",
   fullSort: null,
   gridSelection: null,
@@ -520,7 +521,7 @@ const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   chartDomainHistory: [],
   mapViewport: { zoom: 1, panX: 0, panY: 0 },
   mapFeatureSelections: [],
-  focusArea: "chart",
+  focusArea: "code",
   editorFontSize: 13,
   aiPlacement: "left",
   aiContext: "general",
@@ -535,6 +536,38 @@ const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   workspaceActions: [],
 });
 
+const legacyApprovalBootstrapWorkspace = WorkspaceDocumentSchema.parse({
+  ...initialWorkspaceDocument,
+  title: initialDraft.title || "Presidential approval, daily average",
+  draft: initialDraft,
+  query: initialQuery,
+  dockSource: "chartize:presidential_approval_average",
+  focusArea: "chart",
+});
+
+function isPristineBootstrapWorkspace(document: WorkspaceDocument) {
+  const matches = (template: WorkspaceDocument) => JSON.stringify({
+    ...document,
+    // Explorer can move focus into the source pane and briefly attempt a
+    // table load while the engine is still starting. Neither changes the
+    // user's workspace content.
+    focusArea: template.focusArea,
+    selectionOrigin: template.selectionOrigin,
+    runtimeErrors: template.runtimeErrors,
+  }) === JSON.stringify(template);
+  return matches(initialWorkspaceDocument) || matches(legacyApprovalBootstrapWorkspace);
+}
+
+function withoutPristineBootstrapWorkspace(session: z.infer<typeof WorkspaceSessionSchema>) {
+  if (session.workspaceDocuments.length <= 1) return session;
+  const workspaceDocuments = session.workspaceDocuments.filter((document) => !isPristineBootstrapWorkspace(document));
+  if (!workspaceDocuments.length || workspaceDocuments.length === session.workspaceDocuments.length) return session;
+  const activeWorkspaceId = workspaceDocuments.some((document) => document.id === session.activeWorkspaceId)
+    ? session.activeWorkspaceId
+    : workspaceDocuments.at(-1)!.id;
+  return WorkspaceSessionSchema.parse({ ...session, activeWorkspaceId, workspaceDocuments });
+}
+
 const initialSnapshot = WorkspaceSnapshotSchema.parse({
   activeWorkspaceId: initialWorkspaceDocument.id,
   workspaceDocuments: [initialWorkspaceDocument],
@@ -542,15 +575,15 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   catalogLoaded: false,
   localDatasets: BUILTIN_DATASETS,
   catalogDatasets: [],
-  draft: initialDraft,
-  query: initialQuery,
+  draft: bootstrapDraft,
+  query: "",
   spec: null,
   selectedData: { ...EMPTY_TABLE, limit: 200 },
   resultRelation: EMPTY_RESULT_RELATION,
   fullData: EMPTY_TABLE,
   resultTab: "chart",
   fullSort: null,
-  dockSource: "chartize:presidential_approval_average",
+  dockSource: "",
   running: false,
   fullLoading: false,
   showLoadingMask: false,
@@ -567,7 +600,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   mapViewport: { zoom: 1, panX: 0, panY: 0 },
   mapFeatureSelections: [],
   resultStatus: "",
-  focusArea: "chart",
+  focusArea: "code",
   workspacePane: "chart",
   editorFontSize: 13,
   editorFocusVersion: 0,
@@ -1346,12 +1379,14 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const record = restored.workspace;
     if (!record || !("payload" in record)) return false;
     const restoredSession = WorkspaceSessionSchema.parse(JSON.parse(record.payload));
-    const session = WorkspaceSessionSchema.parse({
+    const session = withoutPristineBootstrapWorkspace(WorkspaceSessionSchema.parse({
       ...restoredSession,
       workspaceDocuments: restoredSession.workspaceDocuments.map(migrateWorkspaceDocument),
-    });
+    }));
     const document = session.workspaceDocuments.find((candidate) => candidate.id === session.activeWorkspaceId)!;
-    lastPersistedSession = JSON.stringify(session);
+    // Keep the stored payload as the comparison point. If migration changed
+    // the session, the normal autosave pass will write the repaired form.
+    lastPersistedSession = record.payload;
     set((state) => ({
       ...activatedWorkspaceState(document, state.aiFocusVersion + 1),
       activeWorkspaceId: session.activeWorkspaceId,
@@ -1378,10 +1413,14 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   openWorkspace: (input, options) => {
     set((state) => {
       const document = newWorkspaceDocument(input);
+      const currentDocuments = replaceCapturedWorkspace(state);
+      const replaceBootstrap = options?.replacePristineBootstrap === true
+        && state.workspaceDocuments.length === 1
+        && isPristineBootstrapWorkspace(state.workspaceDocuments[0]!);
       return {
         ...activatedWorkspaceState(document, state.aiFocusVersion + 1),
         activeWorkspaceId: document.id,
-        workspaceDocuments: [...replaceCapturedWorkspace(state), document],
+        workspaceDocuments: replaceBootstrap ? [document] : [...currentDocuments, document],
       };
     });
     workspaceActivated(get, options?.run !== false);
