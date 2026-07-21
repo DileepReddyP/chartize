@@ -13,6 +13,10 @@ function AttachmentIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 12.5 14.8 6.2a3 3 0 0 1 4.2 4.2l-8.5 8.5a5 5 0 0 1-7.1-7.1l8.1-8.1" /></svg>;
 }
 
+function ManualCleanIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M4 11h8M4 16h5" /><path d="m12.5 19 .7-3.1 5.9-5.9 2.4 2.4-5.9 5.9-3.1.7Z" /></svg>;
+}
+
 export function DataUploadControl({
   disabled,
   onFiles,
@@ -53,7 +57,7 @@ export function DataUploadControl({
         </section>
         <footer>
           <label>
-            import raw for manual cleaning
+            <ManualCleanIcon />import raw for manual cleaning
             <input name="chartize-manual-data-files" aria-label="Choose data files to import for manual cleaning" type="file" multiple accept={DATA_FILE_ACCEPT} disabled={disabled || busy} onChange={(event) => { void importFiles(event.target.files, "manual"); event.currentTarget.value = ""; }} />
           </label>
           <small>csv · parquet · geojson · shapefile zip</small>

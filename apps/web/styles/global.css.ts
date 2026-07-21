@@ -582,7 +582,9 @@ globalStyle(".data-upload-menu label", { cursor: "pointer", textTransform: "lowe
 globalStyle(".data-upload-menu input", { display: "none" });
 globalStyle(".data-upload-primary", { minHeight: "29px", display: "inline-flex", alignItems: "center", marginTop: "3px", padding: "5px 9px", background: vars.color.tealDark, color: vars.color.panel, fontSize: "8px", fontWeight: 560 });
 globalStyle(".data-upload-menu > footer", { minHeight: "39px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "9px", padding: "6px 9px", borderTop: `1px solid ${vars.color.line}` });
-globalStyle(".data-upload-menu > footer label", { color: vars.color.amethyst, fontSize: "8px", fontWeight: 560 });
+globalStyle(".data-upload-menu > footer label", { minHeight: "29px", display: "inline-flex", alignItems: "center", gap: "5px", padding: "5px 9px", border: `1px solid ${vars.color.tealDark}`, borderLeftWidth: "3px", background: vars.color.tealPale, color: vars.color.tealDark, fontSize: "8px", fontWeight: 560, transition: "background 120ms ease, color 120ms ease" });
+globalStyle(".data-upload-menu > footer label:hover, .data-upload-menu > footer label:focus-within", { background: "#c8eee9", color: vars.color.tealDark });
+globalStyle(".data-upload-menu > footer label svg", { width: "13px", height: "13px", flex: "0 0 auto", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" });
 globalStyle(".data-upload-menu > footer small", { color: vars.color.muted, fontFamily: "ui-monospace, monospace", fontSize: "6px" });
 globalStyle(".source-drop-overlay", { position: "absolute", inset: 0, zIndex: vars.layer.top, display: "grid", placeContent: "center", justifyItems: "center", gap: "5px", border: `2px dashed ${vars.color.tealDark}`, background: "rgb(221 245 242 / 88%)", color: vars.color.tealDark, textAlign: "center", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)", pointerEvents: "none" });
 globalStyle(".source-drop-overlay > span", { fontSize: "28px", fontWeight: 300 });
