@@ -11,7 +11,7 @@ import {
 import { placeFloating } from "@/lib/floating-placement";
 import { useChartizeWorkspace, type AiContext } from "@/lib/workspace/store";
 import { useWorkspaceViewModel } from "@/lib/workspace/view-model";
-import { DwimPanel } from "./dwim-panel";
+import { DwimPanel, dwimPanelSize } from "./dwim-panel";
 import { InlineQueryControls, type InlineControlAnchors } from "./inline-query-controls";
 
 export type PromoteAi = (
@@ -183,14 +183,13 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
         right: bounds?.right ?? Math.max(cursorLeft, selectionLeft) + 2,
         bottom: Math.max(cursorTop + (visible?.height ?? 20), selectionTop + (startVisible?.height ?? 20)),
       };
-      const preferredWidth = section === "visual" ? 560 : 640;
-      const preferredHeight = section === "visual" ? 590 : section === "selection" ? 330 : 520;
+      const preferredSize = dwimPanelSize(section);
       const rightRoom = window.innerWidth - (bounds?.right ?? window.innerWidth * .44) - 12;
       const placed = placeFloating(
         anchorRect,
         {
-          width: Math.min(preferredWidth, Math.max(280, rightRoom)),
-          height: Math.min(preferredHeight, window.innerHeight - 72),
+          width: Math.min(preferredSize.width, Math.max(280, rightRoom)),
+          height: Math.min(preferredSize.height, window.innerHeight - 72),
         },
         { left: 0, top: 48, right: window.innerWidth, bottom: window.innerHeight },
         8,

@@ -1,8 +1,26 @@
 # Chartize
 
-Chartize is a self-hosted, local-first GGSQL visualization studio for civic, polling, Census, election, economic, and geographic data.
+**Turn a question into an inspectable, presentation-ready data story—without sending the working dataset to a server.**
+
+Chartize is a self-hosted, local-first visualization studio for exploring public or private data with GGSQL, browser-local SQL, and GPT-5.6. It keeps code, source rows, rendered charts, selected marks, and AI discussion in one workspace, so every suggestion can be inspected against the data and executed where the data lives: in the browser.
 
 ![Chartize homepage with live polling, transit, world, climate, food, and land-use views](./docs/images/chartize-home.webp)
+
+## How GPT-5.6 powers Chartize
+
+Chartize uses `gpt-5.6-luna` through the OpenAI Responses API as a workspace agent, not as a detached chat box. Each turn is structured and Zod-validated. The model receives the active GGSQL, chart description, available schemas, and only the selection or sample context the user enables.
+
+| Job | GPT-5.6's role | How Chartize keeps it grounded |
+| --- | --- | --- |
+| Discuss data and code | Explain the current query, result, selected marks, or a proposed analysis while preserving one conversation across every workspace pane | Source IDs, typed schemas, current code, chart metadata, and bounded selection context accompany the turn |
+| Answer with exact values | Decide which concrete values are needed and emit one to four bounded data requests | The browser worker executes those requests in the workspace engine; the results return to the same model turn, for at most three data rounds |
+| Enhance a visualization | Return structured, non-mutating GGSQL and an explanation, then perform a presentation-quality pass over color, axes, domains, legends, labels, and uncertainty | A local digest of the official GGSQL 0.4.1 documentation and tested drawing recipes is available as an agent tool; the candidate runs in the browser before it is accepted |
+| Repair generated code | Diagnose the exact engine failure and make the smallest documented correction | Chartize feeds the failed candidate and browser diagnostic back for up to two focused repair attempts |
+| Ground outside claims | Use optional live web search when current external evidence would improve the answer | Direct sources are retained with the response; web research and browser-data execution stay distinct so outside facts are not confused with workspace values |
+
+AI calls use `store: false`, low reasoning effort for interactive latency, and a 30-minute prompt cache for the stable instruction prefix. The server never exposes its OpenAI key to the browser and never executes model-authored SQL. Persistent browser-local mutations require an explicit user request and are separated from the visualization query.
+
+## The workspace
 
 The explorer is the product surface. Monaco GGSQL stays primary while sources, fields, visualization parameters, table ranges, chart ranges, and map features expose contextual controls around the current selection. On desktop, the code, source table, and rendered result live in three resizable panes; tablet and phone layouts turn them into graph-first tabs with a persistent Chartize AI entry beneath the visualization. Clicked marks, Shift-click multi-selections, and dragged ranges share one height-bounded, scrollable inspector. Ranges persist with editable corner handles, a compact range label, intersecting-mark count, zoom, copy, CSV export, and Chartize AI handoff.
 
@@ -21,7 +39,7 @@ React and Zustand do not know that IndexedDB or the data service exists. They se
 
 Next.js exposes a deliberately small data surface on the same origin: catalog metadata, exact dataset-version downloads, and steward-only ingestion and rollback. It never accepts arbitrary SQL from the browser or from Chartize AI.
 
-Chartize AI is one workspace-scoped, latency-first Luna conversation. It receives the active query, chart description, catalog schemas, user-enabled selection context, and unresolved browser diagnostics. If it needs exact values, it emits a bounded data request; the worker runs it in the same workspace engine and continues the model turn. Generated GGSQL is tried locally, and an engine diagnostic—including the exact failed candidate—can trigger up to two bounded repair passes. A compact local digest of the official GGSQL 0.4.1 documentation and drawing recipes is available to the agent, so ordinary syntax generation does not require a web search.
+The same boundary applies to Chartize AI: the model can request bounded workspace data, but the browser worker remains the only component that can execute it. The full agent and repair loop is described above.
 
 ## Included examples
 

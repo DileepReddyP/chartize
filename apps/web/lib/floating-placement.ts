@@ -18,6 +18,46 @@ export interface FloatingPlacement {
   quadrant: FloatingQuadrant;
 }
 
+export interface ContainedFloatingRect extends FloatingSize {
+  left: number;
+  top: number;
+  maxHeight: number;
+}
+
+/**
+ * Fits a proposed floating surface inside a boundary, shrinking it only when
+ * the boundary itself is smaller than the preferred surface. This is useful
+ * after a viewport resize, when an otherwise good anchor placement may have
+ * stale coordinates. maxHeight is the full distance from the contained top to
+ * the boundary bottom so a long scroll surface can end flush with the viewport.
+ */
+export function containFloating(
+  position: Pick<FloatingPlacement, "left" | "top">,
+  size: FloatingSize,
+  boundary: FloatingRect,
+  margin = 12,
+): ContainedFloatingRect {
+  const minimumLeft = boundary.left + margin;
+  const minimumTop = boundary.top + margin;
+  const availableWidth = Math.max(0, boundary.right - boundary.left - margin * 2);
+  const availableHeight = Math.max(0, boundary.bottom - boundary.top - margin * 2);
+  const width = Math.min(Math.max(0, size.width), availableWidth);
+  const height = Math.min(Math.max(0, size.height), availableHeight);
+  const maximumLeft = Math.max(minimumLeft, boundary.right - margin - width);
+  const maximumTop = Math.max(minimumTop, boundary.bottom - margin - height);
+
+  const left = Math.max(minimumLeft, Math.min(maximumLeft, position.left));
+  const top = Math.max(minimumTop, Math.min(maximumTop, position.top));
+
+  return {
+    left,
+    top,
+    width,
+    height,
+    maxHeight: Math.max(0, boundary.bottom - top),
+  };
+}
+
 function overlapArea(left: number, top: number, size: FloatingSize, anchor: FloatingRect) {
   const width = Math.max(0, Math.min(left + size.width, anchor.right) - Math.max(left, anchor.left));
   const height = Math.max(0, Math.min(top + size.height, anchor.bottom) - Math.max(top, anchor.top));

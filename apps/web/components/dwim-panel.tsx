@@ -2,6 +2,7 @@
 
 import type { FieldMetadata } from "@chartize/contracts";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { containFloating, type FloatingRect, type FloatingSize } from "@/lib/floating-placement";
 import { sourceAlias, type QuerySection, type VisualPointState } from "@/lib/ggsql/query-context";
 import { fieldsForAesthetic, guidanceForMark, patchForMark, type VisualAesthetic } from "@/lib/ggsql/visual-guidance";
 import type { WorkspaceSource } from "@/lib/workspace/view-model";
@@ -217,6 +218,25 @@ const smoothMethods = ["", "nw", "ols", "tls"];
 const smoothKernels = ["", "gaussian", "epanechnikov", "triangular", "rectangular", "biweight", "cosine"];
 const lineTypes = ["", "solid", "dashed", "dotted", "dotdash"];
 
+export function dwimPanelSize(section: QuerySection): FloatingSize {
+  if (section === "visual") return { width: 560, height: 590 };
+  if (section === "selection") return { width: 640, height: 330 };
+  return { width: 640, height: 620 };
+}
+
+function browserViewportBoundary(): FloatingRect {
+  if (typeof window === "undefined") return { left: 0, top: 48, right: 1200, bottom: 800 };
+  const viewport = window.visualViewport;
+  const left = viewport?.offsetLeft ?? 0;
+  const viewportTop = viewport?.offsetTop ?? 0;
+  return {
+    left,
+    top: Math.max(48, viewportTop),
+    right: left + (viewport?.width ?? window.innerWidth),
+    bottom: viewportTop + (viewport?.height ?? window.innerHeight),
+  };
+}
+
 function FieldSelect({ label, value, fields, aesthetic, mark, onChange }: {
   label: string;
   value: string;
@@ -300,7 +320,14 @@ export function DwimPanel(props: DwimPanelProps) {
     : props.section === "visual"
       ? { index: "02", eyebrow: "visual context", title: "visualise at point", placeholder: "Describe the visual change you mean…" }
       : { index: "01", eyebrow: "data context", title: "sql at point", placeholder: "Describe the data operation you mean…" };
-  const style = { "--dwim-left": `${props.position.left}px`, "--dwim-top": `${props.position.top}px` } as CSSProperties;
+  const [viewportBoundary, setViewportBoundary] = useState(browserViewportBoundary);
+  const bounds = containFloating(props.position, dwimPanelSize(props.section), viewportBoundary);
+  const style: CSSProperties = {
+    left: `${bounds.left}px`,
+    top: `${bounds.top}px`,
+    width: `${bounds.width}px`,
+    maxHeight: `${bounds.maxHeight}px`,
+  };
   const primaryAesthetic = ["spatial", "bar", "area", "polygon", "tile"].includes(props.visual.mark)
     ? "fill"
     : ["ribbon", "range", "segment", "rule"].includes(props.visual.mark) ? "" : "colour";
@@ -315,10 +342,24 @@ export function DwimPanel(props: DwimPanelProps) {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [props.onClose]);
 
+  useEffect(() => {
+    const syncBoundary = () => setViewportBoundary(browserViewportBoundary());
+    const visualViewport = window.visualViewport;
+    syncBoundary();
+    window.addEventListener("resize", syncBoundary);
+    visualViewport?.addEventListener("resize", syncBoundary);
+    visualViewport?.addEventListener("scroll", syncBoundary);
+    return () => {
+      window.removeEventListener("resize", syncBoundary);
+      visualViewport?.removeEventListener("resize", syncBoundary);
+      visualViewport?.removeEventListener("scroll", syncBoundary);
+    };
+  }, []);
+
   const chooseMark = (mark: string) => props.onVisual(patchForMark(mark, props.visual, props.visualFields));
 
   return (
-    <aside className={`dwim-panel section-${props.section}`} style={style} aria-label={`${copy.title} actions`}>
+    <aside className={`dwim-panel section-${props.section}`} style={style} aria-label={`${copy.title} actions`} tabIndex={props.section === "sql" ? 0 : undefined}>
       <header className="dwim-heading" data-index={copy.index}>
         <div><span>{copy.eyebrow}</span><h2>{copy.title}</h2></div>
         <PopupCloseButton size="compact" onClick={props.onClose} label="Close contextual actions" />
