@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const root = new URL("../../", import.meta.url);
@@ -37,23 +37,24 @@ describe("local-first browser boundary", () => {
     expect(artifact).toContain("activeDatasetArtifact");
   });
 
-  it("serializes homepage charts to SVG and releases their live Vega views", async () => {
-    const [gallery, preview] = await Promise.all([
+  it("serves pre-rendered homepage charts without starting the browser data runtime", async () => {
+    const [gallery, previews] = await Promise.all([
       source("components/home-gallery.tsx"),
-      source("components/static-chart-preview.tsx"),
+      readdir(new URL("public/home-previews/", root)),
     ]);
-    expect(gallery).toContain("StaticChartPreview");
+    expect(gallery).not.toContain('"use client"');
+    expect(gallery).toContain("/home-previews/");
+    expect(gallery).toContain("<img");
     expect(gallery).not.toContain("<ChartView");
-    expect(gallery).toContain("createIsolatedBrowserRuntime");
-    expect(gallery).not.toContain("requestAnimationFrame");
-    expect(gallery).not.toContain("router.push");
-    expect(gallery).toContain("window.location.assign");
+    expect(gallery).not.toContain("createIsolatedBrowserRuntime");
+    expect(gallery).not.toContain("StaticChartPreview");
+    expect(gallery).not.toContain("window.location.assign");
+    expect(gallery).toContain('<a href={explorerHref(example)}>');
+    expect(gallery).not.toContain('<Link href={explorerHref(example)}>');
     expect(gallery).toContain('/explore?new=blank');
     expect(gallery).toContain('href="/about"');
     expect(gallery).not.toContain("follow the evidence");
-    expect(preview).toContain("view.toSVG()");
-    expect(preview).toContain("embedded.finalize()");
-    expect(preview).not.toContain("requestAnimationFrame");
+    expect(previews.filter((name) => name.endsWith(".svg"))).toHaveLength(9);
   });
 
   it("turns the homepage blank intent into a fresh, refresh-stable workspace", async () => {
