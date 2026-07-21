@@ -36,4 +36,15 @@ describe("local-first browser boundary", () => {
     expect(`${catalog}\n${artifact}`).not.toContain("export async function POST");
     expect(artifact).toContain("activeDatasetArtifact");
   });
+
+  it("serializes homepage charts to SVG and releases their live Vega views", async () => {
+    const [gallery, preview] = await Promise.all([
+      source("components/home-gallery.tsx"),
+      source("components/static-chart-preview.tsx"),
+    ]);
+    expect(gallery).toContain("StaticChartPreview");
+    expect(gallery).not.toContain("<ChartView");
+    expect(preview).toContain("view.toSVG()");
+    expect(preview).toContain("embedded.finalize()");
+  });
 });

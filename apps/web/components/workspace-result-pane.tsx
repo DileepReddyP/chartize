@@ -43,8 +43,6 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
     mapViewport: workspace.mapViewport,
     mapFeatureSelections: workspace.mapFeatureSelections,
     aiOpen: workspace.aiOpen,
-    aiContext: workspace.aiContext,
-    aiContextNote: workspace.aiContextNote,
     aiMessage: workspace.aiMessage,
     setResultTab: workspace.setResultTab,
     setFocusArea: workspace.setFocusArea,
@@ -191,7 +189,6 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
                       mapMode={view.isMap}
                       mapViewport={state.mapViewport}
                       mapFeatureSelections={state.mapFeatureSelections}
-                      mapFeatureAiActive={Boolean(state.aiOpen && state.aiContext === "chart" && state.aiContextNote === view.mapFeatureContext)}
                       onMapPan={state.panMap}
                       onMapZoom={state.zoomMap}
                       onChartZoom={gestureZoom}
@@ -200,7 +197,6 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
                       onRegionSelect={state.selectChartRegion}
                       onMapFeatureSelect={state.selectMapFeature}
                       onVisualItemsSelect={state.setMapFeatureSelections}
-                      onAskMapFeature={(origin) => { if (view.mapFeatureContext) promoteAi(view.mapFeatureContext, "left", "chart", origin); }}
                     /></div>
                     {view.isMap
                       ? <MapExplorationControls viewport={state.mapViewport} onPan={state.panMap} onZoom={state.zoomMap} onReset={state.resetMapViewport} />

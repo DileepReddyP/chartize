@@ -201,6 +201,19 @@ describe("Chartize Vega presentation", () => {
     expect(axis.values.at(-1)).toBe("2025");
   });
 
+  it("presents weekday tiles as a calendar with quiet labels above the grid", () => {
+    const spec = presentChartSpec({
+      mark: "rect",
+      encoding: {
+        x: { field: "__ggsql_aes_x__", type: "ordinal", title: "Day of week", axis: { labelAngle: -90, grid: true } },
+        y: { field: "calendar_week", type: "ordinal", title: null, axis: { grid: true } },
+      },
+    });
+    const encoding = spec.encoding as { x: { axis: Record<string, unknown> }; y: { axis: unknown } };
+    expect(encoding.x.axis).toMatchObject({ orient: "top", title: null, labelAngle: 0, domain: false, ticks: false, grid: false });
+    expect(encoding.y.axis).toBeNull();
+  });
+
   it("preserves GGSQL's projected camera so text and geoshapes share one translation", () => {
     const projection = {
       type: "identity",

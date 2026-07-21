@@ -174,6 +174,30 @@ function withSparseDenseDiscreteAxis(channel: unknown, rows: Array<Record<string
   return { ...value, axis: { ...axis, values, labelAngle: 0, labelOverlap: "greedy", labelSeparation: 8 } };
 }
 
+function withCalendarWeekdayAxis(channel: unknown) {
+  if (!channel || typeof channel !== "object" || Array.isArray(channel)) return channel;
+  const value = channel as Record<string, unknown>;
+  const field = String(value.field).toLocaleLowerCase();
+  const title = String(value.title).toLocaleLowerCase();
+  if ((field !== "weekday" && title !== "day of week") || value.axis === null) return channel;
+  const axis = value.axis && typeof value.axis === "object" && !Array.isArray(value.axis)
+    ? value.axis as Record<string, unknown>
+    : {};
+  return {
+    ...value,
+    axis: {
+      ...axis,
+      orient: "top",
+      title: null,
+      labelAngle: 0,
+      labelPadding: 8,
+      domain: false,
+      ticks: false,
+      grid: false,
+    },
+  };
+}
+
 function makeThresholdStroke(y: { scale?: { domain?: unknown } }, threshold: ChartThreshold) {
   const domain = y.scale?.domain;
   if (!Array.isArray(domain) || domain.length < 2 || !domain.every((value) => typeof value === "number")) {
@@ -261,7 +285,7 @@ function styleSpecNode(
           text: encoding.text && typeof encoding.text === "object" && !Array.isArray(encoding.text)
             ? { ...(encoding.text as Record<string, unknown>), type: "nominal" }
             : encoding.text,
-          x: withDomain(withoutExplicitlyUntitledAxis(withSparseDenseDiscreteAxis(withOrdinalDateLabels(withSaneInlineLogDomain(encoding.x, rows)), rows)), domains?.x),
+          x: withDomain(withCalendarWeekdayAxis(withoutExplicitlyUntitledAxis(withSparseDenseDiscreteAxis(withOrdinalDateLabels(withSaneInlineLogDomain(encoding.x, rows)), rows))), domains?.x),
           y: withDomain(withoutExplicitlyUntitledAxis(withSaneInlineLogDomain(encoding.y, rows)), domains?.y),
           color: withLegendTitle(replaceDefaultBlack(encoding.color, chartColors.tealDark), legendTitles?.colour, ["color", "colour"]),
           fill: withLegendTitle(withCompactLargeNumberLegend(withSignedDivergingMidpoint(replaceDefaultBlack(encoding.fill, chartColors.teal)), rows), legendTitles?.fill, ["fill"]),

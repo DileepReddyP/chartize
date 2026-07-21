@@ -8,7 +8,7 @@ import { initializeBrowserRuntime, releaseBrowserWorkspace, runWorkspaceGgsql } 
 import { VISUALIZATION_EXAMPLES, type VisualizationExample } from "@/lib/ggsql/examples";
 import { workspaceInputForExample } from "@/lib/workspace/example-workspace";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
-import { ChartView } from "./chart-view";
+import { StaticChartPreview } from "./static-chart-preview";
 
 interface HomeStoryDefinition {
   id: string;
@@ -37,6 +37,7 @@ const HOME_SECTIONS = [
 ] as const;
 
 type StoryState = { status: "queued" | "loading" | "ready" | "error"; spec: Record<string, unknown> | null; error: string };
+const MTA_HOME_VIEWPORT = { zoom: 1.25, panX: 0, panY: 0.05 } as const;
 
 function HomeStory({ definition, example, state, onOpen, onAsk, onError }: {
   definition: HomeStoryDefinition;
@@ -78,11 +79,10 @@ function HomeStory({ definition, example, state, onOpen, onAsk, onError }: {
       </header>
       <div className="home-story-chart">
         {presentedSpec ? (
-          <ChartView
+          <StaticChartPreview
             spec={presentedSpec}
-            interactive={false}
-            mapMode={/\bDRAW\s+spatial\b/i.test(example.query)}
-            mapViewport={example.id === "mta-route-delay-map" ? { zoom: 1.25, panX: 0, panY: 0.05 } : undefined}
+            label={`${example.title}. ${example.description}`}
+            mapViewport={example.id === "mta-route-delay-map" ? MTA_HOME_VIEWPORT : undefined}
             onError={reportError}
           />
         ) : state.status === "error" ? (

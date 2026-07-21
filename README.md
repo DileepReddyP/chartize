@@ -4,7 +4,7 @@ Chartize is a self-hosted, local-first GGSQL visualization studio for civic, pol
 
 ![Chartize homepage with live polling, transit, world, climate, food, and land-use views](./docs/images/chartize-home.webp)
 
-The explorer is the product surface. Monaco GGSQL stays primary while sources, fields, visualization parameters, table ranges, chart ranges, and map features expose contextual controls around the current selection. On desktop, the code, source table, and rendered result live in three resizable panes; tablet and phone layouts turn them into graph-first tabs with a persistent Chartize AI entry beneath the visualization. A clicked mark or place carries its values in a movable inspector; a dragged range persists with editable corner handles, a compact range label, intersecting-mark count, zoom, copy, CSV export, and Chartize AI handoff.
+The explorer is the product surface. Monaco GGSQL stays primary while sources, fields, visualization parameters, table ranges, chart ranges, and map features expose contextual controls around the current selection. On desktop, the code, source table, and rendered result live in three resizable panes; tablet and phone layouts turn them into graph-first tabs with a persistent Chartize AI entry beneath the visualization. Clicked marks, Shift-click multi-selections, and dragged ranges share one height-bounded, scrollable inspector. Ranges persist with editable corner handles, a compact range label, intersecting-mark count, zoom, copy, CSV export, and Chartize AI handoff.
 
 ![Chartize workspace with GGSQL, source data, and a linked chart](./docs/images/chartize-workspace.webp)
 
