@@ -55,6 +55,9 @@ globalStyle(".topbar", {
   borderBottom: `1px solid ${vars.color.line}`,
 });
 globalStyle(".brand", { display: "flex", alignItems: "center", gap: "8px", textDecoration: "none", fontSize: "17px", fontWeight: 650, letterSpacing: "-.04em", textTransform: "lowercase" });
+// The AI glass intentionally reaches across the header, but the product mark
+// remains a dependable escape route from the conversation.
+globalStyle(".topbar > .brand", { position: "relative", zIndex: vars.layer.top });
 globalStyle(".brand-mark", { width: "15px", height: "15px", background: vars.color.teal, borderRadius: "50%" });
 globalStyle(".topbar-workspace-lockup", { minWidth: 0, justifySelf: "start", display: "flex", alignItems: "center", justifyContent: "center", gap: "7px" });
 globalStyle(".workspace-switcher", { position: "relative", minWidth: 0 });

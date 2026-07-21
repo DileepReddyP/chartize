@@ -443,7 +443,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   persistWorkspaceSession: () => Promise<void>;
   restoreWorkspaceSession: () => Promise<boolean>;
   shareWorkspace: () => Promise<void>;
-  openWorkspace: (input?: NewWorkspaceInput) => void;
+  openWorkspace: (input?: NewWorkspaceInput, options?: { run?: boolean }) => void;
   switchWorkspace: (id: string) => void;
   closeWorkspace: (id: string) => void;
   setDraft: (value: Updater<GgsqlDraft>) => void;
@@ -1352,7 +1352,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     set({ aiMessage: "Share URL copied. Local file bytes are not included." });
   },
 
-  openWorkspace: (input) => {
+  openWorkspace: (input, options) => {
     set((state) => {
       const document = newWorkspaceDocument(input);
       return {
@@ -1361,7 +1361,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         workspaceDocuments: [...replaceCapturedWorkspace(state), document],
       };
     });
-    workspaceActivated(get);
+    if (options?.run !== false) workspaceActivated(get);
   },
   switchWorkspace: (id) => {
     if (id === get().activeWorkspaceId) return;

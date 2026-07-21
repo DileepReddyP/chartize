@@ -44,7 +44,12 @@ describe("local-first browser boundary", () => {
     ]);
     expect(gallery).toContain("StaticChartPreview");
     expect(gallery).not.toContain("<ChartView");
+    expect(gallery).toContain("createIsolatedBrowserRuntime");
+    expect(gallery).not.toContain("requestAnimationFrame");
+    expect(gallery).not.toContain("router.push");
+    expect(gallery).toContain("window.location.assign");
     expect(preview).toContain("view.toSVG()");
     expect(preview).toContain("embedded.finalize()");
+    expect(preview).not.toContain("requestAnimationFrame");
   });
 });

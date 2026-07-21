@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { serializeDraft } from "@/lib/ggsql/serialize";
+import { VISUALIZATION_EXAMPLES } from "@/lib/ggsql/examples";
+import { workspaceInputForExample } from "@/lib/workspace/example-workspace";
+import { homeStoryForExample } from "@/lib/workspace/home-stories";
 import {
   BUILTIN_DATASETS,
   WorkspaceShareStateSchema,
@@ -45,6 +48,11 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
     let cancelled = false;
     const boot = async () => {
       const hash = window.location.hash.match(/^#view=(.+)$/)?.[1];
+      const search = new URLSearchParams(window.location.search);
+      const homeStory = homeStoryForExample(search.get("example"));
+      const homeExample = homeStory
+        ? VISUALIZATION_EXAMPLES.find((example) => example.id === homeStory.id)
+        : undefined;
       if (hash) {
         const shared = decodeShareState(hash);
         const draft = shared.draft ?? firstDraft;
@@ -52,7 +60,12 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
         state.setDraft(draft);
         state.setQuery(query);
         await state.runQuery(query);
-      } else if (new URLSearchParams(window.location.search).get("workspace") === "active") {
+      } else if (homeExample) {
+        const workspace = useChartizeWorkspace.getState();
+        workspace.openWorkspace(workspaceInputForExample(homeExample), { run: false });
+        if (search.get("ai") === "general" && homeStory?.ask) workspace.setAiPrompt(homeStory.ask);
+        await useChartizeWorkspace.getState().runQuery(homeExample.query);
+      } else if (search.get("workspace") === "active") {
         const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
         const loadedExploreDirectly = (() => {
           try { return !navigation || new URL(navigation.name).pathname === window.location.pathname; }

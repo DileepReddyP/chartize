@@ -22,6 +22,42 @@ let client: LocalEngineClient | null = null;
 let initialization: Promise<Awaited<ReturnType<LocalEngineClient["init"]>>> | null = null;
 let progressHandler: ((progress: BrowserEngineProgress) => void) | undefined;
 
+/**
+ * Homepage previews are disposable work. Keeping them on a separate worker
+ * lets route navigation terminate that work immediately instead of placing an
+ * Explorer query behind the remaining gallery queue.
+ */
+export function createIsolatedBrowserRuntime() {
+  const runtime = new LocalEngineClient();
+  let initialization: Promise<Awaited<ReturnType<LocalEngineClient["init"]>>> | null = null;
+  let destroyed = false;
+
+  const available = () => {
+    if (destroyed) throw new Error("This preview data worker has already been stopped.");
+    return runtime;
+  };
+
+  return {
+    initialize(workspaceId: string, spatialiteUrl: string) {
+      const parsedWorkspaceId = WorkspaceIdSchema.parse(workspaceId);
+      const url = z.string().min(1).max(2000).parse(spatialiteUrl);
+      if (!initialization) initialization = available().init(parsedWorkspaceId, url);
+      return initialization;
+    },
+    run(workspaceId: string, query: string) {
+      return available().run(WorkspaceIdSchema.parse(workspaceId), QuerySchema.parse(query));
+    },
+    release(workspaceId: string) {
+      return available().closeWorkspace(WorkspaceIdSchema.parse(workspaceId));
+    },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      runtime.destroy();
+    },
+  };
+}
+
 function engine() {
   if (!client) throw new Error("Chartize is still preparing your data. Try again in a moment.");
   return client;

@@ -12,6 +12,22 @@ interface StaticChartPreviewProps {
   onError: (message: string) => void;
 }
 
+const SVG_RENDER_TIMEOUT_MS = 15_000;
+
+async function withRenderTimeout<T>(operation: Promise<T>) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("This chart preview took too long to render.")), SVG_RENDER_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Homepage charts are reading surfaces, not editors. Render each Vega view
  * once, serialize it to SVG, and immediately finalize the live runtime. This
@@ -27,26 +43,46 @@ export function StaticChartPreview({ spec, label, mapViewport, onError }: Static
 
   useEffect(() => {
     let cancelled = false;
+    let acceptEmbeddedView = true;
     let embedded: EmbedResult | null = null;
     const render = async () => {
       const element = host.current;
       if (!element) return;
       setSvg("");
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      if (cancelled || !host.current) return;
+      if (cancelled) return;
       const mount = document.createElement("div");
-      embedded = await embed(
+      const embedding = embed(
         mount,
         presentChartSpec(spec, undefined, undefined, mapViewport) as VisualizationSpec,
         { actions: false, renderer: "svg", tooltip: false, logLevel: 1 },
-      );
-      const width = Math.max(240, Math.round(host.current.clientWidth));
-      const height = Math.max(160, Math.round(host.current.clientHeight));
-      await embedded.view.width(width).height(height).runAsync();
-      const rendered = await embedded.view.toSVG();
-      embedded.finalize();
-      embedded = null;
-      if (!cancelled) setSvg(rendered);
+      ).then((result) => {
+        if (cancelled || !acceptEmbeddedView) {
+          result.finalize();
+          throw new Error("This chart preview was stopped.");
+        }
+        return result;
+      });
+      try {
+        embedded = await withRenderTimeout(embedding);
+      } catch (cause) {
+        acceptEmbeddedView = false;
+        throw cause;
+      }
+      if (cancelled || !host.current) {
+        embedded.finalize();
+        embedded = null;
+        return;
+      }
+      try {
+        const width = Math.max(240, Math.round(element.clientWidth));
+        const height = Math.max(160, Math.round(element.clientHeight));
+        await withRenderTimeout(embedded.view.width(width).height(height).runAsync());
+        const rendered = await withRenderTimeout(embedded.view.toSVG());
+        if (!cancelled) setSvg(rendered);
+      } finally {
+        embedded.finalize();
+        embedded = null;
+      }
     };
     void render().catch((cause) => {
       embedded?.finalize();
@@ -55,6 +91,7 @@ export function StaticChartPreview({ spec, label, mapViewport, onError }: Static
     });
     return () => {
       cancelled = true;
+      acceptEmbeddedView = false;
       embedded?.finalize();
     };
   }, [mapViewport, spec]);

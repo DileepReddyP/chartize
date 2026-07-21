@@ -1,34 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { BrowserVisualizationSpecSchema } from "@/lib/local/worker-protocol";
-import { initializeBrowserRuntime, releaseBrowserWorkspace, runWorkspaceGgsql } from "@/lib/local/browser-runtime";
+import { createIsolatedBrowserRuntime } from "@/lib/local/browser-runtime";
 import { VISUALIZATION_EXAMPLES, type VisualizationExample } from "@/lib/ggsql/examples";
-import { workspaceInputForExample } from "@/lib/workspace/example-workspace";
-import { useChartizeWorkspace } from "@/lib/workspace/store";
+import { HOME_STORIES, type HomeStoryDefinition } from "@/lib/workspace/home-stories";
 import { StaticChartPreview } from "./static-chart-preview";
-
-interface HomeStoryDefinition {
-  id: string;
-  section: "signals" | "context" | "everyday";
-  columns: number;
-  minHeight: number;
-  eyebrow: string;
-  ask?: string;
-}
-
-const HOME_STORIES: HomeStoryDefinition[] = [
-  { id: "approval-uncertainty", section: "signals", columns: 7, minHeight: 356, eyebrow: "public opinion", ask: "What changed in presidential approval, and what can this average establish versus only suggest?" },
-  { id: "mta-route-delay-map", section: "signals", columns: 5, minHeight: 356, eyebrow: "city motion", ask: "Which subway services expose the most riders to delay, and what should I compare next?" },
-  { id: "world-population-map", section: "context", columns: 5, minHeight: 356, eyebrow: "people + place", ask: "Why is the world’s population distributed this way, and which geographic comparisons are most revealing?" },
-  { id: "world-development-bubbles", section: "context", columns: 7, minHeight: 356, eyebrow: "linked evidence", ask: "Explain the major outliers in health versus prosperity without treating the relationship as causal." },
-  { id: "world-temperature-stripes", section: "context", columns: 12, minHeight: 270, eyebrow: "climate signal", ask: "Explain the warming pattern and distinguish an annual anomaly from absolute temperature." },
-  { id: "june-temperature-heatmap", section: "everyday", columns: 5, minHeight: 350, eyebrow: "weather calendar" },
-  { id: "cocoa-top-countries", section: "everyday", columns: 7, minHeight: 350, eyebrow: "food, lightly", ask: "Why do these countries lead cocoa-bean supply per person, and what does this measure leave out?" },
-  { id: "us-land-use-square", section: "everyday", columns: 12, minHeight: 360, eyebrow: "land + composition", ask: "What does this land-use atlas reveal, and why should I not read each tile as its physical location?" },
-];
 
 const HOME_SECTIONS = [
   { id: "signals", index: "01", eyebrow: "signals in motion" },
@@ -103,8 +81,6 @@ function HomeStory({ definition, example, state, onOpen, onAsk, onError }: {
 }
 
 export function HomeGallery() {
-  const router = useRouter();
-  const openWorkspace = useChartizeWorkspace((state) => state.openWorkspace);
   const stories = useMemo(() => HOME_STORIES.flatMap((definition) => {
     const example = VISUALIZATION_EXAMPLES.find((candidate) => candidate.id === definition.id);
     return example ? [{ definition, example }] : [];
@@ -115,14 +91,15 @@ export function HomeGallery() {
 
   useEffect(() => {
     let cancelled = false;
+    const runtime = createIsolatedBrowserRuntime();
     const load = async () => {
-      await initializeBrowserRuntime("chartize-home", process.env.NEXT_PUBLIC_SPATIALITE_WASM_URL ?? "/wasm/mod_spatialite.wasm");
+      await runtime.initialize("chartize-home", process.env.NEXT_PUBLIC_SPATIALITE_WASM_URL ?? "/wasm/mod_spatialite.wasm");
       for (const { example } of stories) {
         if (cancelled) break;
         const workspaceId = `home-${example.id}`;
         setStoryState((current) => ({ ...current, [example.id]: { status: "loading", spec: null, error: "" } }));
         try {
-          const spec = BrowserVisualizationSpecSchema.parse(await runWorkspaceGgsql(workspaceId, example.query));
+          const spec = BrowserVisualizationSpecSchema.parse(await runtime.run(workspaceId, example.query));
           if (!cancelled) setStoryState((current) => ({ ...current, [example.id]: { status: "ready", spec, error: "" } }));
         } catch (cause) {
           const error = cause instanceof Error ? cause.message : String(cause);
@@ -131,9 +108,8 @@ export function HomeGallery() {
           // The returned Vega spec owns its inline rows. Releasing each WASM
           // context before loading the next story keeps the homepage bounded
           // to one transient query workspace instead of eight live engines.
-          await releaseBrowserWorkspace(workspaceId).catch(() => undefined);
+          if (!cancelled) await runtime.release(workspaceId).catch(() => undefined);
         }
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
     };
     void load().catch((cause) => {
@@ -145,13 +121,17 @@ export function HomeGallery() {
     });
     return () => {
       cancelled = true;
+      runtime.destroy();
     };
   }, [stories]);
 
   const openStory = (example: VisualizationExample, ask?: string) => {
-    openWorkspace(workspaceInputForExample(example));
-    if (ask) useChartizeWorkspace.getState().setAiPrompt(ask);
-    router.push(`/explore?workspace=active${ask ? "&ai=general" : ""}`);
+    const query = new URLSearchParams({ example: example.id });
+    if (ask) query.set("ai", "general");
+    // A document navigation is deliberate here. It immediately disposes the
+    // gallery's preview worker and gives the editor a clean runtime; the URL
+    // carries everything Explorer needs to reconstruct the handoff.
+    window.location.assign(`/explore?${query}`);
   };
   const reportError = useCallback((id: string, error: string) => {
     setStoryState((current) => ({ ...current, [id]: { status: "error", spec: null, error } }));
@@ -166,7 +146,7 @@ export function HomeGallery() {
             <b>chartize</b>
           </Link>
           <h1 id="home-proposition-heading">turn data into graphs, charts, and maps. then ask what they mean</h1>
-          <button type="button" onClick={() => router.push("/explore")}>start blank <span aria-hidden="true">→</span></button>
+          <button type="button" onClick={() => window.location.assign("/explore")}>start blank <span aria-hidden="true">→</span></button>
         </section>
         {HOME_SECTIONS.map((section) => (
           <section key={section.id} className={`home-editorial-section section-${section.id}`} aria-labelledby={`home-${section.id}-heading`}>
@@ -188,7 +168,7 @@ export function HomeGallery() {
             </div>
           </section>
         ))}
-        <footer className="home-footer"><span>Chartize</span><p>follow the evidence · keep the source close · make the question visible</p><button type="button" onClick={() => router.push("/explore")}>start with a blank grid →</button></footer>
+        <footer className="home-footer"><span>Chartize</span><p>follow the evidence · keep the source close · make the question visible</p><button type="button" onClick={() => window.location.assign("/explore")}>start with a blank grid →</button></footer>
       </div>
     </main>
   );
