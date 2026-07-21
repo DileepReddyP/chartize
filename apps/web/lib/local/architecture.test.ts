@@ -48,10 +48,20 @@ describe("local-first browser boundary", () => {
     expect(gallery).not.toContain("requestAnimationFrame");
     expect(gallery).not.toContain("router.push");
     expect(gallery).toContain("window.location.assign");
+    expect(gallery).toContain('/explore?new=blank');
     expect(gallery).toContain('href="/about"');
     expect(gallery).not.toContain("follow the evidence");
     expect(preview).toContain("view.toSVG()");
     expect(preview).toContain("embedded.finalize()");
     expect(preview).not.toContain("requestAnimationFrame");
+  });
+
+  it("turns the homepage blank intent into a fresh, refresh-stable workspace", async () => {
+    const lifecycle = await source("components/use-workspace-lifecycle.ts");
+    expect(lifecycle).toContain('search.get("new") === "blank"');
+    expect(lifecycle).toContain("await state.restoreWorkspaceSession().catch(() => false)");
+    expect(lifecycle).toContain("openWorkspace(undefined, { run: false })");
+    expect(lifecycle).toContain('searchParams.delete("new")');
+    expect(lifecycle.indexOf('search.get("new") === "blank"')).toBeLessThan(lifecycle.indexOf("restoreWorkspaceSession()"));
   });
 });

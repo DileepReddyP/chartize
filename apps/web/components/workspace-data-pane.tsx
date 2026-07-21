@@ -10,8 +10,10 @@ import { DataUploadControl, filesFromDrop, type DataUploadMode } from "./data-up
 import { SourceTiles } from "./dwim-panel";
 import type { PromoteAi } from "./workspace-code-pane";
 import { WorkspaceSelectionActions } from "./workspace-selection-actions";
+import { useWorkspaceScopeId } from "./workspace-scope";
 
 export function WorkspaceDataPane({ promoteAi }: { promoteAi: PromoteAi }) {
+  const workspaceId = useWorkspaceScopeId();
   const view = useWorkspaceViewModel();
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     catalogLoaded: workspace.catalogLoaded,
@@ -100,7 +102,7 @@ export function WorkspaceDataPane({ promoteAi }: { promoteAi: PromoteAi }) {
           loading={state.fullLoading}
           selectedColumns={selectedColumns}
           sort={state.fullSort}
-          streamKey={`${state.dockSource}:${state.fullSort?.column ?? ""}:${state.fullSort?.direction ?? ""}`}
+          streamKey={`${workspaceId}:${state.dockSource}:${state.fullSort?.column ?? ""}:${state.fullSort?.direction ?? ""}`}
           onSort={state.sortFullTable}
           onAddColumn={state.addColumnFromTable}
           onLoadMore={state.loadMoreFullTable}

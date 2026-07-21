@@ -88,6 +88,22 @@ describe("Chartize workspace store", () => {
     expect(WorkspaceSnapshotSchema.safeParse(state).success).toBe(true);
   });
 
+  it("invalidates active table state when a blank workspace is opened without running", () => {
+    useChartizeWorkspace.setState({
+      fullData: { columns: ["stale"], rows: [["previous workspace"]], totalRows: 1, offset: 0, limit: 100 },
+      fullLoading: true,
+    });
+
+    useChartizeWorkspace.getState().openWorkspace(undefined, { run: false });
+
+    expect(useChartizeWorkspace.getState()).toMatchObject({
+      query: "",
+      dockSource: "",
+      fullLoading: false,
+      fullData: { columns: [], rows: [], totalRows: 0 },
+    });
+  });
+
   it("invalidates the raw-table page when a different dataset is applied", () => {
     useChartizeWorkspace.setState({
       fullData: { columns: ["old"], rows: [["stale"]], totalRows: 1, offset: 0, limit: 100 },

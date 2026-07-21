@@ -11,10 +11,12 @@ import { WorkspaceAiOverlay } from "./workspace-ai-overlay";
 import { WorkspaceCodePane, type PromoteAi } from "./workspace-code-pane";
 import { WorkspaceDataPane } from "./workspace-data-pane";
 import { WorkspaceResultPane } from "./workspace-result-pane";
+import { WorkspaceScope } from "./workspace-scope";
 
 export function Explorer() {
   const view = useWorkspaceViewModel();
   const state = useChartizeWorkspace(useShallow((workspace) => ({
+    activeWorkspaceId: workspace.activeWorkspaceId,
     leftPaneRatio: workspace.leftPaneRatio,
     codePaneRatio: workspace.codePaneRatio,
     workspacePane: workspace.workspacePane,
@@ -74,9 +76,10 @@ export function Explorer() {
     };
     root.addEventListener("wheel", lockPanePinch, { capture: true, passive: false });
     return () => root.removeEventListener("wheel", lockPanePinch, true);
-  }, [state.setFocusArea]);
+  }, [state.activeWorkspaceId, state.setFocusArea]);
 
   return (
+    <WorkspaceScope key={state.activeWorkspaceId} workspaceId={state.activeWorkspaceId}>
     <main className="workbench" ref={workbenchRef}>
       <div
         className={`workbench-grid dwim-layout workspace-pane-${state.workspacePane}`}
@@ -130,5 +133,6 @@ export function Explorer() {
       </div>
       <WorkspaceAiOverlay />
     </main>
+    </WorkspaceScope>
   );
 }

@@ -737,7 +737,7 @@ async function replayWorkspaceActions(workspaceId: string, actions: AiWorkspaceA
   for (const action of actions) await runtimeExecuteWorkspaceSql(workspaceId, action.sql);
 }
 
-function workspaceActivated(get: () => ChartizeWorkspaceState) {
+function workspaceActivated(get: () => ChartizeWorkspaceState, run = true) {
   browserRunSequence += 1;
   fullTableSequence += 1;
   if (scheduledRun) {
@@ -745,6 +745,7 @@ function workspaceActivated(get: () => ChartizeWorkspaceState) {
     scheduledRun = null;
   }
   get().setRunning(false);
+  if (!run) return;
   queueMicrotask(() => {
     const state = get();
     if (state.engineState !== "ready") return;
@@ -1091,16 +1092,17 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   loadFullTable: async (sourceInput, offsetInput = 0, sortInput = get().fullSort, append = false) => {
     const source = z.string().max(300).parse(sourceInput);
     if (!source) return;
+    const workspaceId = get().activeWorkspaceId;
     const offset = z.number().int().nonnegative().parse(offsetInput);
     const sort = sortInput === null ? null : z.object({ column: z.string().min(1).max(300), direction: z.enum(["asc", "desc"]) }).parse(sortInput);
     const requestId = ++fullTableSequence;
     const published = get().catalogDatasets.find((dataset) => `chartize:${dataset.slug}` === source || dataset.tableName === source);
     const key = `${published?.version ?? "browser"}:${source}:${offset}:${sort?.column ?? ""}:${sort?.direction ?? ""}`;
-    const commit = (table: TablePreview) => set((state) => ({
+    const commit = (table: TablePreview) => set((state) => state.activeWorkspaceId === workspaceId ? ({
       fullData: append
         ? { ...table, offset: 0, rows: [...state.fullData.rows, ...table.rows] }
         : { ...table, offset: 0 },
-    }));
+    }) : state);
     const cached = fullTableCache.get(key);
     if (cached) {
       commit(cached);
@@ -1109,8 +1111,8 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     set({ fullLoading: true });
     try {
       const order = sort ? ` ORDER BY ${quoteIdentifier(sort.column)} ${sort.direction.toUpperCase()} NULLS LAST` : "";
-      const page = await get().executeWorkspaceSql(`SELECT * FROM ${quoteLocalSource(source)}${order} LIMIT 100 OFFSET ${offset}`);
-      const count = await get().executeWorkspaceSql(`SELECT COUNT(*) AS total FROM ${quoteLocalSource(source)}`);
+      const page = await runtimeExecuteWorkspaceSql(workspaceId, `SELECT * FROM ${quoteLocalSource(source)}${order} LIMIT 100 OFFSET ${offset}`);
+      const count = await runtimeExecuteWorkspaceSql(workspaceId, `SELECT COUNT(*) AS total FROM ${quoteLocalSource(source)}`);
       const table = TablePreviewSchema.parse({
         columns: page.columns,
         rows: page.rows,
@@ -1119,18 +1121,18 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         limit: 100,
       });
       remember(fullTableCache, key, table, 16);
-      if (requestId === fullTableSequence) {
+      if (requestId === fullTableSequence && get().activeWorkspaceId === workspaceId) {
         commit(table);
         set((state) => ({ runtimeErrors: withoutRuntimeStage(state.runtimeErrors, "table") }));
       }
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      if (requestId === fullTableSequence) set((state) => ({
+      if (requestId === fullTableSequence && get().activeWorkspaceId === workspaceId) set((state) => ({
         error: message,
         runtimeErrors: addRuntimeError(state.runtimeErrors, { stage: "table", message }),
       }));
     } finally {
-      if (requestId === fullTableSequence) set({ fullLoading: false });
+      if (requestId === fullTableSequence && get().activeWorkspaceId === workspaceId) set({ fullLoading: false });
     }
   },
   sortFullTable: (columnInput) => {
@@ -1361,7 +1363,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         workspaceDocuments: [...replaceCapturedWorkspace(state), document],
       };
     });
-    if (options?.run !== false) workspaceActivated(get);
+    workspaceActivated(get, options?.run !== false);
   },
   switchWorkspace: (id) => {
     if (id === get().activeWorkspaceId) return;

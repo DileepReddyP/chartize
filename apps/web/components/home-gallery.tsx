@@ -146,7 +146,7 @@ export function HomeGallery() {
             <b>chartize</b>
           </Link>
           <h1 id="home-proposition-heading">turn data into graphs, charts, and maps. then ask what they mean</h1>
-          <button type="button" onClick={() => window.location.assign("/explore")}>start blank <span aria-hidden="true">→</span></button>
+          <button type="button" onClick={() => window.location.assign("/explore?new=blank")}>start blank <span aria-hidden="true">→</span></button>
         </section>
         {HOME_SECTIONS.map((section) => (
           <section key={section.id} className={`home-editorial-section section-${section.id}`} aria-labelledby={`home-${section.id}-heading`}>

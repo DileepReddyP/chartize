@@ -60,6 +60,16 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
         state.setDraft(draft);
         state.setQuery(query);
         await state.runQuery(query);
+      } else if (search.get("new") === "blank") {
+        // A plain /explore visit restores the most recent workspace. The
+        // explicit homepage intent preserves those session documents without
+        // running the previous chart, appends a fresh document, then leaves a
+        // stable URL so refresh restores it rather than creating another one.
+        await state.restoreWorkspaceSession().catch(() => false);
+        useChartizeWorkspace.getState().openWorkspace(undefined, { run: false });
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("new");
+        window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
       } else if (homeExample) {
         const workspace = useChartizeWorkspace.getState();
         workspace.openWorkspace(workspaceInputForExample(homeExample), { run: false });
