@@ -28,7 +28,7 @@ describe("AI continuation transport", () => {
   it("carries one research memo across browser-data rounds", () => {
     const base = {
       task: "explain" as const,
-      context: "general" as const,
+      context: "data" as const,
       contextNote: "A-line delay chart",
       request: "Why is the A line delayed?",
       currentQuery: "SELECT 1",
@@ -36,7 +36,7 @@ describe("AI continuation transport", () => {
       availableSources: [],
       view: { title: "A line delays", subtitle: "", sources: [] },
       preferences: { hypothesize: true, webSearch: true, dataAccess: true, concise: true, challenge: false, technical: false },
-      history: [],
+      history: [{ role: "user" as const, text: "What about these rows?", context: { kind: "data" as const, note: "Two delay rows" } }],
       runtimeErrors: [],
       workspaceDataRound: 1,
       workspaceData: [],
@@ -45,9 +45,15 @@ describe("AI continuation transport", () => {
         memo: "Service evidence already gathered.",
         sources: [{ title: "MTA", url: "https://www.mta.info/" }],
       },
+      providerContext: {
+        items: [{ id: "reasoning_1", type: "reasoning" as const, summary: [], encrypted_content: "opaque" }],
+        consumedWorkspaceResults: 0,
+      },
     };
     const parsed = AiTurnEnvelopeSchema.parse(base);
     expect(parsed.researchContext?.memo).toContain("already gathered");
+    expect(parsed.providerContext?.items[0]).toMatchObject({ type: "reasoning" });
+    expect(parsed.history[0]?.context?.kind).toBe("data");
     expect(parsed.preferences.allowLocalChanges).toBe(false);
   });
 

@@ -5,6 +5,7 @@ import {
   AiUsageSchema,
   AiWorkspaceDataResultSchema,
   type AiResearchContext,
+  type AiProviderContext,
   type AiResponse,
   type AiTurnRequest,
   type AiUsage,
@@ -180,10 +181,11 @@ export async function completeWorkerAiTurn(
 ) {
   const workspaceData: AiWorkspaceDataResult[] = [];
   let researchContext: AiResearchContext | undefined;
+  let providerContext: AiProviderContext | undefined;
   let accumulatedUsage: AiUsage | null = null;
   for (let workspaceDataRound = 0; workspaceDataRound <= 3; workspaceDataRound += 1) {
     emit(id, { phase: "thinking", message: workspaceDataRound ? "checking the data…" : "thinking…" });
-    const payload = AiTurnEnvelopeSchema.parse({ ...input, workspaceDataRound, workspaceData, researchContext });
+    const payload = AiTurnEnvelopeSchema.parse({ ...input, workspaceDataRound, workspaceData, researchContext, providerContext });
     const parsed = await requestStreamedAiTurn(payload, id, emit);
     accumulatedUsage = mergeUsage(accumulatedUsage, parsed.usage);
     if (parsed.kind !== "data_request") {
@@ -192,6 +194,7 @@ export async function completeWorkerAiTurn(
     }
     if (!input.preferences.dataAccess) throw new Error("Chartize AI requested workspace data while data access was disabled.");
     researchContext = parsed.researchContext ?? researchContext;
+    providerContext = parsed.providerContext ?? providerContext;
     workspaceData.push(...await Promise.all(
       parsed.requests.map((request) => executeAiDataRequest(workspaceId, request, id, emit)),
     ));

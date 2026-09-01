@@ -171,18 +171,18 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
               ) : (
                 <>
                   <header className="chart-header"><div className="chart-title">
-                    <EditableChartLabel kind="title" value={view.visualState.title || state.draft.title} onCommit={(value) => state.editChartLabel("title", value)} />
-                    <EditableChartLabel kind="subtitle" value={view.visualState.subtitle || state.draft.subtitle} onCommit={(value) => state.editChartLabel("subtitle", value)} />
+                    <EditableChartLabel kind="title" value={view.renderedVisualState.title || state.draft.title} onCommit={(value) => state.editChartLabel("title", value)} />
+                    <EditableChartLabel kind="subtitle" value={view.renderedVisualState.subtitle || state.draft.subtitle} onCommit={(value) => state.editChartLabel("subtitle", value)} />
                   </div></header>
                   <div className="chart-view-shell">
                     <div className="chart-view"><ChartView
                       ref={chartRef}
                       spec={state.spec}
                       featureData={state.resultRelation}
-                      exportTitle={view.visualState.title || state.draft.title}
-                      exportSubtitle={view.visualState.subtitle || state.draft.subtitle}
+                      exportTitle={view.renderedVisualState.title || state.draft.title}
+                      exportSubtitle={view.renderedVisualState.subtitle || state.draft.subtitle}
                       onError={state.setError}
-                      {...(view.activeSource.includes("presidential_approval_average") ? { threshold: APPROVAL_THRESHOLD } : {})}
+                      {...(view.renderedActiveSource.includes("presidential_approval_average") ? { threshold: APPROVAL_THRESHOLD } : {})}
                       domains={state.chartDomains}
                       legendTitles={view.chartLegendTitles}
                       selection={state.chartSelection}
@@ -229,7 +229,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
             aria-label="Ask Chartize about this visualization"
             placeholder={view.isBlankWorkspace ? "Describe the graph, map, or model you want…" : "Ask what this means, or tell Chartize what to change…"}
             onFocus={(event) => promoteAi(
-              `${view.aiViewNote} ${view.isBlankWorkspace ? "The visualization canvas is blank; help build from the available sources." : "The current chart, query, source catalog, and any active selection are attached."}`,
+              `${view.aiViewNote} ${view.isBlankWorkspace ? "The visualization canvas is blank; help build from the available sources." : "The rendered chart and its GGSQL are the active context; selected rows remain local unless the sample control is enabled."}`,
               "left",
               view.isBlankWorkspace ? "general" : "chart",
               event.currentTarget,
@@ -239,7 +239,7 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
         </label>
 
         {state.aiMessage && !state.aiOpen && <button className="status-toast" type="button" onClick={() => state.setAiMessage("")}>{state.aiMessage}</button>}
-        <footer className="chart-footer"><span>{view.activeSources.join(" + ")}</span><span><i className={`status-dot ${state.engineState}`} /> {state.engineState === "loading" ? "preparing data" : state.engineState === "error" ? "data unavailable" : "data ready"}</span></footer>
+        <footer className="chart-footer"><span>{view.renderedSources.join(" + ")}</span><span><i className={`status-dot ${state.engineState}`} /> {state.engineState === "loading" ? "preparing data" : state.engineState === "error" ? "data unavailable" : "data ready"}</span></footer>
       </article>
     </section>
   );

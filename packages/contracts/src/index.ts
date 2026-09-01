@@ -215,6 +215,39 @@ export const AiResearchContextSchema = z.object({
   sources: z.array(AiCitationSchema).max(6),
 });
 
+export const AiContextSchema = z.enum(["code", "chart", "data", "general"]);
+
+export const AiContextReferenceSchema = z.object({
+  kind: AiContextSchema,
+  note: z.string().min(1).max(1600),
+});
+
+const AiProviderReasoningItemSchema = z.object({
+  id: z.string().min(1).max(300),
+  type: z.literal("reasoning"),
+  summary: z.array(z.object({
+    type: z.literal("summary_text"),
+    text: z.string().max(4000),
+  })).max(8),
+  encrypted_content: z.string().min(1).max(250_000),
+  status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
+});
+
+const AiProviderDataMessageSchema = z.object({
+  role: z.literal("user"),
+  content: z.string().min(1).max(100_000),
+});
+
+/**
+ * Short-lived Responses API state used only while one browser-data turn is in
+ * progress. It is returned to the browser worker and discarded with the turn;
+ * normal workspace conversation state remains browser-local plain text.
+ */
+export const AiProviderContextSchema = z.object({
+  items: z.array(z.union([AiProviderReasoningItemSchema, AiProviderDataMessageSchema])).max(32),
+  consumedWorkspaceResults: z.number().int().min(0).max(12),
+});
+
 export const AiWorkspaceActionSchema = z.object({
   sql: z.string().min(1).max(50_000),
   purpose: z.string().min(1).max(500),
@@ -274,10 +307,11 @@ export const AiConversationMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string(),
   approval: AiApprovalRequestSchema.optional(),
+  context: AiContextReferenceSchema.optional(),
 });
 
 const AiTurnHistoryMessageSchema = AiConversationMessageSchema
-  .pick({ role: true, text: true })
+  .pick({ role: true, text: true, context: true })
   .extend({ text: z.string().max(6000) });
 
 export const AiWorkspaceDataResultSchema = z.object({
@@ -298,10 +332,12 @@ export const AiRuntimeErrorSchema = z.object({
 
 export const AiTurnRequestSchema = z.object({
   task: z.enum(["generate", "repair", "explain"]),
-  context: z.enum(["code", "chart", "general"]),
+  context: AiContextSchema,
   contextNote: z.string().max(4000),
   request: z.string().min(1).max(4000),
   currentQuery: z.string().max(100_000),
+  queryStatus: z.enum(["blank", "rendered", "edited", "failed"]).default("rendered"),
+  renderedQuery: z.string().max(100_000).optional(),
   source: z.string().max(300).optional(),
   schema: z.array(FieldMetadataSchema).max(500),
   availableSources: z.array(z.object({
@@ -332,12 +368,14 @@ export const AiTurnEnvelopeSchema = AiTurnRequestSchema.extend({
   workspaceDataRound: z.number().int().min(0).max(3).default(0),
   workspaceData: z.array(AiWorkspaceDataResultSchema).max(12).default([]),
   researchContext: AiResearchContextSchema.optional(),
+  providerContext: AiProviderContextSchema.optional(),
 });
 
 export const AiDataRequestResponseSchema = z.object({
   kind: z.literal("data_request"),
   requests: z.array(AiDataRequestSchema).min(1).max(4),
   researchContext: AiResearchContextSchema.optional(),
+  providerContext: AiProviderContextSchema.optional(),
   usage: AiUsageSchema,
 });
 
@@ -395,6 +433,9 @@ export type TablePreview = z.infer<typeof TablePreviewSchema>;
 export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
 export type AiCitation = z.infer<typeof AiCitationSchema>;
 export type AiResearchContext = z.infer<typeof AiResearchContextSchema>;
+export type AiContext = z.infer<typeof AiContextSchema>;
+export type AiContextReference = z.infer<typeof AiContextReferenceSchema>;
+export type AiProviderContext = z.infer<typeof AiProviderContextSchema>;
 export type AiWorkspaceAction = z.infer<typeof AiWorkspaceActionSchema>;
 export type AiUsage = z.infer<typeof AiUsageSchema>;
 export type AiDataRequest = z.infer<typeof AiDataRequestSchema>;

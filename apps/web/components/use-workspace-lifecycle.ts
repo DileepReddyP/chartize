@@ -6,6 +6,7 @@ import { serializeDraft } from "@/lib/ggsql/serialize";
 import { VISUALIZATION_EXAMPLES } from "@/lib/ggsql/examples";
 import { workspaceInputForExample } from "@/lib/workspace/example-workspace";
 import { homeStoryForExample } from "@/lib/workspace/home-stories";
+import { chooseDwimAiContext } from "@/lib/workspace/ai-context";
 import {
   WorkspaceShareStateSchema,
   makeInitialWorkspaceDraft,
@@ -176,12 +177,51 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
   }, []);
 
   useEffect(() => {
-    if (!sessionReady || openedAiFromUrl.current) return;
-    const openAssistant = () => promoteAi(`${aiViewNote} Current query and source catalog are attached.`, "left", "general");
+    if (!sessionReady) return;
+    const openAssistant = () => {
+      const workspace = useChartizeWorkspace.getState();
+      const context = chooseDwimAiContext({
+        blank: !workspace.query.trim(),
+        hasEditorContext: Boolean(workspace.editorContext),
+        hasGridSelection: Boolean(workspace.gridSelection),
+        hasVisualSelection: Boolean(workspace.chartSelection || workspace.mapFeatureSelections.length),
+        focusArea: workspace.focusArea,
+      });
+      if (context === "code" && workspace.editorContext) {
+        const editor = workspace.editorContext;
+        promoteAi(
+          `${aiViewNote} ${editor.section === "selection" ? `Selected GGSQL: ${editor.selectedText}` : `${editor.section === "sql" ? "SQL" : "VISUALISE"} at character ${editor.offset}`}`,
+          "right",
+          "code",
+        );
+        return;
+      }
+      if (context === "data" && workspace.gridSelection) {
+        promoteAi(`${aiViewNote} The live table selection is the active subject.`, "left", "data");
+        return;
+      }
+      if (context === "chart" && (workspace.chartSelection || workspace.mapFeatureSelections.length)) {
+        promoteAi(`${aiViewNote} The live chart selection is the active subject.`, "left", "chart");
+        return;
+      }
+      if (context === "general") {
+        promoteAi(`${aiViewNote} The visualization canvas is blank; use the available source catalog to build the requested view.`, "left", "general");
+        return;
+      }
+      if (context === "code") {
+        promoteAi(`${aiViewNote} The current GGSQL editor is the active context.`, "right", "code");
+        return;
+      }
+      if (context === "data") {
+        promoteAi(`${aiViewNote} The active source table is the active context.`, "left", "data");
+        return;
+      }
+      promoteAi(`${aiViewNote} The rendered chart and current query are the active context.`, "left", "chart");
+    };
     window.addEventListener("chartize:open-ai", openAssistant);
-    if (new URLSearchParams(window.location.search).get("ai") === "general") {
+    if (!openedAiFromUrl.current && new URLSearchParams(window.location.search).get("ai") === "general") {
       openedAiFromUrl.current = true;
-      openAssistant();
+      promoteAi(`${aiViewNote} Current query and source catalog are attached.`, "left", "general");
     }
     return () => window.removeEventListener("chartize:open-ai", openAssistant);
   }, [aiViewNote, promoteAi, sessionReady]);

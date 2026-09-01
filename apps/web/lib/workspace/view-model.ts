@@ -33,6 +33,7 @@ export interface WorkspaceSource {
 export function useWorkspaceViewModel() {
   const input = useChartizeWorkspace(useShallow((state) => ({
     query: state.query,
+    resultQuery: state.resultQuery,
     draft: state.draft,
     spec: state.spec,
     selectedData: state.selectedData,
@@ -44,6 +45,8 @@ export function useWorkspaceViewModel() {
 
   return useMemo(() => {
     const activeSources = sourcesFromQuery(input.query);
+    const renderedQuery = input.resultQuery;
+    const renderedSources = sourcesFromQuery(renderedQuery);
     const isBlankWorkspace = !input.query.trim();
     const activeSource = activeSources[0] ?? (isBlankWorkspace ? "" : sourceFromQuery(input.query, input.draft.source));
     const sources: WorkspaceSource[] = [
@@ -67,31 +70,41 @@ export function useWorkspaceViewModel() {
       const match = sources.find((candidate) => candidate.id === source);
       return match ? [match] : [];
     });
+    const renderedSourceDetails = renderedSources.flatMap((source) => {
+      const match = sources.find((candidate) => candidate.id === source);
+      return match ? [match] : [];
+    });
     const fieldsByName = new Map<string, FieldMetadata>();
     activeSourceDetails.forEach((source) => source.fields.forEach((field) => {
       if (!fieldsByName.has(field.name)) fieldsByName.set(field.name, field);
     }));
     const activeFields = [...fieldsByName.values()];
+    const renderedFieldsByName = new Map<string, FieldMetadata>();
+    renderedSourceDetails.forEach((source) => source.fields.forEach((field) => {
+      if (!renderedFieldsByName.has(field.name)) renderedFieldsByName.set(field.name, field);
+    }));
+    const renderedFields = [...renderedFieldsByName.values()];
     const selectedProjectionNames = selectedProjectionLabels(input.query);
     const selectedFieldNames = new Set(selectedProjectionNames);
     const visualFields = visualFieldsFromPreview(activeFields, input.selectedData, selectedProjectionNames);
     const visualState = visualPointState(input.query);
-    const isMap = /\bDRAW\s+spatial\b/i.test(splitGgsql(input.query).visual);
+    const renderedVisualState = visualPointState(renderedQuery);
+    const isMap = /\bDRAW\s+spatial\b/i.test(splitGgsql(renderedQuery).visual);
     const chartSelectionData = selectionTableFromSpec(input.spec) ?? input.selectedData;
-    const selectionFields = visualSelectionFields(input.query);
+    const selectionFields = visualSelectionFields(renderedQuery);
     const chartSelectionDetails = describeChartSelection(
       input.chartSelection,
       chartSelectionData,
       selectionFields.x,
       selectionFields.y,
-      activeFields,
-      visualState.labelX,
-      visualState.labelY,
+      renderedFields,
+      renderedVisualState.labelX,
+      renderedVisualState.labelY,
     );
     const aiView = {
-      title: visualState.title || input.draft.title,
-      subtitle: visualState.subtitle || input.draft.subtitle,
-      sources: activeSourceDetails.map(({ id, title, description }) => ({ id, title, description })),
+      title: renderedVisualState.title || input.draft.title,
+      subtitle: renderedVisualState.subtitle || input.draft.subtitle,
+      sources: renderedSourceDetails.map(({ id, title, description }) => ({ id, title, description })),
     };
     const titleNote = aiView.title ? `Chart: “${aiView.title}”.` : "Untitled chart.";
     const subtitleNote = aiView.subtitle ? ` Subtitle: “${aiView.subtitle}”.` : "";
@@ -102,35 +115,36 @@ export function useWorkspaceViewModel() {
       chartSelectionData,
       selectionFields.x,
       selectionFields.y,
-      activeFields,
-      visualState.labelX,
-      visualState.labelY,
+      renderedFields,
+      renderedVisualState.labelX,
+      renderedVisualState.labelY,
     );
     const aiViewNote = `${titleNote}${subtitleNote}${sourceNote}${extent ? ` ${extent}.` : ""}`;
     const mapSelectedData = tableFromVisualItemSelections(input.mapFeatureSelections);
     const activeMapFeature = input.mapFeatureSelections.at(-1) ?? null;
-    const mapFeatureContext = input.mapFeatureSelections.length
-      ? `${aiViewNote} Selected ${input.mapFeatureSelections.length === 1 ? `${isMap ? "map feature" : "visual item"}: ${activeMapFeature!.title}` : `${input.mapFeatureSelections.length} ${isMap ? "map features" : "visual items"}: ${input.mapFeatureSelections.map(({ title }) => title).join(", ")}`}. Attached values: ${input.mapFeatureSelections.slice(-12).map((selection) => `[${selection.title}: ${selection.values.map(({ field, value }) => `${field}=${value}`).join("; ")}]`).join(" ")}. Treat ${input.mapFeatureSelections.length === 1 ? (isMap ? "this geographic feature" : "this data item") : (isMap ? "these geographic features" : "these data items")} as the active subject unless the user broadens the question.`.slice(0, 3900)
-      : "";
 
     return {
       ...input,
       activeSources,
       activeSource,
+      renderedSources,
+      renderedActiveSource: renderedSources[0] ?? "",
       sources,
       activeFields,
+      renderedFields,
       selectedProjectionNames,
       selectedFieldNames,
       visualFields,
       visualState,
+      renderedVisualState,
       chartLegendTitles: {
-        colour: visualState.labelColor,
-        fill: visualState.labelFill,
-        size: visualState.labelSize,
-        shape: visualState.labelShape,
-        linetype: visualState.labelLinetype,
-        linewidth: visualState.labelLinewidth,
-        opacity: visualState.labelOpacity,
+        colour: renderedVisualState.labelColor,
+        fill: renderedVisualState.labelFill,
+        size: renderedVisualState.labelSize,
+        shape: renderedVisualState.labelShape,
+        linetype: renderedVisualState.labelLinetype,
+        linewidth: renderedVisualState.labelLinewidth,
+        opacity: renderedVisualState.labelOpacity,
       },
       isBlankWorkspace,
       isMap,
@@ -140,7 +154,6 @@ export function useWorkspaceViewModel() {
       activeMapFeature,
       aiView,
       aiViewNote,
-      mapFeatureContext,
     };
   }, [input]);
 }

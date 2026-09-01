@@ -12,7 +12,8 @@ This audit follows the product pivots that produced the current cursor-led works
 - `lib/local/worker-source-registry.ts` resolves namespaces. `chartize:` misses request only a typed catalog or exact `{slug, version}` artifact; `user:` sources never use the data service.
 - `lib/local/workspace-engine.ts` gives every workspace its own mutable `GgsqlContext`. All workspaces may reuse the same canonical bytes, but mutations and derived tables remain isolated.
 - `components/chart-view.tsx` owns Vega embedding, exports, range gestures, map pan/zoom, and mark selection. It reports selections to Zustand rather than keeping competing workspace state.
-- `app/api/ai/query` is a structured model relay. The worker may send it bounded context and satisfy a model data request locally, but the relay cannot query VPS data directly.
+- `lib/workspace/ai-context.ts` resolves the active DWIM subject at send time. It keeps code, chart, table, and whole-workspace context distinct, pairs sample rows with the same live selection described in the UI, and labels dirty or failed editor code separately from the last rendered query.
+- `app/api/ai/query` is a structured model relay. The worker may send it bounded context and satisfy a model data request locally, but the relay cannot query VPS data directly. Completed conversations stay browser-local; only short-lived encrypted Responses reasoning state crosses browser-data rounds inside one turn.
 - `lib/server/data-service.ts` and the explicit `app/engine/api/*` Next.js routes own catalog metadata, exact Parquet-version downloads, steward imports, profiling, and rollback. They expose no arbitrary-SQL route.
 
 ## Hazards removed
@@ -29,6 +30,9 @@ This audit follows the product pivots that produced the current cursor-led works
 - Map clicks remain mark selections until pointer movement crosses the pan threshold.
 - PNG and SVG exports use the active Vega view and include the title and subtitle.
 - Point, bar, line, and map selections share one persisted selection model and one height-bounded inspector. Selected items receive direct chart labels plus scrollable details and Shift-click multi-selection; rectangular selections reuse that inspector while retaining corner handles, mark counts, data bounds, copy, CSV export, zoom, and AI context actions.
+- Table selections now enter Chartize AI as data context rather than chart context. Live selection changes replace stale composer notes, mark values remain local until row sharing is enabled, and each stored user message records the pane/selection referent it originally used.
+- The store tracks the last successfully rendered GGSQL independently from editor text, so an unrun edit or failed candidate cannot be described as the code behind the still-visible chart. Automatic repair rounds are explicitly labeled failed while retaining the prior rendered query as comparison evidence.
+- Bounded browser-data continuations preserve encrypted model reasoning between HTTP rounds while keeping `store: false`; completed workspace conversations never depend on a provider-side conversation ID.
 - Projected maps may replace an opaque numeric linewidth legend with a Vega-native tapered key, so the visual encoding remains understandable in the live chart and in exported PNG/SVG files.
 - The desktop three-pane editor becomes graph-first tabs at tablet and phone widths. Code and full data remain one tap away, while a persistent Chartize AI entry stays beneath the active graph without introducing document-level scrolling.
 

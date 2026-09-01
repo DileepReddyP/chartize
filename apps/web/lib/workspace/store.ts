@@ -1,4 +1,5 @@
 import {
+  AiContextSchema,
   AiConversationMessageSchema,
   AiResponsePreferencesSchema,
   AiRuntimeErrorSchema,
@@ -15,6 +16,7 @@ import {
   type GgsqlDraft,
   type TablePreview,
   type AiUsage,
+  type AiContext as ContractAiContext,
   type AiWorkspaceAction,
   type AiResponsePreferences,
   type AiRuntimeError,
@@ -68,7 +70,7 @@ export type TableSort = { column: string; direction: "asc" | "desc" } | null;
 export type FocusArea = "code" | "chart" | "table";
 export type WorkspacePane = "chart" | "code" | "data";
 export type AiPlacement = "left" | "right";
-export type AiContext = "code" | "chart" | "general";
+export type AiContext = ContractAiContext;
 export type AiPhase = "idle" | "activating" | "active";
 export type EngineState = "loading" | "ready" | "error";
 
@@ -113,7 +115,7 @@ const MapViewportSchema = z.object({
 const AiOpenInputSchema = z.object({
   contextNote: z.string().max(4000),
   placement: z.enum(["left", "right"]),
-  context: z.enum(["code", "chart", "general"]),
+  context: AiContextSchema,
 });
 export { AiResponsePreferencesSchema, AiTurnRequestSchema };
 export type { AiResponsePreferences };
@@ -143,7 +145,7 @@ export const WorkspaceDocumentSchema = z.object({
   focusArea: FocusAreaSchema,
   editorFontSize: EditorFontSizeSchema,
   aiPlacement: z.enum(["left", "right"]),
-  aiContext: z.enum(["code", "chart", "general"]),
+  aiContext: AiContextSchema,
   aiContextNote: z.string(),
   aiPrompt: z.string(),
   aiMessage: z.string(),
@@ -236,6 +238,7 @@ export const WorkspaceSnapshotSchema = z.object({
   catalogDatasets: z.array(DatasetManifestSchema),
   draft: GgsqlDraftSchema,
   query: z.string(),
+  resultQuery: z.string(),
   spec: z.record(z.string(), z.unknown()).nullable(),
   selectedData: TablePreviewSchema,
   resultRelation: TablePreviewSchema,
@@ -266,7 +269,7 @@ export const WorkspaceSnapshotSchema = z.object({
   aiOpen: z.boolean(),
   aiPhase: z.enum(["idle", "activating", "active"]),
   aiPlacement: z.enum(["left", "right"]),
-  aiContext: z.enum(["code", "chart", "general"]),
+  aiContext: AiContextSchema,
   aiContextNote: z.string(),
   aiPrompt: z.string(),
   aiBusy: z.boolean(),
@@ -502,7 +505,11 @@ function persistentAiPreferences(preferences: AiResponsePreferences): AiResponse
 }
 
 function requestHistory(messages: AiConversationMessage[]) {
-  return messages.slice(-12).map(({ role, text }) => ({ role, text: text.slice(0, 6000) }));
+  return messages.slice(-12).map(({ role, text, context }) => ({
+    role,
+    text: text.slice(0, 6000),
+    ...(context ? { context } : {}),
+  }));
 }
 
 const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
@@ -577,6 +584,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   catalogDatasets: [],
   draft: bootstrapDraft,
   query: "",
+  resultQuery: "",
   spec: null,
   selectedData: { ...EMPTY_TABLE, limit: 200 },
   resultRelation: EMPTY_RESULT_RELATION,
@@ -660,6 +668,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
   return {
     draft: document.draft,
     query: document.query,
+    resultQuery: "",
     spec: null,
     selectedData: { ...EMPTY_TABLE, limit: 200 },
     resultRelation: EMPTY_RESULT_RELATION,
@@ -854,6 +863,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       get().setRunning(false);
       set((state) => ({
         spec: null,
+        resultQuery: "",
         selectedData: { ...EMPTY_TABLE, limit: 200 },
         resultRelation: EMPTY_RESULT_RELATION,
         error: "",
@@ -924,6 +934,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       const presentation = presentationFromSpec(spec);
       set((state) => ({
         spec,
+        resultQuery: displayQuery,
         selectedData,
         resultRelation,
         duration: Math.round(performance.now() - started),
@@ -976,6 +987,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     }
     set({
       query: "",
+      resultQuery: "",
       draft: makeBlankDraft(),
       spec: null,
       selectedData: { ...EMPTY_TABLE, limit: 200 },
@@ -1272,13 +1284,19 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     const request = retriedRequest || initialState.aiPrompt.trim() || (submission.task === "explain"
       ? submission.context === "code"
         ? "Explain the current GGSQL, including how its VISUALISE clauses produce this chart."
+        : submission.context === "data"
+          ? "Explain the selected data in the context of the current query and rendered view."
         : "Explain the current chart and the GGSQL that produces it."
       : "Repair the current query.");
     const history = requestHistory(branchHistory);
+    const messageContext = {
+      kind: submission.context,
+      note: (submission.contextNote.trim() || `${submission.context} context`).slice(0, 1600),
+    };
     set({
       aiBusy: true,
       aiMessage: "",
-      aiHistory: [...branchHistory, { role: "user", text: request }],
+      aiHistory: [...branchHistory, { role: "user", text: request, context: messageContext }],
       aiPrompt: "",
       aiPreferences: initialState.aiPreferences.allowLocalChanges
         ? { ...initialState.aiPreferences, allowLocalChanges: false }
@@ -1315,6 +1333,8 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
             contextNote: `The candidate GGSQL failed in the browser engine. Fix every diagnostic observed in this turn, especially the latest one:\n${repairDiagnostics.map((diagnostic, index) => `${index + 1}. ${diagnostic}`).join("\n")}`,
             request: `Repair the candidate GGSQL completely while preserving this request: ${request}`,
             currentQuery: body.query,
+            queryStatus: "failed",
+            ...(initialState.resultQuery.trim() ? { renderedQuery: initialState.resultQuery } : {}),
             preferences: { ...initialState.aiPreferences, webSearch: false, allowLocalChanges: false },
             runtimeErrors: addRuntimeError(turnInput.runtimeErrors, {
               stage: "query",
@@ -1496,7 +1516,9 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   setEditorContext: (editorContext) => set({ editorContext }),
   setDwimStatus: (dwimStatus) => set({ dwimStatus }),
   setInlineAnchors: (inlineAnchors) => set({ inlineAnchors }),
-  setGridSelection: (gridSelection) => set({ gridSelection }),
+  setGridSelection: (gridSelection) => set(gridSelection
+    ? { gridSelection, chartSelection: null, mapFeatureSelections: [] }
+    : { gridSelection }),
   setSelectionOrigin: (selectionOrigin) => set({ selectionOrigin }),
   setChartSelection: (chartSelection) => set({ chartSelection }),
   setChartDomains: (chartDomains) => set({

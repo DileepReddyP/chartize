@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
+import { aiQueryStatus, resolveAiWorkspaceContext } from "@/lib/workspace/ai-context";
 import { useWorkspaceViewModel } from "@/lib/workspace/view-model";
 import { AiAssistant } from "./ai-assistant";
 
@@ -10,8 +10,16 @@ export function WorkspaceAiOverlay() {
   const view = useWorkspaceViewModel();
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     catalogLoaded: workspace.catalogLoaded,
+    query: workspace.query,
+    resultQuery: workspace.resultQuery,
+    runtimeErrors: workspace.runtimeErrors,
     selectedData: workspace.selectedData,
+    fullData: workspace.fullData,
+    dockSource: workspace.dockSource,
     gridSelection: workspace.gridSelection,
+    selectionOrigin: workspace.selectionOrigin,
+    chartSelection: workspace.chartSelection,
+    mapFeatureSelections: workspace.mapFeatureSelections,
     aiOpen: workspace.aiOpen,
     aiPlacement: workspace.aiPlacement,
     aiContext: workspace.aiContext,
@@ -33,31 +41,66 @@ export function WorkspaceAiOverlay() {
     closeAi: workspace.closeAi,
   })));
 
-  useEffect(() => {
-    if (!state.aiOpen || state.aiBusy || state.aiContext !== "general") return;
-    if (state.aiContextNote.startsWith("New browser-local source")) return;
-    state.setAiContextNote(`${view.aiViewNote} Current query and source catalog are attached.`);
-  }, [state.aiBusy, state.aiContext, state.aiContextNote, state.aiOpen, state.setAiContextNote, view.aiViewNote]);
-
   if (!state.aiOpen) return null;
 
-  const submit = (task: "generate" | "repair" | "explain", requestOverride?: string, retryAssistantIndex?: number) => {
-    const contextualData = view.mapSelectedData
+  const resolvedContext = resolveAiWorkspaceContext({
+    context: state.aiContext,
+    entryNote: state.aiContextNote,
+    viewNote: view.aiViewNote,
+    blank: view.isBlankWorkspace,
+    isMap: view.isMap,
+    includeSamples: state.includeSamples,
+    gridSelection: state.gridSelection,
+    chartRange: state.chartSelection ? {
+      x: state.chartSelection.x,
+      y: state.chartSelection.y,
+      summary: view.chartSelectionDetails.summary,
+      data: { columns: view.chartSelectionData.columns, rows: view.chartSelectionDetails.rows },
+    } : null,
+    visualSelectionCount: state.mapFeatureSelections.length,
+    visualSelectionData: view.mapSelectedData
       ? { columns: view.mapSelectedData.columns, rows: view.mapSelectedData.rows }
-      : state.gridSelection
-        ? { columns: state.gridSelection.columns, rows: state.gridSelection.rows }
-        : view.chartSelectionDetails.rows.length
-          ? { columns: view.chartSelectionData.columns, rows: view.chartSelectionDetails.rows }
-          : { columns: state.selectedData.columns, rows: state.selectedData.rows };
+      : null,
+    fallbackData: { columns: state.selectedData.columns, rows: state.selectedData.rows },
+    dataPreview: { columns: state.fullData.columns, rows: state.fullData.rows },
+  });
+
+  const submit = (task: "generate" | "repair" | "explain", requestOverride?: string, retryAssistantIndex?: number) => {
+    const status = aiQueryStatus(state.query, state.resultQuery, state.runtimeErrors);
+    const contextSource = resolvedContext.context === "chart"
+      ? view.renderedActiveSource
+      : resolvedContext.context === "data"
+        ? state.gridSelection && state.selectionOrigin === "result"
+          ? view.renderedActiveSource
+          : state.dockSource || view.activeSource
+        : view.activeSource || view.renderedActiveSource;
+    const contextSourceDetails = view.sources.find((source) => source.id === contextSource);
+    const contextFields = resolvedContext.context === "chart"
+      ? view.renderedFields
+      : resolvedContext.context === "data"
+        ? state.gridSelection && state.selectionOrigin === "result"
+          ? view.renderedFields
+          : contextSourceDetails?.fields ?? view.activeFields
+        : view.activeFields;
+    const sampleColumns = resolvedContext.sample.columns.slice(0, 100);
     return state.submitAiTurn({
       task,
-      context: state.aiContext,
-      contextNote: state.aiContextNote,
-      source: view.activeSource || undefined,
-      schema: view.activeFields,
+      context: resolvedContext.context,
+      contextNote: resolvedContext.note,
+      queryStatus: status,
+      ...(status !== "rendered" && state.resultQuery.trim() ? { renderedQuery: state.resultQuery } : {}),
+      source: contextSource || undefined,
+      schema: contextFields,
       availableSources: view.sources.map(({ id, title, description, fields }) => ({ id, title, description, fields })),
       view: view.aiView,
-      sampleData: state.includeSamples ? { columns: contextualData.columns, rows: contextualData.rows.slice(0, 20) } : undefined,
+      sampleData: state.includeSamples
+        ? {
+            columns: sampleColumns,
+            rows: resolvedContext.sample.rows.slice(0, 20).map((row) => (
+              row.slice(0, sampleColumns.length).map((value) => String(value).slice(0, 3000))
+            )),
+          }
+        : undefined,
       requestOverride,
       retryAssistantIndex,
     });
@@ -65,9 +108,9 @@ export function WorkspaceAiOverlay() {
 
   return (
     <AiAssistant
-      context={state.aiContext}
+      context={resolvedContext.context}
       placement={state.aiPlacement}
-      contextNote={state.aiContextNote}
+      contextNote={resolvedContext.note}
       prompt={state.aiPrompt}
       busy={state.aiBusy}
       ready={state.catalogLoaded}

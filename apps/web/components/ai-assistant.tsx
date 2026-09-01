@@ -41,8 +41,12 @@ const contextCopy: Record<AiContext, {
     placeholder: "Ask about this GGSQL or describe a code change…",
   },
   chart: {
-    mode: "chart selection",
-    placeholder: "What do you want to understand about this selection?",
+    mode: "rendered chart",
+    placeholder: "Ask about this chart or describe a change…",
+  },
+  data: {
+    mode: "data table",
+    placeholder: "Ask about this table, its fields, or exact values…",
   },
   general: {
     mode: "workspace",
@@ -119,12 +123,17 @@ export function AiAssistant({
   onRetry,
 }: AiAssistantProps) {
   const copy = contextCopy[context];
-  const placeholder = context === "chart" && /selected|selection|range|point/i.test(contextNote)
+  const hasChartSelection = context === "chart" && /selected|selection|range|point|visual item|map feature/i.test(contextNote);
+  const hasDataSelection = context === "data" && /\bdata selection:/i.test(contextNote);
+  const mode = hasChartSelection ? "chart selection" : hasDataSelection ? "data selection" : copy.mode;
+  const placeholder = hasChartSelection
     ? /map|region|county|state|feature/i.test(contextNote)
       ? "Ask about the selected places or compare them…"
       : /visual item|data item|data point|bar/i.test(contextNote)
         ? "Ask about this selected data point…"
         : "Ask what changed in this selected range, or why…"
+    : hasDataSelection
+      ? "Ask about these rows, columns, or values…"
     : copy.placeholder;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const conversationRef = useRef<HTMLDivElement>(null);
@@ -214,7 +223,7 @@ export function AiAssistant({
         <header className="ai-surface-header">
           <div className="ai-title-lockup">
             <span className="ai-spark" aria-hidden="true">ai</span>
-            <div><h2>chartize ai</h2><small>{copy.mode}</small></div>
+            <div><h2>chartize ai</h2><small>{mode}</small></div>
           </div>
           <PopupCloseButton onClick={onClose} label="Close AI conversation" />
         </header>
@@ -333,8 +342,8 @@ export function AiAssistant({
                   </summary>
                   <div>
                     <header><i>03</i><span><b>response profile</b><small>tune this conversation</small></span></header>
-                    <label><input name="ai-hypothesize" type="checkbox" checked={preferences.hypothesize} onChange={(event) => onPreferences({ ...preferences, hypothesize: event.target.checked })} /><span><b>offer hypotheses</b><small>use clearly labeled historical or outside context</small></span></label>
-                    <label><input name="ai-web-search" type="checkbox" checked={preferences.webSearch} onChange={(event) => onPreferences({ ...preferences, webSearch: event.target.checked })} /><span><b>search and ground</b><small>look up causal, historical, and current questions on the live web</small></span></label>
+                    <label><input name="ai-hypothesize" type="checkbox" checked={preferences.hypothesize} onChange={(event) => onPreferences({ ...preferences, hypothesize: event.target.checked })} /><span><b>offer hypotheses</b><small>volunteer plausible outside context when useful</small></span></label>
+                    <label><input name="ai-web-search" type="checkbox" checked={preferences.webSearch} onChange={(event) => onPreferences({ ...preferences, webSearch: event.target.checked })} /><span><b>search and ground</b><small>auto-search current, causal, and explicitly sourced questions</small></span></label>
                     <label><input name="ai-data-access" type="checkbox" checked={preferences.dataAccess} onChange={(event) => onPreferences({ ...preferences, dataAccess: event.target.checked })} /><span><b>use workspace data</b><small>let the assistant query sources cached in this browser</small></span></label>
                     <label className="ai-local-change-setting"><input name="ai-allow-local-changes" type="checkbox" checked={preferences.allowLocalChanges} onChange={(event) => onPreferences({ ...preferences, allowLocalChanges: event.target.checked })} /><span><b>allow local data changes</b><small>one send only · write to this workspace's derived browser-local copy</small></span></label>
                     <label><input name="ai-concise" type="checkbox" checked={preferences.concise} onChange={(event) => onPreferences({ ...preferences, concise: event.target.checked })} /><span><b>keep it concise</b><small>lead with the answer and trim repeated caveats</small></span></label>

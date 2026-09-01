@@ -6,14 +6,16 @@ import type { AiUsage } from "@chartize/contracts";
 import type {
   FunctionTool,
   ParsedResponse,
+  ResponseReasoningItem,
   ResponseIncludable,
   ResponseInput,
   Tool,
 } from "openai/resources/responses/responses";
 import type { z } from "zod";
+import { createInitialResponseInput, toolChoiceForRound } from "./provider-request";
 
 type ResponsesClient = OpenAI | AzureOpenAI;
-type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface StructuredFunctionTool {
   name: string;
@@ -22,24 +24,7 @@ export interface StructuredFunctionTool {
   execute: (argumentsValue: unknown) => Promise<unknown>;
 }
 
-// Live research is intentionally limited to primary civic/economic sources,
-// established pollsters, research institutions, and major original reporting.
-// This prevents a well-phrased prompt from being grounded in an aggregator or
-// editable reference page simply because it ranked highly for a date query.
-const CHARTIZE_RESEARCH_DOMAINS = [
-  "apnews.com", "reuters.com", "npr.org", "bbc.com", "abcnews.go.com",
-  "cbsnews.com", "nbcnews.com", "cnn.com", "nytimes.com", "washingtonpost.com",
-  "wsj.com", "politico.com", "pewresearch.org", "gallup.com", "ipsos.com",
-  "yougov.com", "maristpoll.marist.edu", "poll.qu.edu", "siena.edu",
-  "electionstudies.org", "census.gov", "bls.gov", "bea.gov", "cbo.gov",
-  "fec.gov", "eac.gov", "federalreserve.gov", "congress.gov", "archives.gov",
-  "supremecourt.gov", "house.gov", "senate.gov", "whitehouse.gov", "cdc.gov",
-  "nber.org", "brookings.edu", "urban.org", "rand.org", "kff.org",
-  "oecd.org", "worldbank.org", "imf.org", "un.org", "ec.europa.eu", "who.int",
-  "mta.info", "nyc.gov", "thecity.nyc", "gothamist.com", "ny1.com", "amny.com",
-] as const;
-
-function clientAndModel(): { client: ResponsesClient; model: string; promptCaching: boolean } {
+function clientAndModel(): { client: ResponsesClient; model: string; promptCaching: boolean; fastMode: boolean } {
   if ((process.env.AI_PROVIDER ?? "openai").toLowerCase() === "azure") {
     const apiKey = process.env.AZURE_OPENAI_API_KEY;
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
@@ -56,6 +41,7 @@ function clientAndModel(): { client: ResponsesClient; model: string; promptCachi
       }),
       model: deployment,
       promptCaching: false,
+      fastMode: false,
     };
   }
 
@@ -67,15 +53,19 @@ function clientAndModel(): { client: ResponsesClient; model: string; promptCachi
     client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
     model,
     promptCaching: model.startsWith("gpt-5.6"),
+    fastMode: model.startsWith("gpt-5.6"),
   };
 }
 
 export async function structuredResponse<Schema extends z.ZodType>(options: {
   name: string;
   schema: Schema;
-  instructions: string;
-  input: string | ResponseInput;
+  stableInstructions: string;
+  turnInstructions: string;
+  input: Parameters<typeof createInitialResponseInput>[0]["input"];
+  continuationInput?: ResponseInput;
   webSearch?: boolean;
+  allowFunctionTools?: boolean;
   reasoningEffort?: ReasoningEffort;
   maxOutputTokens?: number;
   cacheKey: string;
@@ -86,8 +76,8 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   maxBuiltInToolCalls?: number;
   sourceSelection?: "cited" | "all";
   onProgress?: (message: string) => void;
-}): Promise<{ output: z.infer<Schema>; sources: Array<{ title: string; url: string }>; researched: boolean; usage: AiUsage }> {
-  const { client, model, promptCaching } = clientAndModel();
+}): Promise<{ output: z.infer<Schema>; sources: Array<{ title: string; url: string }>; researched: boolean; reasoningItems: ResponseReasoningItem[]; usage: AiUsage }> {
+  const { client, model, promptCaching, fastMode } = clientAndModel();
   const functionTools = options.functionTools ?? [];
   const handlers = new Map(functionTools.map((tool) => [tool.name, tool.execute]));
   const tools: Tool[] = functionTools.map((tool): FunctionTool => ({
@@ -97,11 +87,13 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
     parameters: tool.parameters,
     strict: true,
   }));
-  if (options.webSearch) {
+  // GPT-5.6 renders tool definitions before developer messages. Keep this list
+  // stable across turns so the explicit instruction breakpoint remains reusable;
+  // tool_choice below controls what the model may actually call.
+  if (promptCaching || options.webSearch) {
     tools.push({
       type: "web_search",
       search_context_size: "medium",
-      filters: { allowed_domains: [...CHARTIZE_RESEARCH_DOMAINS] },
     });
   }
 
@@ -109,15 +101,20 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   if (options.webSearch) include.push("web_search_call.action.sources");
   // A stateless reasoning response must carry its encrypted reasoning items
   // into the next function-call round so the model can continue coherently.
-  if (functionTools.length) include.push("reasoning.encrypted_content");
+  if (promptCaching || (functionTools.length && options.allowFunctionTools !== false)) include.push("reasoning.encrypted_content");
 
-  let input: ResponseInput = typeof options.input === "string"
-    ? [{ role: "user", content: options.input }]
-    : [...options.input];
+  let input = createInitialResponseInput({
+    stableInstructions: options.stableInstructions,
+    turnInstructions: options.turnInstructions,
+    input: options.input,
+    ...(options.continuationInput ? { continuationInput: options.continuationInput } : {}),
+    explicitPromptCache: promptCaching,
+  });
   const sourceMap = new Map<string, { title: string; url: string }>();
   const citationMap = new Map<string, { title: string; url: string }>();
   let researched = false;
   const usageValues: AiUsage[] = [];
+  const reasoningItems: ResponseReasoningItem[] = [];
   let parsedOutput: z.infer<Schema> | null = null;
   const maxToolRounds = options.maxToolRounds ?? 4;
   let lastProgress = "";
@@ -129,28 +126,31 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
 
   for (let round = 0; round <= maxToolRounds; round += 1) {
     report(round ? "continuing with the gathered evidence…" : "thinking through the request…");
+    const allowWebSearch = Boolean(options.webSearch && !researched);
+    const toolChoice = toolChoiceForRound({
+      functionNames: functionTools.map((tool) => tool.name),
+      allowFunctionTools: options.allowFunctionTools ?? true,
+      allowWebSearch,
+      requireWebSearch: Boolean(options.requiredWebSearch && round === 0),
+    });
     const stream = client.responses.stream({
       model,
       store: false,
+      // The current SDK still names API Fast mode "priority"; both request
+      // values are aliases and GPT-5.6 responses report "priority".
+      ...(fastMode ? { service_tier: "priority" as const } : {}),
       reasoning: { effort: options.reasoningEffort ?? "low" },
-      instructions: options.instructions,
       input,
       text: { format: zodTextFormat(options.schema, options.name) },
       ...(options.maxOutputTokens === undefined ? {} : { max_output_tokens: options.maxOutputTokens }),
       ...(options.maxBuiltInToolCalls ? { max_tool_calls: options.maxBuiltInToolCalls } : {}),
       ...(promptCaching ? {
         prompt_cache_key: options.cacheKey,
-        prompt_cache_options: { mode: "implicit" as const, ttl: "30m" as const },
+        prompt_cache_options: { mode: "explicit" as const, ttl: "30m" as const },
       } : {}),
       ...(tools.length ? {
         tools,
-        tool_choice: options.requiredWebSearch && round === 0
-          ? {
-              type: "allowed_tools" as const,
-              mode: "required" as const,
-              tools: [{ type: "web_search" }],
-            }
-          : "auto" as const,
+        tool_choice: toolChoice,
         parallel_tool_calls: true,
       } : {}),
       ...(include.length ? { include } : {}),
@@ -162,6 +162,9 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
     const response = await stream.finalResponse() as ParsedResponse<z.infer<Schema>>;
     report("checking the response…");
     usageValues.push(responseUsage(model, response));
+    reasoningItems.push(...response.output.filter((item): item is ResponseReasoningItem => (
+      item.type === "reasoning" && Boolean(item.encrypted_content)
+    )));
     collectResearchEvidence(response, sourceMap, citationMap);
     researched = response.output.some((item) => item.type === "web_search_call" && item.status === "completed") || researched;
 
@@ -242,6 +245,7 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
     output: options.schema.parse(parsedOutput),
     sources: sources.slice(0, 6),
     researched,
+    reasoningItems,
     usage: aggregateAiUsage(...usageValues),
   };
 }

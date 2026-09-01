@@ -85,6 +85,19 @@ describe("Chartize workspace store", () => {
     });
   });
 
+  it("makes a table selection the sole DWIM selection subject", () => {
+    const store = useChartizeWorkspace.getState();
+    store.selectMapFeature({ key: "point", pixels: { x: 10, y: 12 }, title: "Point", values: [{ field: "value", value: "42" }] });
+    store.setChartSelection({ pixels: { x0: 0, y0: 0, x1: 20, y1: 20 }, x: [1, 2], y: [3, 4] });
+    store.setGridSelection({ columns: ["value"], rows: [["42"]], summary: "1 cell" });
+    expect(useChartizeWorkspace.getState()).toMatchObject({
+      gridSelection: { summary: "1 cell" },
+      chartSelection: null,
+      mapFeatureSelections: [],
+    });
+    store.setGridSelection(null);
+  });
+
   it("coordinates the compact graph, code, and data views through Zustand", () => {
     const store = useChartizeWorkspace.getState();
     store.setWorkspacePane("code");
@@ -211,6 +224,7 @@ describe("Chartize workspace store", () => {
         task: "explain",
         context: "code",
         contextNote: "current editor",
+        queryStatus: "rendered",
         schema: [],
         availableSources: [],
         view: { title: "", subtitle: "", sources: [] },
@@ -220,6 +234,10 @@ describe("Chartize workspace store", () => {
       expect(requestAiTurn.mock.calls[0]?.[0].runtimeErrors).toEqual([
         { stage: "query", message: "no such column: missing", failedQuery },
       ]);
+      expect(useChartizeWorkspace.getState().aiHistory[0]?.context).toEqual({
+        kind: "code",
+        note: "current editor",
+      });
     } finally {
       useChartizeWorkspace.setState({
         catalogLoaded: previous.catalogLoaded,
@@ -270,6 +288,7 @@ describe("Chartize workspace store", () => {
         task: "generate",
         context: "general",
         contextNote: "uploaded data",
+        queryStatus: "rendered",
         schema: [],
         availableSources: [],
         view: { title: "", subtitle: "", sources: [] },
@@ -349,6 +368,7 @@ describe("Chartize workspace store", () => {
         task: "generate",
         context: "general",
         contextNote: "test chart",
+        queryStatus: "rendered",
         schema: [],
         availableSources: [],
         view: { title: "", subtitle: "", sources: [] },
@@ -357,6 +377,7 @@ describe("Chartize workspace store", () => {
       expect(requestAiTurn).toHaveBeenCalledTimes(2);
       expect(requestAiTurn.mock.calls[0]?.[0].preferences.allowLocalChanges).toBe(true);
       expect(requestAiTurn.mock.calls[1]?.[0].task).toBe("repair");
+      expect(requestAiTurn.mock.calls[1]?.[0].queryStatus).toBe("failed");
       expect(requestAiTurn.mock.calls[1]?.[0].preferences.allowLocalChanges).toBe(false);
     } finally {
       useChartizeWorkspace.setState({
@@ -402,6 +423,7 @@ describe("Chartize workspace store", () => {
         task: "generate",
         context: "general",
         contextNote: "uploaded data",
+        queryStatus: "rendered",
         schema: [],
         availableSources: [],
         view: { title: "", subtitle: "", sources: [] },

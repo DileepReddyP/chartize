@@ -23,6 +23,17 @@ export const ModelAgentResponseSchema = z.object({
   })).max(4),
 });
 
+// When server policy determines that an explanatory request needs exact local
+// evidence, narrow the first response contract instead of hoping the model
+// chooses request_data from a three-way enum. The ordinary contract resumes as
+// soon as the browser returns the requested rows.
+export const ModelDataRequestResponseSchema = ModelAgentResponseSchema.extend({
+  action: z.literal("request_data"),
+  query: z.literal(""),
+  dataRequests: ModelAgentResponseSchema.shape.dataRequests.min(1),
+  workspaceActions: ModelAgentResponseSchema.shape.workspaceActions.max(0),
+});
+
 export type ModelAgentResponse = z.infer<typeof ModelAgentResponseSchema>;
 
 export function draftFromGgsql(query: string, allowedSources: string[], fallbackSource = "") {

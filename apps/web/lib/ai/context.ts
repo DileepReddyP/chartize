@@ -1,4 +1,4 @@
-import type { FieldMetadata } from "@chartize/contracts";
+import type { AiWorkspaceDataResult, FieldMetadata } from "@chartize/contracts";
 
 export interface AiCatalogSource {
   id: string;
@@ -11,6 +11,7 @@ interface CompactContextOptions {
   sources: AiCatalogSource[];
   activeSource?: string;
   currentQuery: string;
+  renderedQuery?: string;
   request: string;
   contextNote: string;
   view?: { title: string; subtitle: string };
@@ -58,10 +59,13 @@ export function compactAiContext(options: CompactContextOptions) {
     options.view?.title,
     options.view?.subtitle,
     options.currentQuery,
+    options.renderedQuery,
   ].filter(Boolean).join(" "));
   const ranked = options.sources
     .map((source, index) => {
-      const active = source.id === options.activeSource || options.currentQuery.includes(source.id);
+      const active = source.id === options.activeSource
+        || options.currentQuery.includes(source.id)
+        || Boolean(options.renderedQuery?.includes(source.id));
       const requestRelevance = includesTerm(`${source.id} ${source.title} ${source.description}`, requestTerms);
       const ambientRelevance = includesTerm(`${source.id} ${source.title} ${source.description}`, searchTerms);
       return { source, index, active, requestRelevance, score: (active ? 1_000 : 0) + requestRelevance * 40 + ambientRelevance * 4 };
@@ -77,14 +81,20 @@ export function compactAiContext(options: CompactContextOptions) {
     : (requested.length ? requested.slice(0, 4) : ranked.slice(0, 1));
 
   return {
-    sourceIndex: options.sources.map(({ id, title, description }) => ({
-      id,
-      title,
-      description: description.slice(0, 360),
+    sourceIndex: ranked.slice(0, 40).map(({ source }) => ({
+      id: source.id,
+      title: source.title,
+      description: source.description.slice(0, 220),
     })),
+    omittedSourceCount: Math.max(0, options.sources.length - 40),
     sourceSchemas: relevant.map(({ source, active: isActive }) => ({
       source: source.id,
-      fields: selectedFields(source, options.currentQuery, searchTerms, isActive),
+      fields: selectedFields(
+        source,
+        [options.currentQuery, options.renderedQuery].filter(Boolean).join("\n"),
+        searchTerms,
+        isActive,
+      ),
     })),
   };
 }
@@ -104,14 +114,10 @@ export function requestedResearchItemCount(request: string) {
 }
 
 export function isExplanationRequest(request: string) {
-  const mutation = /\b(add|build|change|colour|color|create|draw|filter|fix|join|make|map|overlay|plot|remove|rename|repair|set|show|switch|update|visuali[sz]e)\b/i.test(request);
-  const explanation = /\b(analy[sz]e|assess|cause|caused|check|evaluate|evidence|explain|happen|happened|how|interpret|mean|meaning|summari[sz]e|tell me|what|why)\b/i.test(request);
+  const mutation = /\b(add|build|change|colour|color|create|draw|filter|fix|join|make|map|overlay|plot|remove|rename|repair|set|switch|update|visuali[sz]e)\b/i.test(request)
+    || /\bshow\b[\s\S]{0,100}\b(?:as (?:a |an )?|bar|chart|graph|line|map|plot|series|visuali[sz]ation)\b/i.test(request);
+  const explanation = /\b(analy[sz]e|assess|calculate|cause|caused|check|compute|evaluate|evidence|explain|happen|happened|how|interpret|mean|meaning|summari[sz]e|tell me|what|why)\b/i.test(request);
   return explanation && !mutation;
-}
-
-export function shouldResearch(request: string, webSearch: boolean) {
-  if (!webSearch) return false;
-  return /\b(cause|caused|crossover|current|drop|dropped|fall|fell|happen|happened|historical|latest|news|recent|rise|rose|search|slump|sources?|surge|today|web|why)\b/i.test(request);
 }
 
 export function isComplexVisualizationRequest(request: string, currentQuery: string, task: "generate" | "repair" | "explain") {
@@ -122,8 +128,55 @@ export function isComplexVisualizationRequest(request: string, currentQuery: str
   return complexIntent && (!currentQuery.trim() || multiStage || /\b(join|aggregate|county|counties|state boundaries)\b/i.test(request));
 }
 
-export function compactHistory(history: Array<{ role: "user" | "assistant"; text: string }>, maximum = 12) {
+export function compactHistory(
+  history: Array<{
+    role: "user" | "assistant";
+    text: string;
+    context?: { kind: "code" | "chart" | "data" | "general"; note: string } | undefined;
+  }>,
+  maximum = 12,
+) {
   return history
     .filter((message, index) => index === 0 || message.role !== history[index - 1]!.role || message.text.trim() !== history[index - 1]!.text.trim())
-    .slice(-maximum);
+    .slice(-maximum)
+    .map((message) => message.role === "user" && message.context
+      ? {
+          ...message,
+          text: `Workspace context when this earlier message was sent (${message.context.kind}): ${message.context.note}\nEarlier user message: ${message.text}`,
+        }
+      : message);
+}
+
+/** Keep browser-query evidence useful without letting a wide result dominate a turn. */
+export function compactWorkspaceData(results: AiWorkspaceDataResult[], maximumCharacters = 80_000) {
+  const output: Array<Record<string, unknown>> = [];
+  let used = 2;
+  for (const result of results) {
+    const columns = result.columns.slice(0, 40);
+    const item = {
+      sql: result.sql.slice(0, 4000),
+      purpose: result.purpose,
+      columns,
+      rows: [] as string[][],
+      returnedRows: result.returnedRows,
+      truncated: result.truncated || result.columns.length > columns.length,
+      ...(result.error ? { error: result.error } : {}),
+    };
+    let itemCharacters = JSON.stringify(item).length;
+    if (used + itemCharacters > maximumCharacters && output.length) break;
+    for (const row of result.rows) {
+      const compactRow = row.slice(0, columns.length).map((value) => value.slice(0, 500));
+      const rowCharacters = JSON.stringify(compactRow).length + 1;
+      if (used + itemCharacters + rowCharacters > maximumCharacters) {
+        item.truncated = true;
+        break;
+      }
+      item.rows.push(compactRow);
+      itemCharacters += rowCharacters;
+    }
+    if (item.rows.length < result.rows.length) item.truncated = true;
+    output.push(item);
+    used += itemCharacters + 1;
+  }
+  return output;
 }

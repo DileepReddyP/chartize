@@ -65,10 +65,10 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
   const context = selectedGrid
     ? `${view.aiViewNote} Data selection: ${selectedGrid.summary}. Columns: ${selectedGrid.columns.join(", ")}. Row values are attached only when the user enables the sample-row control.`
     : selectedMap
-      ? `${view.aiViewNote} Map selection: a rectangular map area containing ${visualItemCount} selected map feature${visualItemCount === 1 ? "" : "s"}. Use the map subject, legend, current query, and attached feature rows to interpret the places inside it.`
+      ? `${view.aiViewNote} Map selection: a rectangular map area containing ${visualItemCount} selected map feature${visualItemCount === 1 ? "" : "s"}. Feature rows are attached only when the user enables the sample-row control.`
       : selectedChart
-        ? `${view.aiViewNote} Chart selection: ${chartSelectionSummary}.${visualItemCount ? " The intersecting rendered rows are attached." : ""} X range: ${JSON.stringify(selectedChart.x)}. Y range: ${JSON.stringify(selectedChart.y)}.`
-        : view.mapFeatureContext;
+        ? `${view.aiViewNote} Chart selection: ${chartSelectionSummary}.${visualItemCount ? " Intersecting rows are attached only when the user enables the sample-row control." : ""} X range: ${JSON.stringify(selectedChart.x)}. Y range: ${JSON.stringify(selectedChart.y)}.`
+        : `${view.aiViewNote} ${visualItemCount.toLocaleString()} selected ${itemNoun}${visualItemCount === 1 ? " is" : "s are"} the active subject. Row values are attached only when the user enables the sample-row control.`;
   const selectionTitle = selectedGrid
     ? "data selection"
     : selectedChart
@@ -85,7 +85,8 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
       : selectedChart
         ? "Ask what changed in this selected range…"
         : visualItemCount === 1 ? `Ask about this ${itemNoun}…` : `Ask about these ${itemNoun}s…`;
-  const activeAiContext = state.aiOpen && state.aiContext === "chart" && state.aiContextNote === context;
+  const aiContext = selectedGrid ? "data" as const : "chart" as const;
+  const activeAiContext = state.aiOpen && state.aiContext === aiContext;
   const selectedTable = selectedGrid
     ? { columns: selectedGrid.columns, rows: selectedGrid.rows }
     : view.mapSelectedData?.rows.length
@@ -126,7 +127,7 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
             <p>shift-click another {itemNoun} to add or remove it</p>
           </section>
         )}
-        <label className={`result-context-ai ai-promoter${activeAiContext ? " active" : ""}`}><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={activeAiContext ? "This selection is attached to Chartize AI" : selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={(event) => promoteAi(context, "left", "chart", event.currentTarget)} /><b>{activeAiContext ? "active" : "ask"}</b></label>
+        <label className={`result-context-ai ai-promoter${activeAiContext ? " active" : ""}`}><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={activeAiContext ? "This selection is attached to Chartize AI" : selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={(event) => promoteAi(context, "left", aiContext, event.currentTarget)} /><b>{activeAiContext ? "active" : "ask"}</b></label>
         {state.resultStatus && <p className="result-context-status">{state.resultStatus}</p>}
         <div className="result-context-actions">
           {selectedChart?.x && selectedChart.y && onZoomSelection && <button type="button" onClick={onZoomSelection}>zoom to selection</button>}
