@@ -14,12 +14,14 @@ A local build is useful for checking the app, but native DuckDB dependencies mus
 cd /home/dialup/chartize
 pnpm install --frozen-lockfile
 pnpm fetch:spatialite
-pnpm --filter @chartize/web build
+NODE_OPTIONS=--max-old-space-size=1536 pnpm --filter @chartize/web build
 cp -R apps/web/public apps/web/.next/standalone/apps/web/public
 cp -R apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
 ```
 
 Next's standalone directory does not include `public/` or `.next/static/` automatically. Missing these produces the HTML-without-CSS/JavaScript failure seen in earlier deployments.
+
+The Next config runs Webpack in a separate, memory-optimized build worker and limits build parallelism to two workers. This lets compilation release its heap before typechecking on the 4 GB VPS. The build command above also caps each Node heap; typechecking remains enabled.
 
 ## Environment and PM2
 

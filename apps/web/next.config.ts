@@ -12,6 +12,11 @@ loadEnvConfig(path.resolve(webDirectory, "../.."), process.env.NODE_ENV !== "pro
 const nextConfig: NextConfig = {
   output: "standalone",
   devIndicators: false,
+  experimental: {
+    cpus: 2,
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
+  },
   transpilePackages: ["@chartize/contracts"],
   serverExternalPackages: ["@duckdb/node-api", "@duckdb/node-bindings", "@atproto/oauth-client-node", "@atproto-labs/fetch-node"],
   webpack(config) {
