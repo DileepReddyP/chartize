@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { completeWorkerAiTurn } from "@/lib/local/worker-ai";
-import { listLocalDatasets, loadStoredWorkspace, saveStoredWorkspace, selectWorkerProfile } from "@/lib/local/worker-database";
+import { adoptAnonymousWorkspace, listLocalDatasets, loadStoredWorkspace, saveStoredWorkspace, selectWorkerProfile } from "@/lib/local/worker-database";
 import {
   describeWorkerSource,
   loadWorkerCatalog,
@@ -75,6 +75,10 @@ async function handle(request: LocalWorkerRequest): Promise<unknown> {
         workspace: await loadStoredWorkspace(request.workspaceId),
         localDatasets: await listLocalDatasets(),
       });
+    case "adopt-workspace":
+      if (activeProfile !== "anonymous") throw new Error("Sign in from the anonymous workspace to carry it over.");
+      await adoptAnonymousWorkspace(request.profileId, request.workspace);
+      return { saved: true };
     case "close-workspace":
       releaseWorkerWorkspace(request.workspaceId);
       return { released: true };

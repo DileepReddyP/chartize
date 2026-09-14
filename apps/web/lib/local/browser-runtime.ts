@@ -129,6 +129,10 @@ export function saveBrowserWorkspace(workspace: BrowserStoredWorkspace) {
   return engine().saveWorkspace(BrowserStoredWorkspaceSchema.parse(workspace));
 }
 
+export function adoptBrowserWorkspace(profileId: string, workspace: BrowserStoredWorkspace) {
+  return engine().adoptWorkspace(BrowserProfileIdSchema.parse(profileId), BrowserStoredWorkspaceSchema.parse(workspace));
+}
+
 export function loadBrowserWorkspace(workspaceId = "current") {
   return engine().loadWorkspace(WorkspaceIdSchema.parse(workspaceId));
 }

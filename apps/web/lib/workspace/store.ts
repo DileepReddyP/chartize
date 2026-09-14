@@ -5,7 +5,6 @@ import {
   AiRuntimeErrorSchema,
   AiTurnRequestSchema,
   AiUsageSchema,
-  AiWorkspaceActionSchema,
   DEFAULT_AI_RESPONSE_PREFERENCES,
   DatasetManifestSchema,
   FieldMetadataSchema,
@@ -44,6 +43,7 @@ import {
 import { makeBlankDraft, makeDefaultDraft, serializeDraft } from "../ggsql/serialize";
 import {
   executeWorkspaceSql as runtimeExecuteWorkspaceSql,
+  adoptBrowserWorkspace,
   initializeBrowserRuntime,
   loadBrowserWorkspace,
   registerBrowserSource as runtimeRegisterBrowserSource,
@@ -64,6 +64,12 @@ import {
   previewFromSpec,
   type MapFeatureSelection,
 } from "./chart-data";
+import {
+  GridSelectionSchema, ChartSelectionSchema, ChartDomainsSchema, MapViewportSchema,
+  LeftPaneRatioSchema, CodePaneRatioSchema, EditorFontSizeSchema, FocusAreaSchema,
+  WorkspaceActionsSchema, WorkspaceDocumentSchema, WorkspaceSessionSchema,
+} from "./document";
+export { WorkspaceDocumentSchema, WorkspaceSessionSchema } from "./document";
 
 export type ResultTab = "chart" | "selected";
 export type TableSort = { column: string; direction: "asc" | "desc" } | null;
@@ -99,19 +105,6 @@ const InlineAnchorsSchema = z.object({
   from: z.object({ left: z.number(), top: z.number() }),
 });
 
-const GridSelectionSchema = z.object({ columns: z.array(z.string()), rows: z.array(z.array(z.string())), summary: z.string() });
-const ChartSelectionSchema = z.object({
-  pixels: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }),
-  x: z.tuple([z.unknown(), z.unknown()]).optional(),
-  y: z.tuple([z.unknown(), z.unknown()]).optional(),
-});
-const DomainSchema = z.tuple([z.unknown(), z.unknown()]);
-const ChartDomainsSchema = z.object({ x: DomainSchema.optional(), y: DomainSchema.optional() });
-const MapViewportSchema = z.object({
-  zoom: z.number().min(0.5).max(8),
-  panX: z.number().min(-4).max(4),
-  panY: z.number().min(-4).max(4),
-});
 const AiOpenInputSchema = z.object({
   contextNote: z.string().max(4000),
   placement: z.enum(["left", "right"]),
@@ -119,54 +112,7 @@ const AiOpenInputSchema = z.object({
 });
 export { AiResponsePreferencesSchema, AiTurnRequestSchema };
 export type { AiResponsePreferences };
-const LeftPaneRatioSchema = z.number().min(0.3).max(0.7);
-const CodePaneRatioSchema = z.number().min(0.32).max(0.72);
-const EditorFontSizeSchema = z.number().int().min(10).max(24);
-const FocusAreaSchema = z.enum(["code", "chart", "table"]);
 const WorkspacePaneSchema = z.enum(["chart", "code", "data"]);
-const WorkspaceActionsSchema = z.array(AiWorkspaceActionSchema).max(16);
-
-export const WorkspaceDocumentSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1),
-  createdAt: z.string(),
-  draft: GgsqlDraftSchema,
-  query: z.string(),
-  dockSource: z.string(),
-  resultTab: z.enum(["chart", "selected"]),
-  fullSort: z.object({ column: z.string(), direction: z.enum(["asc", "desc"]) }).nullable(),
-  gridSelection: GridSelectionSchema.nullable(),
-  selectionOrigin: z.enum(["dock", "result"]),
-  chartSelection: ChartSelectionSchema.nullable(),
-  chartDomains: ChartDomainsSchema,
-  chartDomainHistory: z.array(ChartDomainsSchema).max(20),
-  mapViewport: MapViewportSchema,
-  mapFeatureSelections: z.array(MapFeatureSelectionSchema).max(MAX_VISUAL_ITEM_SELECTIONS).default([]),
-  focusArea: FocusAreaSchema,
-  editorFontSize: EditorFontSizeSchema,
-  aiPlacement: z.enum(["left", "right"]),
-  aiContext: AiContextSchema,
-  aiContextNote: z.string(),
-  aiPrompt: z.string(),
-  aiMessage: z.string(),
-  aiHistory: z.array(AiConversationMessageSchema),
-  aiUsage: AiUsageSchema.nullable(),
-  aiPreferences: AiResponsePreferencesSchema,
-  runtimeErrors: z.array(AiRuntimeErrorSchema).max(8).default([]),
-  workspaceActions: WorkspaceActionsSchema.default([]),
-});
-
-export const WorkspaceSessionSchema = z.object({
-  version: z.literal(1),
-  activeWorkspaceId: z.string().min(1),
-  workspaceDocuments: z.array(WorkspaceDocumentSchema).min(1).max(40),
-  leftPaneRatio: LeftPaneRatioSchema,
-  codePaneRatio: CodePaneRatioSchema,
-}).superRefine((session, context) => {
-  if (!session.workspaceDocuments.some((document) => document.id === session.activeWorkspaceId)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "The active workspace is missing from the saved session.", path: ["activeWorkspaceId"] });
-  }
-});
 
 export type LocalDataset = z.infer<typeof LocalDatasetSchema>;
 export type EditorContext = z.infer<typeof EditorContextSchema>;
@@ -444,6 +390,7 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   requestAiTurn: (request: AiTurnRequest) => Promise<AiCompletedResponse>;
   submitAiTurn: (submission: AiSubmission) => Promise<void>;
   persistWorkspaceSession: () => Promise<void>;
+  adoptAnonymousWorkspace: (profileId: string) => Promise<void>;
   restoreWorkspaceSession: () => Promise<boolean>;
   shareWorkspace: () => Promise<void>;
   openWorkspace: (input?: NewWorkspaceInput, options?: { run?: boolean; replacePristineBootstrap?: boolean }) => void;
@@ -1378,6 +1325,13 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     if (payload === lastPersistedSession) return;
     await saveBrowserWorkspace({ id: "session", payload, savedAt: new Date().toISOString() });
     lastPersistedSession = payload;
+  },
+  adoptAnonymousWorkspace: async (profileId) => {
+    const state = get();
+    if (!state.workspaceSessionReady) return;
+    const session = captureWorkspaceSession(state);
+    session.workspaceDocuments = [captureWorkspaceDocument(state)];
+    await adoptBrowserWorkspace(profileId, { id: "session", payload: JSON.stringify(session), savedAt: new Date().toISOString() });
   },
   restoreWorkspaceSession: async () => {
     const restored = await loadBrowserWorkspace("session");

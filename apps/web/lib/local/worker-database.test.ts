@@ -2,7 +2,10 @@ import "fake-indexeddb/auto";
 import { DatasetManifestSchema } from "@chartize/contracts";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makeBlankDraft } from "../ggsql/serialize";
+import { useChartizeWorkspace } from "../workspace/store";
+import { WorkspaceSessionSchema } from "../workspace/document";
 import {
+  adoptAnonymousWorkspace,
   deleteLocalSource,
   listLocalDatasets,
   loadStoredWorkspace,
@@ -113,5 +116,76 @@ describe("worker-owned browser database", () => {
     await deleteLocalSource("private_values");
     selectWorkerProfile("anonymous");
     expect((await readLocalSource("private_values"))?.dataset.title).toBe("anonymous");
+  });
+
+  const sessionRecord = (id: string, query: string, prompt = "") => ({
+    id: "session" as const,
+    payload: JSON.stringify({
+      version: 1, activeWorkspaceId: id, leftPaneRatio: 0.44, codePaneRatio: 0.56,
+      workspaceDocuments: [{ ...useChartizeWorkspace.getInitialState().workspaceDocuments[0]!, id, title: id, query, aiPrompt: prompt }],
+    }),
+    savedAt: new Date().toISOString(),
+  });
+  const readSession = async () => WorkspaceSessionSchema.parse(JSON.parse((await loadStoredWorkspace("session") as { payload: string }).payload));
+
+  it("continues the active guest chart and unsent prompt while preserving account work", async () => {
+    const account = `did:plc:${crypto.randomUUID()}`;
+    const guest = sessionRecord("june-temperatures", "SELECT * FROM chartize:weather", "Explain this heatmap");
+    await saveStoredWorkspace(guest);
+    selectWorkerProfile(account);
+    await saveStoredWorkspace(sessionRecord("existing-chart", "SELECT 42"));
+    selectWorkerProfile("anonymous");
+    await adoptAnonymousWorkspace(account, guest);
+    expect(await loadStoredWorkspace("session")).toEqual(guest);
+    await adoptAnonymousWorkspace(account, guest);
+    selectWorkerProfile(account);
+    const result = await readSession();
+    expect(result.activeWorkspaceId).toBe("june-temperatures");
+    expect(result.workspaceDocuments).toHaveLength(2);
+    expect(result.workspaceDocuments[0]).toMatchObject({ id: "existing-chart", query: "SELECT 42" });
+    expect(result.workspaceDocuments[1]).toMatchObject({ query: "SELECT * FROM chartize:weather", aiPrompt: "Explain this heatmap" });
+    await expect(adoptAnonymousWorkspace(`did:plc:${crypto.randomUUID()}`, guest)).rejects.toThrow("anonymous profile");
+  });
+
+  it("creates the first account session from the guest workspace and keeps colliding uploads separate", async () => {
+    const account = `did:plc:${crypto.randomUUID()}`;
+    const upload = (value: number) => ({
+      tableName: "values", format: "csv" as const, bytes: new TextEncoder().encode(`value\n${value}\n`).buffer,
+      dataset: { id: "user:values", tableName: "values", title: "values", description: "values.csv", spatial: false, fields: [] },
+      updatedAt: new Date().toISOString(),
+    });
+    await writeLocalSource(upload(7));
+    await writeLocalSource({ ...upload(8), tableName: "unrelated", dataset: { ...upload(8).dataset, id: "user:unrelated", tableName: "unrelated" } });
+    const guest = sessionRecord("my-upload", "SELECT * FROM user:values");
+    selectWorkerProfile(account);
+    await writeLocalSource(upload(99));
+    selectWorkerProfile("anonymous");
+    await adoptAnonymousWorkspace(account, guest);
+    selectWorkerProfile(account);
+    const result = await readSession();
+    expect(result.activeWorkspaceId).toBe("my-upload");
+    expect(result.workspaceDocuments[0]!.query).toMatch(/^SELECT \* FROM "user:values_[a-f0-9]+"$/);
+    expect(new TextDecoder().decode((await readLocalSource("values"))!.bytes)).toBe("value\n99\n");
+    const copied = (await listLocalDatasets()).find((item) => item.tableName !== "values")!;
+    expect(new TextDecoder().decode((await readLocalSource(copied.tableName))!.bytes)).toBe("value\n7\n");
+    expect(await readLocalSource("unrelated")).toBeUndefined();
+  });
+
+  it("rolls back a failed handoff without losing either profile's work or writing orphan uploads", async () => {
+    const account = `did:plc:${crypto.randomUUID()}`;
+    const full = JSON.parse(sessionRecord("full", "SELECT 1").payload);
+    full.workspaceDocuments = Array.from({ length: 40 }, (_, index) => ({ ...full.workspaceDocuments[0], id: String(index) }));
+    full.activeWorkspaceId = "0";
+    selectWorkerProfile(account);
+    const saved = { id: "session" as const, payload: JSON.stringify(full), savedAt: new Date().toISOString() };
+    await saveStoredWorkspace(saved);
+    selectWorkerProfile("anonymous");
+    await writeLocalSource({ tableName: "values", format: "csv", bytes: new TextEncoder().encode("value\n7\n").buffer,
+      dataset: { id: "user:values", tableName: "values", title: "values", description: "", spatial: false, fields: [] }, updatedAt: new Date().toISOString() });
+    await expect(adoptAnonymousWorkspace(account, sessionRecord("guest", "SELECT * FROM user:values"))).rejects.toThrow("40 workspaces");
+    expect(await readLocalSource("values")).toBeDefined();
+    selectWorkerProfile(account);
+    expect(await loadStoredWorkspace("session")).toEqual(saved);
+    expect(await listLocalDatasets()).toEqual([]);
   });
 });

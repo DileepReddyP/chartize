@@ -218,6 +218,14 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
       promoteAi(`${aiViewNote} The rendered chart and current query are the active context.`, "left", "chart");
     };
     window.addEventListener("chartize:open-ai", openAssistant);
+    if (!openedAiFromUrl.current && new URLSearchParams(window.location.search).get("ai") === "resume") {
+      openedAiFromUrl.current = true;
+      const workspace = useChartizeWorkspace.getState();
+      promoteAi(workspace.aiContextNote, workspace.aiPlacement, workspace.aiContext);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("ai");
+      window.history.replaceState(null, "", url);
+    }
     if (!openedAiFromUrl.current && new URLSearchParams(window.location.search).get("ai") === "general") {
       openedAiFromUrl.current = true;
       promoteAi(`${aiViewNote} Current query and source catalog are attached.`, "left", "general");

@@ -53,12 +53,19 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       setSwitching(true);
       try {
         await saveCurrentProfile();
+        const workspace = useChartizeWorkspace.getState();
+        const signingIn = activeProfile.current === "anonymous" && next !== null;
+        const carryWorkspace = signingIn && workspace.workspaceSessionReady;
+        if (carryWorkspace) await workspace.adoptAnonymousWorkspace(profileId);
         if (announce) channel.current?.postMessage("session-changed");
-        window.location.replace(window.location.pathname);
-      } catch {
+        const destination = signingIn && !workspace.workspaceSessionReady
+          ? window.location.href
+          : `${window.location.pathname}${carryWorkspace && workspace.aiOpen ? "?ai=resume" : ""}`;
+        window.location.replace(destination);
+      } catch (failure) {
         changing.current = false;
         setSwitching(false);
-        throw new Error("Couldn't save this profile's workspaces. Please try again.");
+        throw new Error(`Couldn't save your workspace. ${failure instanceof Error ? failure.message : "Please try again."}`);
       }
       return;
     }

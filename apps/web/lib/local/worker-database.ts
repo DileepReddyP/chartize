@@ -1,10 +1,13 @@
 import { DatasetManifestSchema, type DatasetManifest } from "@chartize/contracts";
 import Dexie, { type Table } from "dexie";
 import { z } from "zod";
+import { resolveNamespacedSources, sourcesFromQuery } from "../ggsql/query-context";
+import { WorkspaceSessionSchema } from "../workspace/document";
 import {
   BrowserLocalDatasetSchema,
   BrowserProfileIdSchema,
   BrowserStoredWorkspaceSchema,
+  BrowserWorkspaceSessionRecordSchema,
   LocalFormatSchema,
   type BrowserLocalDataset,
   type BrowserStoredWorkspace,
@@ -144,4 +147,62 @@ export async function saveStoredWorkspace(workspace: BrowserStoredWorkspace) {
 export async function loadStoredWorkspace(id: string) {
   const workspace = await profileDatabase.workspaces.get(id);
   return workspace ? BrowserStoredWorkspaceSchema.parse(workspace) : null;
+}
+
+/** Copies the active guest workspace and its uploads into the signed-in profile. */
+export async function adoptAnonymousWorkspace(profileId: string, record: BrowserStoredWorkspace) {
+  const targetId = BrowserProfileIdSchema.parse(profileId);
+  if (targetId === "anonymous" || profileDatabase !== workerDatabase) {
+    throw new Error("A workspace can be carried over only when signing in from the anonymous profile.");
+  }
+  const incoming = WorkspaceSessionSchema.parse(JSON.parse(BrowserWorkspaceSessionRecordSchema.parse(record).payload));
+  const document = incoming.workspaceDocuments.find((item) => item.id === incoming.activeWorkspaceId)!;
+  const sources = new Set([
+    document.draft.source, document.dockSource, ...sourcesFromQuery(document.query),
+    ...document.draft.joins.map((join) => join.table),
+    ...document.workspaceActions.flatMap((action) => sourcesFromQuery(action.sql)),
+  ]);
+  const uploads = await workerDatabase.localSources.where("tableName")
+    .anyOf([...sources].filter((name) => name.startsWith("user:")).map((name) => name.slice(5))).toArray();
+  const target = new ChartizeWorkerDatabase(`chartize-profile:${encodeURIComponent(targetId)}`);
+  try {
+    await target.transaction("rw", target.workspaces, target.localSources, async () => {
+      const existing = await target.workspaces.get("session");
+      const session = existing
+        ? WorkspaceSessionSchema.parse(JSON.parse(BrowserWorkspaceSessionRecordSchema.parse(existing).payload))
+        : { ...incoming, workspaceDocuments: [] };
+      const renames = new Map<string, string>();
+      for (const upload of uploads) {
+        const saved = await target.localSources.get(upload.tableName);
+        const bytes = new Uint8Array(upload.bytes);
+        if (saved && saved.format === upload.format && saved.bytes.byteLength === upload.bytes.byteLength
+          && new Uint8Array(saved.bytes).every((value, index) => value === bytes[index])) continue;
+        const tableName = saved ? `${upload.tableName}_${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}` : upload.tableName;
+        if (tableName !== upload.tableName) renames.set(`user:${upload.tableName}`, `user:${tableName}`);
+        await target.localSources.add({ ...upload, tableName, dataset: { ...upload.dataset, tableName, id: `user:${tableName}` } });
+      }
+      if (renames.size) {
+        const rewrite = (query: string) => resolveNamespacedSources(query, (namespace, name) => renames.get(`${namespace}:${name}`) ?? `${namespace}:${name}`);
+        document.query = rewrite(document.query);
+        document.workspaceActions = document.workspaceActions.map((action) => ({ ...action, sql: rewrite(action.sql) }));
+        document.draft.source = renames.get(document.draft.source) ?? document.draft.source;
+        document.draft.joins = document.draft.joins.map((join) => ({ ...join, table: renames.get(join.table) ?? join.table }));
+        document.dockSource = renames.get(document.dockSource) ?? document.dockSource;
+      }
+      const duplicate = session.workspaceDocuments.find((item) => JSON.stringify(item) === JSON.stringify(document));
+      if (duplicate) {
+        session.activeWorkspaceId = duplicate.id;
+      } else {
+        if (session.workspaceDocuments.length >= 40) throw new Error("This account has 40 workspaces. Close one before carrying this workspace over.");
+        if (session.workspaceDocuments.some((item) => item.id === document.id)) document.id = `workspace-${crypto.randomUUID()}`;
+        session.workspaceDocuments.push(document);
+        session.activeWorkspaceId = document.id;
+      }
+      await target.workspaces.put(BrowserWorkspaceSessionRecordSchema.parse({
+        id: "session", payload: JSON.stringify(WorkspaceSessionSchema.parse(session)), savedAt: new Date().toISOString(),
+      }));
+    });
+  } finally {
+    target.close();
+  }
 }

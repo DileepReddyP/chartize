@@ -15,6 +15,7 @@ vi.mock("./worker-source-registry", () => ({
 }));
 
 import { completeWorkerAiTurn } from "./worker-ai";
+import { LocalWorkerMessageSchema } from "./worker-protocol";
 
 const usage = {
   models: ["gpt-5.6-luna"],
@@ -28,7 +29,7 @@ const usage = {
 };
 
 function streamed(response: unknown) {
-  return new Response(`${JSON.stringify({ type: "result", response })}\n`, {
+  return new Response(`${JSON.stringify({ type: "progress", message: "a".repeat(240) })}\n${JSON.stringify({ type: "result", response })}\n`, {
     status: 200,
     headers: { "content-type": "application/x-ndjson; charset=utf-8" },
   });
@@ -79,10 +80,14 @@ describe("browser AI continuation", () => {
       runtimeErrors: [],
     };
     const profileId = "did:plc:profile-test";
-    const result = await completeWorkerAiTurn("workspace-test", input, "request-test", vi.fn(), profileId);
+    const emit = vi.fn((id, progress) => {
+      LocalWorkerMessageSchema.parse({ type: "progress", id, progress });
+    });
+    const result = await completeWorkerAiTurn("workspace-test", input, "request-test", emit, profileId);
 
     expect(result.kind).toBe("explanation");
     expect(result.usage.calls).toBe(2);
+    expect(emit).toHaveBeenCalledWith("request-test", { phase: "thinking", message: "a".repeat(240) });
     for (const [, request] of fetchMock.mock.calls) expect(request?.headers).toMatchObject({ "x-chartize-profile": profileId });
     expect(bodies[1]).toMatchObject({
       turnId: "89e8d452-c4be-4d12-af1c-772230109d04",

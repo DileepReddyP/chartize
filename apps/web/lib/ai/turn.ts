@@ -179,7 +179,7 @@ export async function completeAiTurn(body: AiTurnEnvelope, options: {
               ? { requiredTool: "wikipedia_article" } : {}),
       };
     },
-    maxToolRounds: 6, cacheKey: "chartize:agent:v11",
+    maxToolRounds: 6, cacheKey: "chartize:agent:v12",
     onWebSearch: () => { state.webUsed = true; },
     safetyIdentifier: options.owner, signal: options.signal, onProgress: options.onProgress,
   });

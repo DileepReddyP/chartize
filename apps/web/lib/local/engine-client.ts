@@ -7,6 +7,7 @@ import {
   BrowserSqlResultSchema,
   BrowserVisualizationSpecSchema,
   BrowserWorkspaceLoadSchema,
+  BrowserWorkspaceSessionRecordSchema,
   LocalWorkerMessageSchema,
   type BrowserEngineProgress,
   type BrowserStoredWorkspace,
@@ -18,6 +19,7 @@ type Pending = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  heartbeat?: () => void;
 };
 type RequestWithoutId = LocalWorkerRequest extends infer Request
   ? Request extends LocalWorkerRequest ? Omit<Request, "id"> : never
@@ -25,7 +27,7 @@ type RequestWithoutId = LocalWorkerRequest extends infer Request
 
 const QUICK_TIMEOUT_MS = 20_000;
 const DATA_TIMEOUT_MS = 90_000;
-const AI_TIMEOUT_MS = 210_000;
+const AI_TIMEOUT_MS = 330_000;
 
 export class LocalEngineClient {
   private worker: Worker;
@@ -43,7 +45,8 @@ export class LocalEngineClient {
       }
       const message = parsed.data;
       if (message.type === "progress") {
-        if (this.pending.has(message.id)) this.progressHandler?.(message.progress);
+        const pending = this.pending.get(message.id);
+        if (pending) { pending.heartbeat?.(); this.progressHandler?.(message.progress); }
         return;
       }
       const pending = this.pending.get(message.id);
@@ -77,10 +80,15 @@ export class LocalEngineClient {
     if (!this.alive) return Promise.reject(new Error("The browser data worker is unavailable. Reload the workspace to restart it."));
     const id = crypto.randomUUID();
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timedOut = () => {
         this.stop(new Error("The browser data worker timed out and was stopped safely. Reload the workspace to restart it."));
-      }, timeoutMs);
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
+      };
+      const pending: Pending = { resolve: resolve as (value: unknown) => void, reject, timer: setTimeout(timedOut, timeoutMs) };
+      if (request.type === "ai") pending.heartbeat = () => {
+        clearTimeout(pending.timer);
+        pending.timer = setTimeout(timedOut, timeoutMs);
+      };
+      this.pending.set(id, pending);
       this.worker.postMessage({ ...request, id } as LocalWorkerRequest, transfer);
     });
   }
@@ -112,6 +120,10 @@ export class LocalEngineClient {
 
   saveWorkspace(workspace: BrowserStoredWorkspace) {
     return this.request<unknown>({ type: "save-workspace", workspace }, QUICK_TIMEOUT_MS);
+  }
+
+  adoptWorkspace(profileId: string, workspace: BrowserStoredWorkspace) {
+    return this.request<unknown>({ type: "adopt-workspace", profileId, workspace: BrowserWorkspaceSessionRecordSchema.parse(workspace) }, DATA_TIMEOUT_MS);
   }
 
   loadWorkspace(workspaceId: string) {

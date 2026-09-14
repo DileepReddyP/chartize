@@ -1,5 +1,6 @@
 import {
   AiExplanationResponseSchema,
+  AiProgressMessageSchema,
   AiTurnRequestSchema,
   AiVisualizationResponseSchema,
   DatasetManifestSchema,
@@ -80,7 +81,7 @@ export const BrowserAiCompletedResponseSchema = z.discriminatedUnion("kind", [
 
 export const BrowserEngineProgressSchema = z.object({
   phase: z.enum(["starting", "catalog", "loading", "downloading", "registering", "querying", "thinking", "saving"]),
-  message: z.string().min(1).max(200),
+  message: AiProgressMessageSchema,
   source: z.string().max(300).optional(),
   loaded: z.number().int().nonnegative().optional(),
   total: z.number().int().positive().optional(),
@@ -119,6 +120,7 @@ export const LocalWorkerRequestSchema = z.discriminatedUnion("type", [
   z.object({ ...WorkerRequestBase, type: z.literal("sql"), workspaceId: WorkerWorkspaceIdSchema, query: WorkerQuerySchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("describe"), workspaceId: WorkerWorkspaceIdSchema, name: WorkerSourceNameSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("save-workspace"), workspace: BrowserStoredWorkspaceSchema }),
+  z.object({ ...WorkerRequestBase, type: z.literal("adopt-workspace"), profileId: BrowserProfileIdSchema, workspace: BrowserWorkspaceSessionRecordSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("load-workspace"), workspaceId: WorkerWorkspaceIdSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("close-workspace"), workspaceId: WorkerWorkspaceIdSchema }),
   z.object({ ...WorkerRequestBase, type: z.literal("remove-local-source"), name: WorkerSourceNameSchema }),

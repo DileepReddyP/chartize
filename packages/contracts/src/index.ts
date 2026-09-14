@@ -375,10 +375,12 @@ export const AiResponseSchema = z.discriminatedUnion("kind", [
   AiDataRequestResponseSchema,
 ]);
 
+export const AiProgressMessageSchema = z.string().min(1).max(300);
+
 export const AiStreamEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("progress"),
-    message: z.string().min(1).max(300),
+    message: AiProgressMessageSchema,
   }),
   z.object({
     type: z.literal("result"),
