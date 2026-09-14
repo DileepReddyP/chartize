@@ -25,7 +25,7 @@ describe("cross-runtime dataset contract", () => {
 });
 
 describe("AI continuation transport", () => {
-  it("carries one research memo across browser-data rounds", () => {
+  it("carries an opaque turn ID rather than client-controlled provider state", () => {
     const base = {
       task: "explain" as const,
       context: "data" as const,
@@ -35,30 +35,21 @@ describe("AI continuation transport", () => {
       schema: [],
       availableSources: [],
       view: { title: "A line delays", subtitle: "", sources: [] },
-      preferences: { hypothesize: true, webSearch: true, dataAccess: true, concise: true, challenge: false, technical: false },
+      preferences: { thinking: "auto" },
       history: [{ role: "user" as const, text: "What about these rows?", context: { kind: "data" as const, note: "Two delay rows" } }],
       runtimeErrors: [],
-      workspaceDataRound: 1,
+      turnId: "89e8d452-c4be-4d12-af1c-772230109d04",
       workspaceData: [],
-      researchContext: {
-        researched: true as const,
-        memo: "Service evidence already gathered.",
-        sources: [{ title: "MTA", url: "https://www.mta.info/" }],
-      },
-      providerContext: {
-        items: [{ id: "reasoning_1", type: "reasoning" as const, summary: [], encrypted_content: "opaque" }],
-        consumedWorkspaceResults: 0,
-      },
     };
     const parsed = AiTurnEnvelopeSchema.parse(base);
-    expect(parsed.researchContext?.memo).toContain("already gathered");
-    expect(parsed.providerContext?.items[0]).toMatchObject({ type: "reasoning" });
+    expect(parsed.turnId).toBe("89e8d452-c4be-4d12-af1c-772230109d04");
     expect(parsed.history[0]?.context?.kind).toBe("data");
-    expect(parsed.preferences.allowLocalChanges).toBe(false);
+    expect(parsed.preferences.thinking).toBe("auto");
   });
 
   it("validates streamed progress and final-result envelopes", () => {
     expect(AiStreamEventSchema.parse({ type: "progress", message: "searching sources…" }).type).toBe("progress");
+    expect(AiStreamEventSchema.parse({ type: "progress", message: "x".repeat(240) }).type).toBe("progress");
   });
 
   it("marks an explanation that needs one-send local-change approval", () => {

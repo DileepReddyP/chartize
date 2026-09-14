@@ -134,6 +134,17 @@ export async function executeWorkspaceSqlRaw(workspaceId: string, query: string)
   return BrowserSqlResultSchema.parse(JSON.parse(engine.execute_sql(query)) as unknown);
 }
 
+/** Runs a synchronous query with SQLite's query-only guard, then restores write access. */
+export async function executeWorkspaceReadOnlySqlRaw(workspaceId: string, query: string) {
+  const engine = await workspaceEngine(workspaceId);
+  engine.execute_sql("PRAGMA query_only = ON");
+  try {
+    return BrowserSqlResultSchema.parse(JSON.parse(engine.execute_sql(query)) as unknown);
+  } finally {
+    engine.execute_sql("PRAGMA query_only = OFF");
+  }
+}
+
 export async function listWorkspaceTables(workspaceId: string) {
   return (await workspaceEngine(workspaceId)).list_tables();
 }

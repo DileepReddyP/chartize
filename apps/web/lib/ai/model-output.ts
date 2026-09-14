@@ -3,15 +3,14 @@ import { z } from "zod";
 import { isResultSqlStatement, sourcesFromQuery, splitGgsql, sqlStatements, visualLayersFromQuery, visualPointState, visualScalesFromQuery } from "../ggsql/query-context";
 import { makeBlankDraft } from "../ggsql/serialize";
 
-// A single conversation can answer, inspect, and edit without the UI deciding
-// the turn type first. The action discriminator keeps edits explicit so the
-// route can validate them before applying anything to the workspace.
 export const ModelAgentResponseSchema = z.object({
   action: z.enum(["answer", "update_visualization", "request_data"]),
   query: z.string(),
   explanation: z.string(),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
+  citations: z.array(z.string()).max(8),
+  includeSelection: z.boolean(),
   dataRequests: z.array(z.object({
     sql: z.string().min(1).max(20_000),
     purpose: z.string().min(1).max(500),
@@ -21,17 +20,6 @@ export const ModelAgentResponseSchema = z.object({
     sql: z.string().min(1).max(50_000),
     purpose: z.string().min(1).max(500),
   })).max(4),
-});
-
-// When server policy determines that an explanatory request needs exact local
-// evidence, narrow the first response contract instead of hoping the model
-// chooses request_data from a three-way enum. The ordinary contract resumes as
-// soon as the browser returns the requested rows.
-export const ModelDataRequestResponseSchema = ModelAgentResponseSchema.extend({
-  action: z.literal("request_data"),
-  query: z.literal(""),
-  dataRequests: ModelAgentResponseSchema.shape.dataRequests.min(1),
-  workspaceActions: ModelAgentResponseSchema.shape.workspaceActions.max(0),
 });
 
 export type ModelAgentResponse = z.infer<typeof ModelAgentResponseSchema>;
@@ -66,8 +54,6 @@ export function draftFromGgsql(query: string, allowedSources: string[], fallback
   return GgsqlDraftSchema.parse(draft);
 }
 
-const UNAVAILABLE_RESEARCH_SENTENCE = /(?:I|we)\s+(?:could\s+not|couldn't|cannot|can't|was\s+not\s+able\s+to|were\s+not\s+able\s+to)\s+(?:conduct|complete|perform|retrieve|access|use|find)[^.\n]*(?:live\s+)?(?:web|research|source|citation|lookup)[^.\n]*[.!]?/gi;
-const UNAVAILABLE_RESEARCH_WARNING = /(?:could\s+not|couldn't|cannot|can't|unavailable|no\s+(?:usable\s+)?sources?|without\s+(?:live\s+)?(?:web|research|sources?|citations?))/i;
 const PROVIDER_CITATION_TOKEN = /(?:cite|filecite)[^]*/g;
 
 /** Strip provider-internal citation control tokens while preserving Markdown. */
@@ -78,33 +64,6 @@ export function sanitizeModelText(value: string) {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/[ \t]+$/gm, "")
     .trim();
-}
-
-/**
- * Source metadata is authoritative. A model response must not tell the user
- * that research was unavailable after the provider completed a web search and
- * returned links. Keep this at the response boundary rather than relying only
- * on prompt wording.
- */
-export function reconcileGroundedResponse(
-  explanation: string,
-  warnings: string[],
-  metadata: { researched: boolean; sources: Array<{ title: string; url: string }> },
-) {
-  const cleanExplanation = sanitizeModelText(explanation);
-  const cleanWarnings = warnings.map(sanitizeModelText).filter(Boolean);
-  if (!metadata.researched || metadata.sources.length === 0) {
-    return { explanation: cleanExplanation, warnings: cleanWarnings };
-  }
-
-  const reconciled = cleanExplanation
-    .replace(UNAVAILABLE_RESEARCH_SENTENCE, "Source links supporting the researched claims are attached below.")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  return {
-    explanation: reconciled,
-    warnings: cleanWarnings.filter((warning) => !UNAVAILABLE_RESEARCH_WARNING.test(warning)),
-  };
 }
 
 const VISUAL_CLAUSE = /^\s*(DRAW|PLACE|SCALE|FACET|LABEL|PROJECT)\b/i;
@@ -145,8 +104,6 @@ export function normalizeModelGgsql(query: string) {
   }
 
   return lines.join("\n")
-    // GGSQL accepts named palettes as identifiers, not string literals. Keep
-    // this grammar-shaped instead of maintaining an incomplete palette list.
     .replace(/\bTO\s+'([a-z][\w-]*)'(?![\w-])/gi, (_match, palette: string) => `TO ${palette}`)
     .replace(/\b(PROJECT\s+TO\s+[a-z][\w-]*)\s+WITH\s+SETTING\b/gi, "$1\n  SETTING")
     .trim();
@@ -174,7 +131,8 @@ export function separateWorkspaceProgram(query: string) {
 
 export function publicAiError(error: unknown) {
   if (error instanceof z.ZodError) {
-    return "Chartize AI returned an incomplete visualization draft. Please try again.";
+    console.warn("Chartize AI schema mismatch", error.issues.map(({ path, code }) => ({ path, code })));
+    return "Chartize AI returned an incomplete response. Please try again.";
   }
   return error instanceof Error ? error.message : "AI request failed.";
 }

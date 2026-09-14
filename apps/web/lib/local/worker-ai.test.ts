@@ -2,7 +2,7 @@ import { DEFAULT_AI_RESPONSE_PREFERENCES, type AiTurnRequest } from "@chartize/c
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./workspace-engine", () => ({
-  executeWorkspaceSqlRaw: vi.fn(async () => ({
+  executeWorkspaceReadOnlySqlRaw: vi.fn(async () => ({
     columns: ["value"],
     rows: [["42"]],
     total_rows: 1,
@@ -37,7 +37,7 @@ function streamed(response: unknown) {
 describe("browser AI continuation", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("returns provider reasoning state with browser data on the next round", async () => {
+  it("returns bounded browser data with an opaque continuation ID", async () => {
     const bodies: unknown[] = [];
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)));
@@ -45,10 +45,9 @@ describe("browser AI continuation", () => {
         return streamed({
           kind: "data_request",
           requests: [{ sql: "SELECT 42 AS value", purpose: "Check the exact value", limit: 10 }],
-          providerContext: {
-            items: [{ id: "reasoning_1", type: "reasoning", summary: [], encrypted_content: "opaque" }],
-            consumedWorkspaceResults: 0,
-          },
+          turnId: "89e8d452-c4be-4d12-af1c-772230109d04",
+          includeSelection: false,
+          plan: { summary: "Inspect the value", thinking: "medium", research: "none", queryData: true, shareSelection: false, localChanges: false, hypotheses: false, technical: false, challenge: false, concise: true, approval: null, question: "" },
           usage,
         });
       }
@@ -79,17 +78,15 @@ describe("browser AI continuation", () => {
       history: [],
       runtimeErrors: [],
     };
-    const result = await completeWorkerAiTurn("workspace-test", input, "request-test", vi.fn());
+    const profileId = "did:plc:profile-test";
+    const result = await completeWorkerAiTurn("workspace-test", input, "request-test", vi.fn(), profileId);
 
     expect(result.kind).toBe("explanation");
     expect(result.usage.calls).toBe(2);
+    for (const [, request] of fetchMock.mock.calls) expect(request?.headers).toMatchObject({ "x-chartize-profile": profileId });
     expect(bodies[1]).toMatchObject({
-      workspaceDataRound: 1,
+      turnId: "89e8d452-c4be-4d12-af1c-772230109d04",
       workspaceData: [{ purpose: "Check the exact value", rows: [["42"]] }],
-      providerContext: {
-        items: [{ type: "reasoning", encrypted_content: "opaque" }],
-        consumedWorkspaceResults: 0,
-      },
     });
   });
 });

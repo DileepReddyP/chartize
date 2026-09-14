@@ -7,7 +7,6 @@ const base = {
   viewNote: "Chart: “ridership”.",
   blank: false,
   isMap: false,
-  includeSamples: false,
   gridSelection: null,
   chartRange: null,
   visualSelectionCount: 0,

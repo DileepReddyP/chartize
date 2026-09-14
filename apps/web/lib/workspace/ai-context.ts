@@ -22,7 +22,6 @@ export interface ResolveAiWorkspaceContextOptions {
   viewNote: string;
   blank: boolean;
   isMap: boolean;
-  includeSamples: boolean;
   gridSelection: GridContext | null;
   chartRange: ChartRangeContext | null;
   visualSelectionCount: number;
@@ -46,11 +45,7 @@ interface ChooseDwimAiContextOptions {
   focusArea: "code" | "chart" | "table";
 }
 
-/**
- * Pick the subject for the global Ask Chartize action. Explicit selections
- * beat remembered pane focus, while a truly blank workspace does not inherit
- * a stale table or chart focus from the workspace that preceded it.
- */
+/** Chooses the active selection, blank workspace, or focused pane as the AI subject. */
 export function chooseDwimAiContext(options: ChooseDwimAiContextOptions): AiContext {
   if (options.hasEditorContext) return "code";
   if (options.hasGridSelection) return "data";
@@ -59,12 +54,6 @@ export function chooseDwimAiContext(options: ChooseDwimAiContextOptions): AiCont
   if (options.focusArea === "code") return "code";
   if (options.focusArea === "table") return "data";
   return "chart";
-}
-
-function rowAttachmentCopy(includeSamples: boolean) {
-  return includeSamples
-    ? "The selected row values are attached."
-    : "Selected row values are not attached unless “send selected data” is enabled.";
 }
 
 function boundedNote(value: string, maximum: number) {
@@ -80,13 +69,9 @@ function activeSelectionSample(options: ResolveAiWorkspaceContextOptions) {
   return null;
 }
 
-/**
- * Resolve the live DWIM subject immediately before a send. The entry note is
- * only an anchor; live selections and rendered-view metadata win so the text
- * shown in the composer cannot disagree with the rows sent beside it.
- */
+/** Resolves the current selection, rendered chart metadata, context note and row sample at send time. */
 export function resolveAiWorkspaceContext(options: ResolveAiWorkspaceContextOptions): ResolvedAiWorkspaceContext {
-  const attachment = rowAttachmentCopy(options.includeSamples);
+  const attachment = "Selected row values stay in this browser until needed to answer your question.";
   let note: string;
   let sample: ContextTable;
 

@@ -1,5 +1,6 @@
 "use client";
 
+import type { AiApprovalRequest } from "@chartize/contracts";
 import { useShallow } from "zustand/react/shallow";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
 import { aiQueryStatus, resolveAiWorkspaceContext } from "@/lib/workspace/ai-context";
@@ -29,12 +30,10 @@ export function WorkspaceAiOverlay() {
     aiMessage: workspace.aiMessage,
     aiHistory: workspace.aiHistory,
     aiFocusVersion: workspace.aiFocusVersion,
-    includeSamples: workspace.includeSamples,
     aiPreferences: workspace.aiPreferences,
     leftPaneRatio: workspace.leftPaneRatio,
     setAiContextNote: workspace.setAiContextNote,
     setAiPrompt: workspace.setAiPrompt,
-    setIncludeSamples: workspace.setIncludeSamples,
     setAiPreferences: workspace.setAiPreferences,
     addLocalFiles: workspace.addLocalFiles,
     submitAiTurn: workspace.submitAiTurn,
@@ -49,7 +48,6 @@ export function WorkspaceAiOverlay() {
     viewNote: view.aiViewNote,
     blank: view.isBlankWorkspace,
     isMap: view.isMap,
-    includeSamples: state.includeSamples,
     gridSelection: state.gridSelection,
     chartRange: state.chartSelection ? {
       x: state.chartSelection.x,
@@ -65,7 +63,7 @@ export function WorkspaceAiOverlay() {
     dataPreview: { columns: state.fullData.columns, rows: state.fullData.rows },
   });
 
-  const submit = (task: "generate" | "repair" | "explain", requestOverride?: string, retryAssistantIndex?: number) => {
+  const submit = (task: "generate" | "repair" | "explain", requestOverride?: string, retryAssistantIndex?: number, approval?: AiApprovalRequest) => {
     const status = aiQueryStatus(state.query, state.resultQuery, state.runtimeErrors);
     const contextSource = resolvedContext.context === "chart"
       ? view.renderedActiveSource
@@ -93,14 +91,13 @@ export function WorkspaceAiOverlay() {
       schema: contextFields,
       availableSources: view.sources.map(({ id, title, description, fields }) => ({ id, title, description, fields })),
       view: view.aiView,
-      sampleData: state.includeSamples
-        ? {
+      sampleData: {
             columns: sampleColumns,
             rows: resolvedContext.sample.rows.slice(0, 20).map((row) => (
               row.slice(0, sampleColumns.length).map((value) => String(value).slice(0, 3000))
             )),
-          }
-        : undefined,
+          },
+      approvedFeatures: approval ? [approval] : [],
       requestOverride,
       retryAssistantIndex,
     });
@@ -111,18 +108,17 @@ export function WorkspaceAiOverlay() {
       context={resolvedContext.context}
       placement={state.aiPlacement}
       contextNote={resolvedContext.note}
+      hasSelection={resolvedContext.context === "chart" ? Boolean(state.chartSelection || state.mapFeatureSelections.length) : resolvedContext.context === "data" && Boolean(state.gridSelection)}
       prompt={state.aiPrompt}
       busy={state.aiBusy}
       ready={state.catalogLoaded}
       status={state.aiMessage}
       history={state.aiHistory}
       focusVersion={state.aiFocusVersion}
-      includeSamples={state.includeSamples}
       preferences={state.aiPreferences}
       leftPaneRatio={state.leftPaneRatio}
       onClose={state.closeAi}
       onPrompt={state.setAiPrompt}
-      onIncludeSamples={state.setIncludeSamples}
       onPreferences={state.setAiPreferences}
       onFiles={async (files) => {
         const imported = await state.addLocalFiles(files);
@@ -133,7 +129,7 @@ export function WorkspaceAiOverlay() {
         state.setAiPrompt(state.aiPrompt.trim() ? `${state.aiPrompt.trim()}\n\n${suggestion}` : suggestion);
       }}
       onAsk={(task, request) => void submit(task, request)}
-      onRetry={(assistantMessageIndex) => void submit("generate", undefined, assistantMessageIndex)}
+      onRetry={(assistantMessageIndex, approval) => void submit("generate", undefined, assistantMessageIndex, approval)}
     />
   );
 }

@@ -11,7 +11,7 @@ describe("Chartize workspace store", () => {
     expect(parsed.query).toBe("");
     expect(parsed.dockSource).toBe("");
     expect(parsed.draft).toMatchObject({ source: "", title: "", axisLabels: { x: "", y: "" } });
-    expect(parsed.aiPreferences).toEqual({ hypothesize: true, webSearch: true, dataAccess: true, allowLocalChanges: false, concise: true, challenge: false, technical: false });
+    expect(parsed.aiPreferences).toEqual({ thinking: "auto" });
   });
 
   it("replaces bootstrap-only state for the first explicit homepage choice", () => {
@@ -252,7 +252,7 @@ describe("Chartize workspace store", () => {
     }
   });
 
-  it("consumes local-change permission after one AI send", async () => {
+  it("passes one-turn approval without persisting it in preferences", async () => {
     const previous = useChartizeWorkspace.getState();
     const requestAiTurn = vi.fn(async (_request: AiTurnRequest) => ({
       kind: "explanation" as const,
@@ -279,12 +279,13 @@ describe("Chartize workspace store", () => {
       aiBusy: false,
       aiPrompt: "Apply the proposed cleanup.",
       aiHistory: [],
-      aiPreferences: { ...previous.aiPreferences, allowLocalChanges: true },
+      aiPreferences: { thinking: "high" },
       requestAiTurn,
     });
 
     try {
       await useChartizeWorkspace.getState().submitAiTurn({
+        approvedFeatures: ["local_changes"],
         task: "generate",
         context: "general",
         contextNote: "uploaded data",
@@ -294,8 +295,8 @@ describe("Chartize workspace store", () => {
         view: { title: "", subtitle: "", sources: [] },
       });
 
-      expect(requestAiTurn.mock.calls[0]?.[0].preferences.allowLocalChanges).toBe(true);
-      expect(useChartizeWorkspace.getState().aiPreferences.allowLocalChanges).toBe(false);
+      expect(requestAiTurn.mock.calls[0]?.[0].approvedFeatures).toEqual(["local_changes"]);
+      expect(useChartizeWorkspace.getState().aiPreferences).toEqual({ thinking: "high" });
     } finally {
       useChartizeWorkspace.setState({
         catalogLoaded: previous.catalogLoaded,
@@ -305,31 +306,6 @@ describe("Chartize workspace store", () => {
         aiUsage: previous.aiUsage,
         aiPreferences: previous.aiPreferences,
         requestAiTurn: previous.requestAiTurn,
-      });
-    }
-  });
-
-  it("does not carry one-send permission across workspaces", () => {
-    const previous = useChartizeWorkspace.getState();
-    const originalWorkspaceId = previous.activeWorkspaceId;
-    useChartizeWorkspace.setState({
-      aiPreferences: { ...previous.aiPreferences, allowLocalChanges: true },
-    });
-
-    try {
-      useChartizeWorkspace.getState().openWorkspace({ title: "permission boundary" }, { run: false });
-      expect(useChartizeWorkspace.getState().aiPreferences.allowLocalChanges).toBe(false);
-
-      useChartizeWorkspace.getState().switchWorkspace(originalWorkspaceId);
-      expect(useChartizeWorkspace.getState().aiPreferences.allowLocalChanges).toBe(false);
-    } finally {
-      useChartizeWorkspace.setState({
-        activeWorkspaceId: previous.activeWorkspaceId,
-        workspaceDocuments: previous.workspaceDocuments,
-        aiPreferences: previous.aiPreferences,
-        query: previous.query,
-        draft: previous.draft,
-        dockSource: previous.dockSource,
       });
     }
   });
@@ -358,13 +334,14 @@ describe("Chartize workspace store", () => {
       aiBusy: false,
       aiPrompt: "Build a derived chart.",
       aiHistory: [],
-      aiPreferences: { ...previous.aiPreferences, allowLocalChanges: true },
+      aiPreferences: { thinking: "high" },
       requestAiTurn,
       runQuery,
     });
 
     try {
       await useChartizeWorkspace.getState().submitAiTurn({
+        approvedFeatures: ["local_changes"],
         task: "generate",
         context: "general",
         contextNote: "test chart",
@@ -375,10 +352,10 @@ describe("Chartize workspace store", () => {
       });
 
       expect(requestAiTurn).toHaveBeenCalledTimes(2);
-      expect(requestAiTurn.mock.calls[0]?.[0].preferences.allowLocalChanges).toBe(true);
+      expect(requestAiTurn.mock.calls[0]?.[0].approvedFeatures).toEqual(["local_changes"]);
       expect(requestAiTurn.mock.calls[1]?.[0].task).toBe("repair");
       expect(requestAiTurn.mock.calls[1]?.[0].queryStatus).toBe("failed");
-      expect(requestAiTurn.mock.calls[1]?.[0].preferences.allowLocalChanges).toBe(false);
+      expect(requestAiTurn.mock.calls[1]?.[0].approvedFeatures).toEqual([]);
     } finally {
       useChartizeWorkspace.setState({
         catalogLoaded: previous.catalogLoaded,

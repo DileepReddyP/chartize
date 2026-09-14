@@ -9,9 +9,9 @@ export interface AiCatalogSource {
 
 interface CompactContextOptions {
   sources: AiCatalogSource[];
-  activeSource?: string;
+  activeSource?: string | undefined;
   currentQuery: string;
-  renderedQuery?: string;
+  renderedQuery?: string | undefined;
   request: string;
   contextNote: string;
   view?: { title: string; subtitle: string };
@@ -99,35 +99,6 @@ export function compactAiContext(options: CompactContextOptions) {
   };
 }
 
-export function requestedResearchItemCount(request: string) {
-  const words: Record<string, number> = {
-    one: 1,
-    two: 2,
-    three: 3,
-    four: 4,
-    five: 5,
-    six: 6,
-  };
-  const match = request.match(/\b(one|two|three|four|five|six|[1-6])\b(?=[\s\S]{0,120}?\b(?:events?|examples?|findings?|reasons?|sources?)\b)/i);
-  if (!match) return 1;
-  return Math.min(6, Math.max(1, words[match[1]!.toLocaleLowerCase()] ?? Number(match[1])));
-}
-
-export function isExplanationRequest(request: string) {
-  const mutation = /\b(add|build|change|colour|color|create|draw|filter|fix|join|make|map|overlay|plot|remove|rename|repair|set|switch|update|visuali[sz]e)\b/i.test(request)
-    || /\bshow\b[\s\S]{0,100}\b(?:as (?:a |an )?|bar|chart|graph|line|map|plot|series|visuali[sz]ation)\b/i.test(request);
-  const explanation = /\b(analy[sz]e|assess|calculate|cause|caused|check|compute|evaluate|evidence|explain|happen|happened|how|interpret|mean|meaning|summari[sz]e|tell me|what|why)\b/i.test(request);
-  return explanation && !mutation;
-}
-
-export function isComplexVisualizationRequest(request: string, currentQuery: string, task: "generate" | "repair" | "explain") {
-  if (task === "repair") return true;
-  if (task === "explain") return false;
-  const complexIntent = /\b(aggregate|choropleth|confidence|county|counties|forecast|hypothetical|join|layer|map|model|predict|regression|ribbon|scenario|spatial|state boundaries|trend)\b/i.test(request);
-  const multiStage = /\b(WITH|JOIN)\b/i.test(currentQuery);
-  return complexIntent && (!currentQuery.trim() || multiStage || /\b(join|aggregate|county|counties|state boundaries)\b/i.test(request));
-}
-
 export function compactHistory(
   history: Array<{
     role: "user" | "assistant";
@@ -147,7 +118,7 @@ export function compactHistory(
       : message);
 }
 
-/** Keep browser-query evidence useful without letting a wide result dominate a turn. */
+/** Bounds browser-query evidence by row, column and text size. */
 export function compactWorkspaceData(results: AiWorkspaceDataResult[], maximumCharacters = 80_000) {
   const output: Array<Record<string, unknown>> = [];
   let used = 2;

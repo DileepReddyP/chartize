@@ -1,6 +1,6 @@
 import type { FieldMetadata } from "@chartize/contracts";
 import { describe, expect, it } from "vitest";
-import { compactAiContext, compactHistory, compactWorkspaceData, isComplexVisualizationRequest, isExplanationRequest, requestedResearchItemCount } from "./context";
+import { compactAiContext, compactHistory, compactWorkspaceData } from "./context";
 
 const fillerFields: FieldMetadata[] = Array.from({ length: 80 }, (_, index) => ({
   name: `unused_${index}`,
@@ -35,21 +35,6 @@ describe("Chartize AI context routing", () => {
       contextNote: "Presidential approval chart",
     });
     expect(result.sourceSchemas.map((schema) => schema.source)).toEqual(["chartize:approval"]);
-  });
-
-  it("routes explanation, research, and complex blank builds independently", () => {
-    expect(isExplanationRequest("Why did Trump's approval fall here?")).toBe(true);
-    expect(isExplanationRequest("Evidence check")).toBe(true);
-    expect(isExplanationRequest("Show approval and disapproval as two lines")).toBe(false);
-    expect(isExplanationRequest("Why did Trump’s approval fall? Use live sources.")).toBe(true);
-    expect(isExplanationRequest("Show me why this changed")).toBe(true);
-    expect(isExplanationRequest("Show approval as two lines")).toBe(false);
-    expect(isExplanationRequest("Calculate the exact average approval value")).toBe(true);
-    expect(isComplexVisualizationRequest("Aggregate counties and join state boundaries for a choropleth", "", "generate")).toBe(true);
-    expect(requestedResearchItemCount("Find three consequential events")).toBe(3);
-    expect(requestedResearchItemCount("Search for three consequential U.S. political or economic events between April and July 2025")).toBe(3);
-    expect(requestedResearchItemCount("Find 5 direct sources")).toBe(5);
-    expect(requestedResearchItemCount("What happened in 2025?")).toBe(1);
   });
 
   it("removes adjacent duplicate transcript messages", () => {

@@ -209,12 +209,6 @@ export const AiCitationSchema = z.object({
   url: z.url(),
 });
 
-export const AiResearchContextSchema = z.object({
-  researched: z.literal(true),
-  memo: z.string().max(6000),
-  sources: z.array(AiCitationSchema).max(6),
-});
-
 export const AiContextSchema = z.enum(["code", "chart", "data", "general"]);
 
 export const AiContextReferenceSchema = z.object({
@@ -222,30 +216,21 @@ export const AiContextReferenceSchema = z.object({
   note: z.string().min(1).max(1600),
 });
 
-const AiProviderReasoningItemSchema = z.object({
-  id: z.string().min(1).max(300),
-  type: z.literal("reasoning"),
-  summary: z.array(z.object({
-    type: z.literal("summary_text"),
-    text: z.string().max(4000),
-  })).max(8),
-  encrypted_content: z.string().min(1).max(250_000),
-  status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
-});
-
-const AiProviderDataMessageSchema = z.object({
-  role: z.literal("user"),
-  content: z.string().min(1).max(100_000),
-});
-
-/**
- * Short-lived Responses API state used only while one browser-data turn is in
- * progress. It is returned to the browser worker and discarded with the turn;
- * normal workspace conversation state remains browser-local plain text.
- */
-export const AiProviderContextSchema = z.object({
-  items: z.array(z.union([AiProviderReasoningItemSchema, AiProviderDataMessageSchema])).max(32),
-  consumedWorkspaceResults: z.number().int().min(0).max(12),
+export const AiThinkingLevelSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
+export const AiApprovalRequestSchema = z.enum(["local_changes", "workspace_data", "selected_data", "web_search"]);
+export const AiTurnPlanSchema = z.object({
+  summary: z.string().max(240),
+  thinking: AiThinkingLevelSchema,
+  research: z.enum(["none", "wikipedia", "web"]),
+  queryData: z.boolean(),
+  shareSelection: z.boolean(),
+  localChanges: z.boolean(),
+  hypotheses: z.boolean(),
+  technical: z.boolean(),
+  challenge: z.boolean(),
+  concise: z.boolean(),
+  approval: AiApprovalRequestSchema.nullable(),
+  question: z.string().max(800),
 });
 
 export const AiWorkspaceActionSchema = z.object({
@@ -282,31 +267,16 @@ export const AiDataRequestSchema = z.object({
 });
 
 export const AiResponsePreferencesSchema = z.object({
-  hypothesize: z.boolean(),
-  webSearch: z.boolean(),
-  dataAccess: z.boolean().default(true),
-  allowLocalChanges: z.boolean().default(false),
-  concise: z.boolean(),
-  challenge: z.boolean(),
-  technical: z.boolean(),
+  thinking: z.enum(["auto", ...AiThinkingLevelSchema.options]).default("auto"),
 });
 
-export const DEFAULT_AI_RESPONSE_PREFERENCES = Object.freeze(AiResponsePreferencesSchema.parse({
-  hypothesize: true,
-  webSearch: true,
-  dataAccess: true,
-  allowLocalChanges: false,
-  concise: true,
-  challenge: false,
-  technical: false,
-}));
-
-export const AiApprovalRequestSchema = z.enum(["local_changes"]);
+export const DEFAULT_AI_RESPONSE_PREFERENCES = Object.freeze(AiResponsePreferencesSchema.parse({}));
 
 export const AiConversationMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string(),
   approval: AiApprovalRequestSchema.optional(),
+  plan: AiTurnPlanSchema.optional(),
   context: AiContextReferenceSchema.optional(),
 });
 
@@ -356,6 +326,8 @@ export const AiTurnRequestSchema = z.object({
     })).max(20),
   }),
   preferences: AiResponsePreferencesSchema,
+  approvedFeatures: z.array(AiApprovalRequestSchema).max(4).optional(),
+  selection: z.object({ columns: z.array(z.string().max(300)).max(100), rowCount: z.number().int().min(0).max(20) }).optional(),
   sampleData: z.object({
     columns: z.array(z.string().max(300)).max(100),
     rows: z.array(z.array(z.string().max(3000)).max(100)).max(20),
@@ -365,17 +337,16 @@ export const AiTurnRequestSchema = z.object({
 });
 
 export const AiTurnEnvelopeSchema = AiTurnRequestSchema.extend({
-  workspaceDataRound: z.number().int().min(0).max(3).default(0),
+  turnId: z.string().uuid().optional(),
   workspaceData: z.array(AiWorkspaceDataResultSchema).max(12).default([]),
-  researchContext: AiResearchContextSchema.optional(),
-  providerContext: AiProviderContextSchema.optional(),
 });
 
 export const AiDataRequestResponseSchema = z.object({
   kind: z.literal("data_request"),
-  requests: z.array(AiDataRequestSchema).min(1).max(4),
-  researchContext: AiResearchContextSchema.optional(),
-  providerContext: AiProviderContextSchema.optional(),
+  requests: z.array(AiDataRequestSchema).max(4),
+  includeSelection: z.boolean(),
+  turnId: z.string().uuid(),
+  plan: AiTurnPlanSchema,
   usage: AiUsageSchema,
 });
 
@@ -383,6 +354,7 @@ export const AiExplanationResponseSchema = z.object({
   kind: z.literal("explanation"),
   explanation: z.string(),
   approval: AiApprovalRequestSchema.optional(),
+  plan: AiTurnPlanSchema.optional(),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
   sources: z.array(AiCitationSchema),
@@ -393,6 +365,7 @@ export const AiExplanationResponseSchema = z.object({
 
 export const AiVisualizationResponseSchema = AiSuggestionSchema.extend({
   kind: z.literal("visualization"),
+  plan: AiTurnPlanSchema.optional(),
   usage: AiUsageSchema,
 });
 
@@ -405,7 +378,7 @@ export const AiResponseSchema = z.discriminatedUnion("kind", [
 export const AiStreamEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("progress"),
-    message: z.string().min(1).max(200),
+    message: z.string().min(1).max(300),
   }),
   z.object({
     type: z.literal("result"),
@@ -432,10 +405,10 @@ export type QueryResult = z.infer<typeof QueryResultSchema>;
 export type TablePreview = z.infer<typeof TablePreviewSchema>;
 export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
 export type AiCitation = z.infer<typeof AiCitationSchema>;
-export type AiResearchContext = z.infer<typeof AiResearchContextSchema>;
 export type AiContext = z.infer<typeof AiContextSchema>;
 export type AiContextReference = z.infer<typeof AiContextReferenceSchema>;
-export type AiProviderContext = z.infer<typeof AiProviderContextSchema>;
+export type AiTurnPlan = z.infer<typeof AiTurnPlanSchema>;
+export type AiThinkingLevel = z.infer<typeof AiThinkingLevelSchema>;
 export type AiWorkspaceAction = z.infer<typeof AiWorkspaceActionSchema>;
 export type AiUsage = z.infer<typeof AiUsageSchema>;
 export type AiDataRequest = z.infer<typeof AiDataRequestSchema>;

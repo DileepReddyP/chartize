@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { decideResearch } from "../ai/research-policy";
 import { VISUALIZATION_EXAMPLES } from "../ggsql/examples";
 import { HOME_STORIES, homeStoryForExample } from "./home-stories";
 
@@ -30,6 +29,5 @@ describe("homepage example handoff", () => {
     const questions = HOME_STORIES.map((story) => story.ask.trim());
     expect(questions.every(Boolean)).toBe(true);
     expect(new Set(questions).size).toBe(HOME_STORIES.length);
-    expect(questions.every((question) => decideResearch(question, { webSearch: true }).mode === "required")).toBe(true);
   });
 });

@@ -24,13 +24,7 @@ export interface ContainedFloatingRect extends FloatingSize {
   maxHeight: number;
 }
 
-/**
- * Fits a proposed floating surface inside a boundary, shrinking it only when
- * the boundary itself is smaller than the preferred surface. This is useful
- * after a viewport resize, when an otherwise good anchor placement may have
- * stale coordinates. maxHeight is the full distance from the contained top to
- * the boundary bottom so a long scroll surface can end flush with the viewport.
- */
+/** Fits a floating surface inside a boundary and returns its scrollable maximum height. */
 export function containFloating(
   position: Pick<FloatingPlacement, "left" | "top">,
   size: FloatingSize,
@@ -64,11 +58,7 @@ function overlapArea(left: number, top: number, size: FloatingSize, anchor: Floa
   return width * height;
 }
 
-/**
- * Chooses the first roomy quadrant around an anchor, but scores every option
- * so a point near an edge can flip diagonally instead of being covered by a
- * blindly clamped bottom-right popup.
- */
+/** Places a floating surface near its anchor, minimizing overlap and viewport overflow. */
 export function placeFloating(
   anchor: FloatingRect,
   size: FloatingSize,
@@ -100,8 +90,6 @@ export function placeFloating(
         left,
         top,
         quadrant: candidate.quadrant,
-        // Covering the active item is worse than crossing an edge before the
-        // final clamp; preference is only a stable tie-breaker.
         score: overlap * 100_000 + overflow * 100 + preference,
       };
     })

@@ -873,3 +873,18 @@ globalStyle(".ai-active-context", { minHeight: "44px", display: "grid", gridTemp
 globalStyle(".ai-context-index", { display: "grid", placeItems: "center", background: vars.color.ink, color: vars.color.panel, fontFamily: "ui-monospace, monospace", fontSize: "7px" });
 globalStyle(".ai-active-context > div", { minWidth: 0, display: "grid", alignContent: "center", gap: "2px", padding: "7px 10px 8px" });
 globalStyle(".ai-active-context b", { color: vars.color.tealDark, fontSize: "7px", fontWeight: 560, letterSpacing: ".04em", textTransform: "lowercase" });
+
+globalStyle(".ai-thinking-settings > summary", { width: "auto", padding: "0 9px", fontSize: "9px", whiteSpace: "nowrap" });
+globalStyle(".ai-thinking-settings > div", { width: "min(310px, calc(100vw - 28px))" });
+globalStyle(".ai-thinking-levels", { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1px", background: vars.color.line });
+globalStyle(".ai-thinking-levels button", { display: "grid", gap: "4px", padding: "12px", border: 0, background: vars.color.panel, color: vars.color.ink, cursor: "pointer", textAlign: "left", fontFamily: "inherit" });
+globalStyle(".ai-thinking-levels button[aria-pressed='true'], .ai-thinking-levels button:hover", { background: vars.color.tealPale, color: vars.color.tealDark });
+globalStyle(".ai-thinking-levels b", { fontSize: "11px", fontWeight: 560 });
+globalStyle(".ai-thinking-levels small", { fontSize: "9px", lineHeight: 1.4 });
+globalStyle(".ai-thinking-settings > div > p", { margin: 0, padding: "10px 12px", color: vars.color.muted, fontSize: "9px", lineHeight: 1.5 });
+globalStyle(".ai-data-note", { margin: "5px 0 8px", color: vars.color.muted, fontSize: "9px", lineHeight: 1.45 });
+globalStyle(".ai-approach", { gridColumn: "2 / -1", minWidth: 0, color: vars.color.muted, fontSize: "9px", lineHeight: 1.5 });
+globalStyle(".ai-approach summary", { cursor: "pointer", color: vars.color.tealDark });
+globalStyle(".ai-approach p", { margin: "5px 0" });
+globalStyle(".ai-approach small", { fontSize: "9px" });
+globalStyle(".ai-approve-button", { padding: "4px 7px", border: 0, borderBottom: `1px solid ${vars.color.tealDark}`, background: vars.color.tealPale, color: vars.color.tealDark, cursor: "pointer", fontSize: "10px", fontFamily: "inherit" });

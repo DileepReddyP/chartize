@@ -4,24 +4,25 @@ import {
   AiTurnEnvelopeSchema,
   AiUsageSchema,
   AiWorkspaceDataResultSchema,
-  type AiResearchContext,
-  type AiProviderContext,
   type AiResponse,
   type AiTurnRequest,
   type AiUsage,
   type AiWorkspaceAction,
   type AiWorkspaceDataResult,
 } from "@chartize/contracts";
-import { executeWorkspaceSqlRaw } from "./workspace-engine";
+import { executeWorkspaceReadOnlySqlRaw, executeWorkspaceSqlRaw } from "./workspace-engine";
+import { isResultSqlStatement, sqlStatements } from "../ggsql/query-context";
 import { prepareWorkerQuery, type WorkerProgressEmitter } from "./worker-source-registry";
+import { assertSafeWorkspaceAction } from "./ai-sql-safety";
 
 const AI_URL = "/api/ai/query";
-const AI_TIMEOUT_MS = 180_000;
+const AI_TIMEOUT_MS = 300_000;
 
 async function requestStreamedAiTurn(
   payload: unknown,
   id: string,
   emit: WorkerProgressEmitter,
+  profileId: string,
 ): Promise<AiResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
@@ -31,6 +32,7 @@ async function requestStreamedAiTurn(
       headers: {
         accept: "application/x-ndjson",
         "content-type": "application/json",
+        "x-chartize-profile": profileId,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -111,8 +113,12 @@ async function executeAiDataRequest(
   emit: WorkerProgressEmitter,
 ) {
   try {
+    if (sqlStatements(request.sql).length !== 1 || !isResultSqlStatement(request.sql)
+      || /\b(?:PRAGMA|ATTACH|DETACH|load_extension|writefile|readfile)\b/i.test(request.sql)) {
+      throw new Error("AI data inspection requires one read-only SELECT or WITH query.");
+    }
     const query = await prepareWorkerQuery(workspaceId, request.sql, id, emit);
-    const result = await executeWorkspaceSqlRaw(workspaceId, query);
+    const result = await executeWorkspaceReadOnlySqlRaw(workspaceId, query);
     const rows = result.rows
       .slice(0, request.limit)
       .map((row) => row.slice(0, 100).map((value) => String(value).slice(0, 1000)));
@@ -134,20 +140,6 @@ async function executeAiDataRequest(
       truncated: false,
       error: error instanceof Error ? error.message : String(error),
     });
-  }
-}
-
-function assertSafeWorkspaceAction(sql: string) {
-  if (/\bVISUALI[ZS]E\b/i.test(sql)) throw new Error("A one-time workspace action cannot contain VISUALISE.");
-  if (!/\b(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE|DROP\s+TABLE|INSERT\s+INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE)\b/i.test(sql)) {
-    throw new Error("A workspace action must contain an explicit local SQL change.");
-  }
-  if (/\b(?:COPY|ATTACH|DETACH|INSTALL|LOAD|VACUUM)\b/i.test(sql) || /(?:https?:\/\/|file:|\/Users\/|\.\.\/)/i.test(sql)) {
-    throw new Error("A workspace action cannot access extensions, URLs, or the filesystem.");
-  }
-  const protectedTarget = /\b(?:CREATE\s+(?:TEMP(?:ORARY)?\s+)?TABLE(?:\s+IF\s+NOT\s+EXISTS)?|DROP\s+TABLE(?:\s+IF\s+EXISTS)?|INSERT\s+INTO|UPDATE|DELETE\s+FROM|ALTER\s+TABLE)\s+(?:"|`|\[)?(?:chartize:|user:|__chartize_|__user_)/i;
-  if (protectedTarget.test(sql)) {
-    throw new Error("A workspace action must write to a derived local table, not a catalog source or raw upload.");
   }
 }
 
@@ -178,26 +170,34 @@ export async function completeWorkerAiTurn(
   input: AiTurnRequest,
   id: string,
   emit: WorkerProgressEmitter,
+  profileId = "anonymous",
 ) {
   const workspaceData: AiWorkspaceDataResult[] = [];
-  let researchContext: AiResearchContext | undefined;
-  let providerContext: AiProviderContext | undefined;
+  let turnId: string | undefined;
+  let includeSelection = false;
   let accumulatedUsage: AiUsage | null = null;
   for (let workspaceDataRound = 0; workspaceDataRound <= 3; workspaceDataRound += 1) {
     emit(id, { phase: "thinking", message: workspaceDataRound ? "checking the data…" : "thinking…" });
-    const payload = AiTurnEnvelopeSchema.parse({ ...input, workspaceDataRound, workspaceData, researchContext, providerContext });
-    const parsed = await requestStreamedAiTurn(payload, id, emit);
+    const payload = AiTurnEnvelopeSchema.parse({
+      ...input, turnId, workspaceData,
+      sampleData: includeSelection ? input.sampleData : undefined,
+      selection: input.sampleData ? { columns: input.sampleData.columns, rowCount: input.sampleData.rows.length } : undefined,
+    });
+    const parsed = await requestStreamedAiTurn(payload, id, emit, profileId);
     accumulatedUsage = mergeUsage(accumulatedUsage, parsed.usage);
     if (parsed.kind !== "data_request") {
+      if (parsed.workspaceActions.length && !parsed.plan?.localChanges) throw new Error("The current plan did not authorize local data changes.");
       await executeWorkspaceActions(workspaceId, parsed.workspaceActions, id, emit);
       return { ...parsed, usage: accumulatedUsage };
     }
-    if (!input.preferences.dataAccess) throw new Error("Chartize AI requested workspace data while data access was disabled.");
-    researchContext = parsed.researchContext ?? researchContext;
-    providerContext = parsed.providerContext ?? providerContext;
-    workspaceData.push(...await Promise.all(
-      parsed.requests.map((request) => executeAiDataRequest(workspaceId, request, id, emit)),
-    ));
+    if (parsed.requests.length && !parsed.plan.queryData) throw new Error("The current plan did not authorize workspace queries.");
+    if (parsed.includeSelection && (!parsed.plan.shareSelection || !input.sampleData)) throw new Error("The selected rows are not available for this plan.");
+    if (workspaceDataRound === 3) throw new Error("Chartize AI reached its browser-data limit.");
+    turnId = parsed.turnId;
+    includeSelection = parsed.includeSelection;
+    workspaceData.length = 0;
+    // SQLite is shared by this worker; keep these requests in order.
+    for (const request of parsed.requests) workspaceData.push(await executeAiDataRequest(workspaceId, request, id, emit));
   }
   throw new Error("Chartize AI did not finish after three browser-data rounds.");
 }

@@ -151,7 +151,6 @@ export const WorkspaceDocumentSchema = z.object({
   aiMessage: z.string(),
   aiHistory: z.array(AiConversationMessageSchema),
   aiUsage: AiUsageSchema.nullable(),
-  includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
   runtimeErrors: z.array(AiRuntimeErrorSchema).max(8).default([]),
   workspaceActions: WorkspaceActionsSchema.default([]),
@@ -277,7 +276,6 @@ export const WorkspaceSnapshotSchema = z.object({
   aiHistory: z.array(AiConversationMessageSchema),
   aiUsage: AiUsageSchema.nullable(),
   aiFocusVersion: z.number().int().nonnegative(),
-  includeSamples: z.boolean(),
   aiPreferences: AiResponsePreferencesSchema,
   runtimeErrors: z.array(AiRuntimeErrorSchema).max(8),
   workspaceActions: WorkspaceActionsSchema.default([]),
@@ -421,6 +419,7 @@ export function mergeAiUsage(current: AiUsage | null, next: AiUsage): AiUsage {
 }
 
 interface ChartizeWorkspaceState extends WorkspaceSnapshot {
+  workspaceSessionReady: boolean;
   initializeBrowserEngine: (spatialiteUrl: string) => Promise<void>;
   executeWorkspaceSql: (query: string) => Promise<BrowserSqlResult>;
   runQuery: (query?: string) => Promise<WorkspaceRunResult>;
@@ -484,7 +483,6 @@ interface ChartizeWorkspaceState extends WorkspaceSnapshot {
   setAiMessage: (value: string) => void;
   setAiHistory: (value: Updater<AiConversationMessage[]>) => void;
   setAiUsage: (value: AiUsage | null) => void;
-  setIncludeSamples: (value: boolean) => void;
   setAiPreferences: (value: AiResponsePreferences) => void;
   openAi: (input: { contextNote: string; placement: AiPlacement; context: AiContext }) => void;
   setLeftPaneRatio: (value: number) => void;
@@ -497,12 +495,6 @@ const initialDraft = makeInitialWorkspaceDraft();
 const initialQuery = serializeDraft(initialDraft);
 const bootstrapDraft = makeBlankDraft();
 const DEFAULT_AI_PREFERENCES: AiResponsePreferences = DEFAULT_AI_RESPONSE_PREFERENCES;
-
-function persistentAiPreferences(preferences: AiResponsePreferences): AiResponsePreferences {
-  return preferences.allowLocalChanges
-    ? { ...preferences, allowLocalChanges: false }
-    : preferences;
-}
 
 function requestHistory(messages: AiConversationMessage[]) {
   return messages.slice(-12).map(({ role, text, context }) => ({
@@ -537,7 +529,6 @@ const initialWorkspaceDocument = WorkspaceDocumentSchema.parse({
   aiMessage: "",
   aiHistory: [],
   aiUsage: null,
-  includeSamples: false,
   aiPreferences: DEFAULT_AI_PREFERENCES,
   runtimeErrors: [],
   workspaceActions: [],
@@ -623,7 +614,6 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   aiHistory: [],
   aiUsage: null,
   aiFocusVersion: 0,
-  includeSamples: false,
   aiPreferences: DEFAULT_AI_PREFERENCES,
   runtimeErrors: [],
   leftPaneRatio: 0.44,
@@ -657,8 +647,7 @@ function captureWorkspaceDocument(state: WorkspaceSnapshot): WorkspaceDocument {
     aiMessage: state.aiMessage,
     aiHistory: state.aiHistory,
     aiUsage: state.aiUsage,
-    includeSamples: state.includeSamples,
-    aiPreferences: persistentAiPreferences(state.aiPreferences),
+    aiPreferences: state.aiPreferences,
     runtimeErrors: state.runtimeErrors,
     workspaceActions: state.workspaceActions,
   });
@@ -707,8 +696,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     aiHistory: document.aiHistory,
     aiUsage: document.aiUsage,
     aiFocusVersion: focusVersion,
-    includeSamples: document.includeSamples,
-    aiPreferences: persistentAiPreferences(document.aiPreferences),
+    aiPreferences: document.aiPreferences,
     runtimeErrors: document.runtimeErrors,
     workspaceActions: document.workspaceActions,
   };
@@ -742,7 +730,6 @@ function newWorkspaceDocument(input: NewWorkspaceInput = {}): WorkspaceDocument 
     aiMessage: "",
     aiHistory: [],
     aiUsage: null,
-    includeSamples: false,
     aiPreferences: DEFAULT_AI_PREFERENCES,
     runtimeErrors: [],
     workspaceActions: [],
@@ -773,7 +760,7 @@ function mergeWorkspaceActions(current: AiWorkspaceAction[], next: AiWorkspaceAc
 function migrateWorkspaceDocument(document: WorkspaceDocument) {
   const safeDocument = WorkspaceDocumentSchema.parse({
     ...document,
-    aiPreferences: persistentAiPreferences(document.aiPreferences),
+    aiPreferences: document.aiPreferences,
   });
   try {
     const separated = separateWorkspaceProgram(safeDocument.query);
@@ -819,6 +806,7 @@ function workspaceActivated(get: () => ChartizeWorkspaceState, run = true) {
 
 export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) => ({
   ...initialSnapshot,
+  workspaceSessionReady: false,
 
   initializeBrowserEngine: async (spatialiteUrl) => {
     // Fast Refresh can preserve the ready worker while replacing the Zustand
@@ -926,8 +914,6 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
             selectedData = { ...selectedData, rows: relationRows.slice(0, 200) };
           }
         } catch {
-          // The visualization is still useful if an engine-specific terminal
-          // statement cannot be wrapped for the selected-data preview.
         }
       }
       if (runId !== browserRunSequence) return { ok: false, error: "A newer query replaced this run." };
@@ -1298,9 +1284,6 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
       aiMessage: "",
       aiHistory: [...branchHistory, { role: "user", text: request, context: messageContext }],
       aiPrompt: "",
-      aiPreferences: initialState.aiPreferences.allowLocalChanges
-        ? { ...initialState.aiPreferences, allowLocalChanges: false }
-        : initialState.aiPreferences,
     });
     try {
       const { requestOverride: _requestOverride, retryAssistantIndex: _retryAssistantIndex, ...context } = submission;
@@ -1335,7 +1318,8 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
             currentQuery: body.query,
             queryStatus: "failed",
             ...(initialState.resultQuery.trim() ? { renderedQuery: initialState.resultQuery } : {}),
-            preferences: { ...initialState.aiPreferences, webSearch: false, allowLocalChanges: false },
+            preferences: initialState.aiPreferences,
+            approvedFeatures: [],
             runtimeErrors: addRuntimeError(turnInput.runtimeErrors, {
               stage: "query",
               message: runResult.error,
@@ -1360,8 +1344,8 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         body.workspaceActions.length
           ? `**Applied in this browser workspace**\n${body.workspaceActions.map((action) => `- ${action.purpose}`).join("\n")}`
           : "",
-        initialState.aiPreferences.technical && body.assumptions.length ? `Assumptions: ${body.assumptions.join(" ")}` : "",
-        (initialState.aiPreferences.technical || initialState.aiPreferences.challenge) && body.warnings.length ? `Check: ${body.warnings.join(" ")}` : "",
+        body.plan?.technical && body.assumptions.length ? `Assumptions: ${body.assumptions.join(" ")}` : "",
+        body.warnings.length ? `Check: ${body.warnings.join(" ")}` : "",
         body.sources.length ? `Sources: ${body.sources.map((source) => `[${source.title}](${source.url})`).join(" · ")}` : "",
       ].filter(Boolean).join("\n\n");
       set((state) => ({
@@ -1370,6 +1354,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           role: "assistant",
           text: reply,
           approval: body.kind === "explanation" ? body.approval : undefined,
+          plan: body.plan,
         }],
       }));
     } catch (cause) {
@@ -1577,7 +1562,6 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   setAiMessage: (aiMessage) => set({ aiMessage }),
   setAiHistory: (next) => set((state) => ({ aiHistory: resolve(next, state.aiHistory) })),
   setAiUsage: (aiUsage) => set({ aiUsage: aiUsage ? AiUsageSchema.parse(aiUsage) : null }),
-  setIncludeSamples: (includeSamples) => set({ includeSamples }),
   setAiPreferences: (aiPreferences) => set({ aiPreferences: AiResponsePreferencesSchema.parse(aiPreferences) }),
   openAi: (input) => {
     const parsed = AiOpenInputSchema.parse(input);

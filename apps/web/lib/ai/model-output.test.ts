@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { draftFromGgsql, normalizeModelGgsql, publicAiError, reconcileGroundedResponse, sanitizeModelText, separateWorkspaceProgram } from "./model-output";
+import { draftFromGgsql, normalizeModelGgsql, publicAiError, sanitizeModelText, separateWorkspaceProgram } from "./model-output";
 
 describe("Chartize AI model output", () => {
   it("does not expose raw Zod issue arrays in the UI", () => {
     const invalid = z.object({ required: z.string() }).safeParse({});
     expect(invalid.success).toBe(false);
     if (!invalid.success) {
-      expect(publicAiError(invalid.error)).toBe("Chartize AI returned an incomplete visualization draft. Please try again.");
+      expect(publicAiError(invalid.error)).toBe("Chartize AI returned an incomplete response. Please try again.");
     }
   });
 
@@ -58,25 +58,9 @@ DRAW bar
     expect(separated.query).not.toMatch(/\b(?:DROP|CREATE)\b/);
   });
 
-  it("does not claim web research was unavailable when provider evidence exists", () => {
-    expect(reconcileGroundedResponse(
-      "Three dates were added. I could not retrieve eligible live-web source results, so treat them as unverified.",
-      ["No usable sources were available.", "The chart is descriptive."],
-      { researched: true, sources: [{ title: "AP", url: "https://apnews.com/example" }] },
-    )).toEqual({
-      explanation: "Three dates were added. Source links supporting the researched claims are attached below.",
-      warnings: ["The chart is descriptive."],
-    });
-  });
-
   it("removes provider citation control tokens without flattening Markdown", () => {
     expect(sanitizeModelText("Teton is an outlier. citeturn0search1\n\n- **Reason:** leverage"))
       .toBe("Teton is an outlier.\n\n- **Reason:** leverage");
-    expect(reconcileGroundedResponse(
-      "Grounded answer citeturn0search0turn0search1",
-      ["Check this citeturn0search0"],
-      { researched: false, sources: [] },
-    )).toEqual({ explanation: "Grounded answer", warnings: ["Check this"] });
   });
 
   it("reconstructs editable builder state from authoritative layered GGSQL", () => {

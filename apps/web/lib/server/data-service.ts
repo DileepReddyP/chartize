@@ -234,7 +234,8 @@ export async function activeDatasetArtifact(slugInput: string, versionInput: str
 }
 
 export function assertAdminToken(provided: string | null | undefined) {
-  const expected = process.env.ADMIN_TOKEN ?? "change-me-in-production";
+  const expected = process.env.ADMIN_TOKEN;
+  if (!expected || ["change-me-in-production", "replace-with-a-long-random-secret"].includes(expected)) throw new DataServiceError("Admin access has not been configured.", 503);
   const actualBytes = Buffer.from(provided ?? "");
   const expectedBytes = Buffer.from(expected);
   if (actualBytes.length !== expectedBytes.length || !timingSafeEqual(actualBytes, expectedBytes)) {
