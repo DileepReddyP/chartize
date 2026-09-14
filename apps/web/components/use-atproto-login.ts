@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { watchLoginCompletion } from "@/lib/auth/login-handoff";
 import type { ChatUser } from "./profile-provider";
 
 /** Runs one browser-bound provider login across the profile menu and chat gate. */
@@ -15,23 +16,19 @@ export function useAtprotoLogin(onSignedIn: (user: ChatUser) => Promise<void>) {
 
   useEffect(() => {
     if (status !== "waiting") return;
-    const controller = new AbortController();
-    const started = Date.now();
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const response = await fetch("/api/auth/complete", { method: "POST", signal: controller.signal });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error ?? "Login expired. Try again.");
-        if (result.user) { popup.current?.close(); await onSignedIn(result.user); setStatus("idle"); return; }
-        if (Date.now() - started > 10 * 60_000) throw new Error("Login expired. Try again.");
-        timer = setTimeout(poll, 2000);
-      } catch (failure) {
-        if (!controller.signal.aborted) { setError(failure instanceof Error ? failure.message : "Login failed."); setStatus("idle"); }
-      }
-    };
-    timer = setTimeout(poll, 1000);
-    return () => { clearTimeout(timer); controller.abort(); };
+    return watchLoginCompletion(async (signal) => {
+      const response = await fetch("/api/auth/complete", { method: "POST", signal });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Login expired. Try again.");
+      if (!result.user) return false;
+      try { popup.current?.close(); } catch { /* The provider window may already be closed. */ }
+      await onSignedIn(result.user);
+      setStatus("idle");
+      return true;
+    }, (failure) => {
+      setError(failure instanceof Error ? failure.message : "Login failed.");
+      setStatus("idle");
+    });
   }, [status, onSignedIn]);
 
   const start = async () => {
