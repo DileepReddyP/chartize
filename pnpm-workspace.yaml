@@ -5,3 +5,7 @@ packages:
 onlyBuiltDependencies:
   - esbuild
   - sharp
+
+overrides:
+  # Monaco pins an older sanitizer; keep its security fixes current.
+  monaco-editor>dompurify: 3.4.15

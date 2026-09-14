@@ -12,6 +12,6 @@
     "data:seed": "node scripts/seed-data.mjs"
   },
   "devDependencies": {
-    "@types/node": "^24.10.1"
+    "@types/node": "^24.13.4"
   }
 }

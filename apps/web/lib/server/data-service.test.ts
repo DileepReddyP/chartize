@@ -10,7 +10,7 @@ import {
   rollbackDataset,
 } from "./data-service";
 
-describe.sequential("Next data service", () => {
+describe("Next data service", { concurrent: false }, () => {
   let root = "";
   let firstVersion = "";
 
