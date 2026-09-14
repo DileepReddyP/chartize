@@ -6,10 +6,10 @@ import { configureBrowserProfile } from "@/lib/local/browser-runtime";
 import { BrowserProfileIdSchema } from "@/lib/local/worker-protocol";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
 import { useAtprotoLogin } from "./use-atproto-login";
+import { useProfileAppearance, type ThemeMode } from "./use-profile-appearance";
 
 const ChatUserSchema = z.object({ did: BrowserProfileIdSchema.refine((id) => id !== "anonymous"), handle: z.string().min(1), avatar: z.url({ protocol: /^https$/ }).max(2048).optional(), isAdmin: z.boolean() });
 export type ChatUser = z.infer<typeof ChatUserSchema>;
-export type ThemeMode = "system" | "light" | "dark";
 
 interface ProfileContextValue {
   user: ChatUser | null | undefined;
@@ -38,8 +38,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [user, setIdentity] = useState<ChatUser | null>();
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
-  const [theme, setThemeValue] = useState<ThemeMode>("system");
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("light");
+  const { theme, resolvedTheme, setTheme, restoreAppearance } = useProfileAppearance();
   const activeProfile = useRef<string | undefined>(undefined);
   const changing = useRef(false);
   const sequence = useRef(0);
@@ -70,19 +69,11 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       return;
     }
     configureBrowserProfile(profileId);
-    if (activeProfile.current === undefined) {
-      let preference: ThemeMode = "system";
-      try {
-        const saved = localStorage.getItem(`chartize:theme:${profileId}`);
-        if (saved === "light" || saved === "dark") preference = saved;
-        localStorage.setItem("chartize:appearance-profile", profileId);
-      } catch { /* Browser appearance storage is optional. */ }
-      setThemeValue(preference);
-    }
+    if (activeProfile.current === undefined) restoreAppearance(profileId);
     activeProfile.current = profileId;
     setIdentity(next);
     setError("");
-  }, []);
+  }, [restoreAppearance]);
 
   const refresh = useCallback(async () => {
     const request = ++sequence.current;
@@ -108,23 +99,6 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     return () => { window.removeEventListener("focus", refresh); channel.current?.close(); };
   }, [refresh]);
 
-  useEffect(() => {
-    if (user === undefined) return;
-    const media = matchMedia("(prefers-color-scheme: dark)");
-    const apply = () => {
-      const resolved = theme === "system" ? media.matches ? "dark" : "light" : theme;
-      document.documentElement.dataset.theme = resolved;
-      setResolvedTheme(resolved);
-    };
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
-  }, [theme, user === undefined]);
-
-  const setTheme = (next: ThemeMode) => {
-    setThemeValue(next);
-    try { localStorage.setItem(`chartize:theme:${activeProfile.current ?? "anonymous"}`, next); } catch { /* Keep the in-memory preference. */ }
-  };
   const setUser = useCallback(async (next: ChatUser) => {
     sequence.current++;
     await applyIdentity(ChatUserSchema.parse(next), true);
