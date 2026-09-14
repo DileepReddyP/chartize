@@ -199,7 +199,7 @@ interface DwimPanelProps {
   onVisual: (next: Partial<VisualPointState>) => void;
   onFiles: (files: FileList) => void;
   onRunSelection: () => void;
-  onPromoteAi: (origin: HTMLElement) => void;
+  onPromoteAi: () => void;
   onClose: () => void;
 }
 
@@ -367,7 +367,7 @@ export function DwimPanel(props: DwimPanelProps) {
 
       <label className="dwim-command ai-promoter">
         <span aria-hidden="true">✦</span>
-        <input name={`dwim-ai-${props.section}`} readOnly value="" placeholder={copy.placeholder} aria-label={copy.placeholder} onFocus={(event) => props.onPromoteAi(event.currentTarget)} />
+        <input name={`dwim-ai-${props.section}`} readOnly value="" placeholder={copy.placeholder} aria-label={copy.placeholder} onFocus={props.onPromoteAi} />
         <b>ask</b>
       </label>
       {props.status && <p className="dwim-status" role="status">{props.status}</p>}

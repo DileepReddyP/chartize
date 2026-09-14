@@ -127,7 +127,7 @@ export function WorkspaceSelectionActions({ origin, view, promoteAi, onZoomSelec
             <p>shift-click another {itemNoun} to add or remove it</p>
           </section>
         )}
-        <label className={`result-context-ai ai-promoter${activeAiContext ? " active" : ""}`}><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={activeAiContext ? "This selection is attached to Chartize AI" : selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={(event) => promoteAi(context, "left", aiContext, event.currentTarget)} /><b>{activeAiContext ? "active" : "ask"}</b></label>
+        <label className={`result-context-ai ai-promoter${activeAiContext ? " active" : ""}`}><span aria-hidden="true">✦</span><input name="chartize-selection-prompt" readOnly value="" placeholder={activeAiContext ? "This selection is attached to Chartize AI" : selectionPrompt} aria-label="Ask Chartize about this selection" onFocus={() => promoteAi(context, "left", aiContext)} /><b>{activeAiContext ? "active" : "ask"}</b></label>
         {state.resultStatus && <p className="result-context-status">{state.resultStatus}</p>}
         <div className="result-context-actions">
           {selectedChart?.x && selectedChart.y && onZoomSelection && <button type="button" onClick={onZoomSelection}>zoom to selection</button>}

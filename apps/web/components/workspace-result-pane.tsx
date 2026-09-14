@@ -228,11 +228,10 @@ export function WorkspaceResultPane({ promoteAi }: { promoteAi: PromoteAi }) {
             name="chartize-compact-ai-entry"
             aria-label="Ask Chartize about this visualization"
             placeholder={view.isBlankWorkspace ? "Describe the graph, map, or model you want…" : "Ask what this means, or tell Chartize what to change…"}
-            onFocus={(event) => promoteAi(
+            onFocus={() => promoteAi(
               `${view.aiViewNote} ${view.isBlankWorkspace ? "The visualization canvas is blank; help build from the available sources." : "The rendered chart and its GGSQL are the active context; selected rows remain local unless the sample control is enabled."}`,
               "left",
               view.isBlankWorkspace ? "general" : "chart",
-              event.currentTarget,
             )}
           />
           <b>ask</b>

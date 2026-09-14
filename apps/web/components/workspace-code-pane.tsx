@@ -32,7 +32,6 @@ export type PromoteAi = (
   contextNote: string,
   placement?: "left" | "right",
   context?: AiContext,
-  origin?: HTMLElement,
 ) => void;
 
 export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
@@ -284,7 +283,7 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
             onVisual={state.updateVisual}
             onFiles={(files) => void state.addLocalFiles(Array.from(files))}
             onRunSelection={run}
-            onPromoteAi={(origin) => promoteAi(`${view.aiViewNote} ${editorContext.section === "selection" ? `Selected GGSQL: ${editorContext.selectedText}` : `${editorContext.section === "sql" ? "SQL" : "VISUALISE"} at character ${editorContext.offset}`}`, "right", "code", origin)}
+            onPromoteAi={() => promoteAi(`${view.aiViewNote} ${editorContext.section === "selection" ? `Selected GGSQL: ${editorContext.selectedText}` : `${editorContext.section === "sql" ? "SQL" : "VISUALISE"} at character ${editorContext.offset}`}`, "right", "code")}
             onClose={() => state.setEditorContext(null)}
           />
         )}

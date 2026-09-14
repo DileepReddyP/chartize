@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, type CSSProperties } from "react";
-import { flushSync } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { useChartizeWorkspace, type AiContext } from "@/lib/workspace/store";
 import { useWorkspaceViewModel } from "@/lib/workspace/view-model";
@@ -34,33 +33,9 @@ export function Explorer() {
     contextNote: string,
     placement: "left" | "right" = "left",
     context: AiContext = "general",
-    origin?: HTMLElement,
   ) => {
-    if (origin) origin.style.viewTransitionName = "chartize-ai-entry";
-    const commit = () => {
-      origin?.style.removeProperty("view-transition-name");
-      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      state.openAi({ contextNote, placement, context });
-    };
-    const startTransition = (document as Document & {
-      startViewTransition?: (update: () => void) => {
-        ready?: Promise<unknown>;
-        updateCallbackDone?: Promise<unknown>;
-        finished?: Promise<unknown>;
-      };
-    }).startViewTransition;
-    if (!startTransition) {
-      commit();
-      return;
-    }
-    try {
-      const transition = startTransition.call(document, () => flushSync(commit));
-      void transition.ready?.catch(() => undefined);
-      void transition.updateCallbackDone?.catch(() => undefined);
-      void transition.finished?.catch(() => undefined);
-    } catch {
-      commit();
-    }
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    state.openAi({ contextNote, placement, context });
   }, [state.openAi]);
 
   useWorkspaceLifecycle(view.aiViewNote, promoteAi);
