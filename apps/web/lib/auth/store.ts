@@ -12,7 +12,16 @@ export class AuthStore {
         namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, expires INTEGER NOT NULL,
         PRIMARY KEY (namespace, key)
       );
-      CREATE INDEX IF NOT EXISTS auth_expiry ON auth_state(expires);`);
+      CREATE INDEX IF NOT EXISTS auth_expiry ON auth_state(expires);
+      CREATE TABLE IF NOT EXISTS admin_accounts (
+        provider TEXT NOT NULL, subject TEXT NOT NULL,
+        PRIMARY KEY (provider, subject)
+      );`);
+  }
+
+  /** Checks the current admin membership for a provider's verified account ID. */
+  isAdmin(provider: string, subject: string) {
+    return Boolean(this.db.prepare("SELECT 1 FROM admin_accounts WHERE provider = ? AND subject = ?").get(provider, subject));
   }
 
   get<T>(namespace: string, key: string): T | undefined {

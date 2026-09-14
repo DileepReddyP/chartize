@@ -17,6 +17,8 @@ import {
 import path from "node:path";
 import { unzipSync } from "fflate";
 import { z } from "zod";
+import { requireAdmin } from "@/lib/auth/admin";
+import { AuthError, assertSameOrigin } from "@/lib/auth/session";
 
 const SlugSchema = z.string().regex(/^[a-z0-9_]+$/).max(80);
 const VersionSchema = z.string().min(1).max(100);
@@ -243,6 +245,16 @@ export function assertAdminToken(provided: string | null | undefined) {
   }
 }
 
+/** Authorizes browser admin requests or an explicitly configured dataset-seeding token. */
+export async function assertAdminRequest(request: Request) {
+  if (request.headers.has("x-admin-token")) {
+    assertAdminToken(request.headers.get("x-admin-token"));
+    return;
+  }
+  assertSameOrigin(request);
+  await requireAdmin();
+}
+
 function safeZipPath(name: string) {
   const normalized = name.replaceAll("\\", "/");
   const parts = normalized.split("/").filter(Boolean);
@@ -467,6 +479,7 @@ export async function dataServiceHealth() {
 }
 
 export function dataServiceErrorResponse(cause: unknown, fallback = "The Chartize data service failed.") {
+  if (cause instanceof AuthError) return Response.json({ error: cause.message }, { status: cause.status, headers: { "cache-control": "no-store" } });
   if (cause instanceof z.ZodError) return Response.json({ error: cause.issues[0]?.message ?? fallback }, { status: 400 });
   if (cause instanceof DataServiceError) return Response.json({ error: cause.message }, { status: cause.status });
   return Response.json({ error: cause instanceof Error ? cause.message : fallback }, { status: 500 });

@@ -88,7 +88,7 @@ pnpm fetch:spatialite
 ADMIN_TOKEN=local-dev-token pnpm dev
 ```
 
-Open `http://localhost:3000/explore`. The catalog and artifact routes are served by the same Next.js process; use `local-dev-token` on `/admin`.
+Open `http://localhost:3000/explore`. The catalog and artifact routes are served by the same Next.js process. `/admin` uses your signed-in account's database-backed admin role; the optional `ADMIN_TOKEN` above is for the dataset-seeding script.
 
 In a second terminal, publish the starter datasets:
 
@@ -112,14 +112,26 @@ For the VPS, set `CHARTIZE_PUBLIC_URL=https://chartize.dileepreddy.com` and keep
 
 The AI endpoint checks the session, same-origin requests, bounded request size and usage limits. Defaults are 50 new turns per account per UTC day, 300 across the site, one active request per account and four across this single app process. Continuations do not spend another daily turn. Set `CHARTIZE_AI_USER_DAILY_TURNS` and `CHARTIZE_AI_DAILY_TURNS` to adjust the daily limits (zero disables new turns). These are practical usage controls, not a dollar-denominated spending cap; also set a budget in your OpenAI project.
 
-Use one PM2 instance. Follow [the VPS notes](./docs/VPS_DEPLOYMENT.md) for standalone files and the switch from the old site-wide Basic Auth wall to public browsing / authenticated chat. The checked-in Nginx configuration retains Basic Auth on the admin area only. **Deploy and verify the authenticated app before applying that Nginx change.**
+Use one PM2 instance. Follow [the VPS notes](./docs/VPS_DEPLOYMENT.md) for standalone files and public browsing / authenticated chat. The checked-in Nginx configuration delegates admin access to the app's role checks. **Deploy the app, grant the admin role, and verify access before removing the live Nginx Basic Auth wall.**
+
+### Admin accounts
+
+The private SQLite database has an `admin_accounts` table keyed by `(provider, subject)`. For ATProto, the subject is the verified DID. The profile menu shows an **admin** button for members; the page, Server Actions, and browser import/rollback requests each check current membership. Changes apply to existing sessions, and handles can change without affecting access.
+
+After the first login initializes the database, grant `admin.example` access with:
+
+```bash
+sqlite3 data/auth/sessions.sqlite "INSERT INTO admin_accounts (provider, subject) VALUES ('atproto', 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa') ON CONFLICT DO NOTHING;"
+```
+
+Use the configured auth directory if `CHARTIZE_AUTH_DIR` differs. Additional administrators get their own rows. Delete a row to revoke access; restarting the app does not recreate grants. Keep this table private alongside sessions. A configured `ADMIN_TOKEN` remains an independent credential for command-line dataset seeding, never a profile/admin-page login.
 
 The storage layout fits a single 70 GB VPS:
 
 ```text
 data/
   chartize.duckdb
-  auth/sessions.sqlite  # private login state, signing key, sessions and usage counters
+  auth/sessions.sqlite  # private login state, signing key, sessions, admin roles and usage counters
   datasets/<slug>/<version>/
     <original upload>
     data.parquet
@@ -135,8 +147,8 @@ Back up `data/` as one unit, keeping the auth directory private. `CHARTIZE_AUTH_
 - Only the worker can access Dexie or request catalog/data artifacts. React and Zustand cannot issue data-service requests.
 - The browser worker has a 100 MB per-file import guard; steward import limits are configured separately.
 - AI calls use `store: false`. Selected samples are omitted until needed for the question or specifically approved; data queries run under the browser engine's read-only guard.
-- Chat alone requires ATProto login. OAuth discovery uses SSRF-protected fetches, and provider/session secrets are never exposed in JSON or local workspace storage.
-- Steward imports require a configured `x-admin-token`, entered on `/admin` and not persisted by the application. An ATProto login does not grant admin access.
+- Chat requires ATProto login. OAuth discovery uses SSRF-protected fetches, and provider/session secrets are never exposed in JSON or local workspace storage.
+- The admin console requires an explicit database admin grant for the verified ATProto DID. Browser imports and rollbacks use that session; the dataset-seeding script can use a separately configured `x-admin-token`.
 
 ## Verification
 

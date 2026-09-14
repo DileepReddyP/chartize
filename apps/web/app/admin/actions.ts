@@ -2,22 +2,23 @@
 
 import { DatasetManifestSchema, type DatasetManifest } from "@chartize/contracts";
 import { z } from "zod";
-import { assertAdminToken, listDatasets, publishDataset, rollbackDataset } from "@/lib/server/data-service";
+import { listDatasets, publishDataset, rollbackDataset } from "@/lib/server/data-service";
+import { requireAdmin } from "@/lib/auth/admin";
 
-const AdminTokenSchema = z.string().min(1).max(1000);
 const SlugSchema = z.string().regex(/^[a-z0-9_]+$/).max(100);
 
 export async function getAdminCatalog(): Promise<DatasetManifest[]> {
+  await requireAdmin();
   return DatasetManifestSchema.array().parse(await listDatasets());
 }
 
-export async function publishAdminDataset(adminToken: string, formData: FormData) {
-  assertAdminToken(AdminTokenSchema.parse(adminToken));
+export async function publishAdminDataset(formData: FormData) {
+  await requireAdmin();
   return DatasetManifestSchema.parse(await publishDataset(formData));
 }
 
-export async function rollbackAdminDataset(adminToken: string, slug: string) {
+export async function rollbackAdminDataset(slug: string) {
+  await requireAdmin();
   const parsedSlug = SlugSchema.parse(slug);
-  assertAdminToken(AdminTokenSchema.parse(adminToken));
   return DatasetManifestSchema.parse(await rollbackDataset(parsedSlug));
 }

@@ -14,7 +14,7 @@ export default async function LoginCompletePage({ searchParams }: { searchParams
       <p className="editorial-kicker">bluesky / atproto</p>
       <h1>{confirmed ? "your account is confirmed." : "login wasn’t completed."}</h1>
       <p className="editorial-lede">{confirmed ? "Go back to the Chartize tab you started from to continue your conversation. You can close this window." : "Return to Chartize and try the login button again when you’re ready."}</p>
-      <a className="accent-action" href={`${publicOrigin()}/explore`}>back to chartize <span aria-hidden="true">→</span></a>
+      <a className="accent-action" href={`${publicOrigin()}/`}>back to chartize <span aria-hidden="true">→</span></a>
     </section>
   </EditorialPage>;
 }

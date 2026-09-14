@@ -9,7 +9,6 @@ export function AdminConsole() {
   const [datasets, setDatasets] = useState<DatasetManifest[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [adminToken, setAdminToken] = useState("");
 
   const refresh = useCallback(async () => {
     setDatasets(await getAdminCatalog());
@@ -25,7 +24,7 @@ export function AdminConsole() {
     setBusy(true);
     setMessage("Uploading, profiling, and publishing…");
     try {
-      const body = await publishAdminDataset(adminToken, new FormData(form));
+      const body = await publishAdminDataset(new FormData(form));
       setMessage(`Published ${body.title} with ${body.rowCount.toLocaleString()} rows.`);
       form.reset();
       await refresh();
@@ -40,7 +39,7 @@ export function AdminConsole() {
     if (!window.confirm(`Roll ${slug} back to its previous published version?`)) return;
     setBusy(true);
     try {
-      const body = await rollbackAdminDataset(adminToken, slug);
+      const body = await rollbackAdminDataset(slug);
       setMessage(`Rolled ${slug} back to version ${body.version}.`);
       await refresh();
     } catch (error) {
@@ -64,9 +63,6 @@ export function AdminConsole() {
       <section className="admin-card">
         <h2>Add or update a dataset</h2>
         <form className="admin-form" onSubmit={importDataset}>
-          <label className="wide">Admin token
-            <input type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} autoComplete="current-password" required />
-          </label>
           <label className="wide">Data file
             <input name="file" type="file" accept=".csv,.tsv,.json,.ndjson,.geojson,.parquet,.gpkg,.fgb,.kml,.shp,.zip" required />
           </label>

@@ -1,6 +1,6 @@
 # VPS deployment
 
-Chartize runs as one Node 24 process under PM2, behind the host's Nginx. Docker is not needed. The studio and dataset catalog are public; only Chartize AI requires ATProto sign-in. Admin imports still require a separate admin token and Nginx Basic Auth.
+Chartize runs as one Node 24 process under PM2, behind the host's Nginx. Docker is not needed. The studio and dataset catalog are public. Chartize AI requires ATProto sign-in; the admin console also requires a grant in the private `admin_accounts` table.
 
 ## Build and copy
 
@@ -25,7 +25,7 @@ The Next config runs Webpack in a separate, memory-optimized build worker and li
 
 ## Environment and PM2
 
-Keep the VPS secrets in `/home/dialup/chartize/.env` (mode 600), with a real `ADMIN_TOKEN`, `OPENAI_API_KEY`, and `AI_TEXT_MODEL=gpt-5.6-luna`. Do not use the example admin-token placeholder.
+Keep the VPS secrets in `/home/dialup/chartize/.env` (mode 600), with `OPENAI_API_KEY` and `AI_TEXT_MODEL=gpt-5.6-luna`. `ADMIN_TOKEN` is optional for command-line dataset seeding; if enabled, use a real secret rather than the example placeholder. Browser administration uses the signed-in account's role.
 
 [The PM2 config](../infra/pm2/chartize.config.cjs) sets the loopback port, public URL and data directory. Adjust its paths and Node interpreter for another VPS. Keep one instance: transient AI continuations, the Wikipedia queue, and active-request limits are process-local; sessions and daily counters are in SQLite.
 
@@ -56,11 +56,13 @@ The provider returns to `/api/auth/callback`. Do not cache `/api/auth/*` or `/ap
 
 Authentication state lives in `data/auth/sessions.sqlite` by default, with a private directory and file permissions. `CHARTIZE_AUTH_DIR` can point elsewhere. Back it up with the catalog while the app is stopped or using a consistent filesystem snapshot. Losing it logs everyone out and changes the signing key.
 
-## Replace the old site-wide password wall
+## Replace the remaining admin password wall
 
-**Deploy and check the authenticated app before changing Nginx.** Keep the live site's current wall until the new app rejects signed-out AI calls.
+**Deploy the role-protected app and grant the administrator before changing Nginx.** Keep the live site's current admin wall while verifying the new app directly on its loopback port.
 
-[The site configuration](../infra/nginx/chartize.dileepreddy.com.conf) now leaves the studio public and retains Basic Auth only for `/admin` and `/engine/api/admin/*`. It also limits AI request size and keeps responses streamed. It retains this VPS's existing Cloudflare/origin TLS setup; other installations should use their own certificate and hostname.
+[The site configuration](../infra/nginx/chartize.dileepreddy.com.conf) delegates `/admin` and `/engine/api/admin/*` authorization to the app, removing their Basic Auth prompt. It also limits AI request size and keeps responses streamed. It retains this VPS's existing Cloudflare/origin TLS setup; other installations should use their own certificate and hostname.
+
+Once the updated app initializes its auth database, grant the account in the VPS's own database using the [admin-account SQL](../README.md#admin-accounts). Check that the `atproto` row for `did:plc:aaaaaaaaaaaaaaaaaaaaaaaa` exists. Preserve existing sessions, signing keys, quotas and other admin rows; do not copy the local auth database to the VPS.
 
 Before opening the site, verify:
 
@@ -68,9 +70,10 @@ Before opening the site, verify:
 2. Public homepage, explorer, catalog, WASM and Parquet requests load normally.
 3. Metadata/JWKS are reachable from outside the VPS.
 4. A real ATProto login works, a chat completes, and logout blocks the next chat.
-5. Admin imports remain protected; an ATProto login alone grants no admin privileges.
+5. Anonymous and non-admin requests cannot open the admin console or invoke its Server Actions, imports or rollback. Browser API mutations require the correct Origin as well as an admin session.
+6. The granted account sees the admin profile-menu button and can open the console without a separate token. Revoking its database row blocks further admin requests from the existing session.
 
-Then install the Nginx configuration, run `nginx -t`, and reload Nginx. Do not reboot the VPS. The existing password file can remain for the admin area.
+Then install the Nginx configuration, run `nginx -t`, and reload Nginx. Do not reboot the VPS. The old password file becomes unused and need not be copied or modified.
 
 ## Usage controls
 

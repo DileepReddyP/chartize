@@ -954,8 +954,8 @@ globalStyle(".profile-appearance > span", { color: vars.color.muted, fontSize: "
 globalStyle(".profile-appearance > div", { display: "flex", gap: "4px" });
 globalStyle(".profile-appearance button", { borderColor: "transparent", color: vars.color.muted });
 globalStyle(".profile-appearance button[aria-pressed='true']", { background: vars.color.tealPale, color: vars.color.tealDark, borderColor: vars.color.tealDark });
-globalStyle(".profile-actions", { padding: "0 12px 12px" });
-globalStyle(".profile-actions > button", { justifyContent: "space-between" });
+globalStyle(".profile-actions", { display: "grid", gap: "8px", padding: "0 12px 12px" });
+globalStyle(".profile-actions > .accent-action", { justifyContent: "space-between", textDecoration: "none" });
 globalStyle(".profile-actions > p", { fontSize: "11px", color: vars.color.watermelon });
 globalStyle(".profile-login .ai-login-card", { maxHeight: "none", padding: "0 12px 12px", border: 0, boxShadow: "none", overflow: "visible" });
 globalStyle(".home-proposition-actions", { display: "flex", alignItems: "center", justifyContent: "end", gap: "8px" });

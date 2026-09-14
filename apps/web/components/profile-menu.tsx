@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { containFloating } from "@/lib/floating-placement";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
 import { AiLogin } from "./ai-login";
@@ -84,6 +85,7 @@ export function ProfileMenu() {
       </div>
       {profile.user ? <div className="profile-actions">
         {profile.error && <p role="alert">{profile.error}</p>}
+        {profile.user.isAdmin && <Link className="accent-action" href="/admin" prefetch={false} onClick={() => setOpen(false)}>admin <span aria-hidden="true">↗</span></Link>}
         <button className="accent-action" type="button" disabled={busy || profile.switching} onClick={() => void profile.signOut()}>log out <span aria-hidden="true">↗</span></button>
       </div> : <AiLogin inline />}
     </div>, document.body)}

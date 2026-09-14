@@ -2,6 +2,7 @@ import { z } from "zod";
 import { completeLogin, oauthClient, startLogin } from "@/lib/auth/atproto";
 import { AuthError, assertSameOrigin, chatUser, logout, readJson } from "@/lib/auth/session";
 import { withPublicProfile } from "@/lib/auth/public-profile";
+import { withAdminRole } from "@/lib/auth/admin";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ action: string }> };
@@ -15,7 +16,7 @@ function failure(error: unknown) {
 export async function GET(_request: Request, context: Context) {
   try {
     const { action } = await context.params;
-    if (action === "session") return json({ user: await withPublicProfile(await chatUser()) });
+    if (action === "session") return json({ user: withAdminRole(await withPublicProfile(await chatUser())) });
     if (action === "client-metadata.json" || action === "jwks.json") {
       const client = await oauthClient();
       return Response.json(action === "jwks.json" ? client.jwks : client.clientMetadata, { headers: { "cache-control": "public, max-age=300" } });
@@ -33,7 +34,7 @@ export async function POST(request: Request, context: Context) {
       if (!body.success) throw new AuthError("Choose a supported login provider.");
       return json({ url: await startLogin(request.signal) });
     }
-    if (action === "complete") return json({ user: await completeLogin() });
+    if (action === "complete") return json({ user: withAdminRole(await completeLogin()) });
     if (action === "logout") { await logout(); return json({ user: null }); }
     return json({ error: "Not found." }, 404);
   } catch (error) { return failure(error); }

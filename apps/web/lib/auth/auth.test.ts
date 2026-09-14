@@ -92,8 +92,8 @@ describe("chat-only authentication", () => {
     profileFetch.mockResolvedValue(Response.json({ ...user, avatar }));
     const request = new Request("http://localhost:3000/api/auth/session");
     const context = { params: Promise.resolve({ action: "session" }) };
-    expect(await (await authGet(request, context)).json()).toEqual({ user: { ...user, avatar } });
-    expect(await (await authGet(request, context)).json()).toEqual({ user: { ...user, avatar } });
+    expect(await (await authGet(request, context)).json()).toEqual({ user: { ...user, avatar, isAdmin: false } });
+    expect(await (await authGet(request, context)).json()).toEqual({ user: { ...user, avatar, isAdmin: false } });
     expect(profileFetch).toHaveBeenCalledTimes(1);
     expect(await chatUser()).toEqual(user);
     jar.clear();

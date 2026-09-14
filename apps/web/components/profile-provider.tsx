@@ -7,7 +7,7 @@ import { BrowserProfileIdSchema } from "@/lib/local/worker-protocol";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
 import { useAtprotoLogin } from "./use-atproto-login";
 
-const ChatUserSchema = z.object({ did: BrowserProfileIdSchema.refine((id) => id !== "anonymous"), handle: z.string().min(1), avatar: z.url({ protocol: /^https$/ }).max(2048).optional() });
+const ChatUserSchema = z.object({ did: BrowserProfileIdSchema.refine((id) => id !== "anonymous"), handle: z.string().min(1), avatar: z.url({ protocol: /^https$/ }).max(2048).optional(), isAdmin: z.boolean() });
 export type ChatUser = z.infer<typeof ChatUserSchema>;
 export type ThemeMode = "system" | "light" | "dark";
 
