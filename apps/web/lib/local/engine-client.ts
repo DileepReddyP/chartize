@@ -85,8 +85,8 @@ export class LocalEngineClient {
     });
   }
 
-  init(workspaceId: string, spatialiteUrl: string) {
-    return this.request<unknown>({ type: "init", workspaceId, spatialiteUrl }, QUICK_TIMEOUT_MS)
+  init(workspaceId: string, spatialiteUrl: string, profileId = "anonymous") {
+    return this.request<unknown>({ type: "init", workspaceId, spatialiteUrl, profileId }, QUICK_TIMEOUT_MS)
       .then((value) => BrowserBootstrapSchema.parse(value));
   }
 

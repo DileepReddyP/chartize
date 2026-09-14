@@ -8,8 +8,13 @@ import type { VisualizationExample } from "@/lib/ggsql/examples";
 import { workspaceInputForExample } from "@/lib/workspace/example-workspace";
 import { useChartizeWorkspace } from "@/lib/workspace/store";
 import { VisualizationExamplePicker } from "./visualization-example-picker";
+import { ProfileMenu } from "./profile-menu";
+import { useProfile } from "./profile-provider";
+import { HeaderButton } from "./header-control";
+import { UiIcon } from "./ui-icons";
 
 export function AppHeader() {
+  const profile = useProfile();
   const pathname = usePathname();
   const {
     aiPhase, setAiPhase, activeWorkspaceId, workspaceDocuments, activeTitle,
@@ -99,7 +104,7 @@ export function AppHeader() {
         <details className="workspace-switcher" ref={workspaceMenu}>
           <summary title="Switch workspace"><span>{String(workspaceDocuments.findIndex((document) => document.id === activeWorkspaceId) + 1).padStart(2, "0")}</span><b>{activeTitle}</b><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg></summary>
           <div>
-            <header><i>ws</i><span><b>your visualizations</b><small>autosaved in this browser</small></span><button type="button" onClick={newWorkspace}>＋ new</button></header>
+            <header><i>ws</i><span><b>your visualizations</b><small>{profile.user?.handle ?? "anonymous"} · local</small></span><button type="button" onClick={newWorkspace}>＋ new</button></header>
             <ol>
               {workspaceDocuments.map((document, index) => {
                 const active = document.id === activeWorkspaceId;
@@ -109,11 +114,12 @@ export function AppHeader() {
             </ol>
           </div>
         </details>
-        <button className="new-visualization-button" type="button" aria-label="New visualization" title="New visualization" onClick={newWorkspace}><span aria-hidden="true">＋</span><span className="topbar-button-label">new visualization</span></button>
+        <HeaderButton className="new-visualization-button" label="New visualization" icon={<UiIcon name="plus" />} onClick={newWorkspace} />
         <VisualizationExamplePicker onSelect={loadExample} />
       </div>
       <nav aria-label="Primary navigation">
-        <button className={`toolbar-ai-button ${aiPhase}`} aria-label="Ask Chartize" title="Ask Chartize" aria-pressed={aiPhase === "active"} type="button" onClick={openAssistant}><span aria-hidden="true">✦</span><span className="topbar-button-label">ask chartize</span></button>
+        <HeaderButton className={`toolbar-ai-button ${aiPhase}`} label="Ask Chartize" icon={<UiIcon name="spark" />} aria-pressed={aiPhase === "active"} onClick={openAssistant} />
+        <ProfileMenu />
       </nav>
     </header>
   );

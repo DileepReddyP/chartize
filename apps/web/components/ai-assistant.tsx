@@ -6,6 +6,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AiApprovalRequest } from "@chartize/contracts";
 import { AiResponseControls, AiApproach } from "./ai-response-controls";
+import { AiLogin } from "./ai-login";
+import { useProfile } from "./profile-provider";
 import type { AiContext, AiConversationMessage, AiPlacement, AiResponsePreferences } from "@/lib/workspace/store";
 import { AttachmentIcon, DATA_FILE_ACCEPT, filesFromDrop } from "./data-upload-control";
 import { PopupCloseButton } from "./popup-close-button";
@@ -122,6 +124,8 @@ export function AiAssistant({
   onAsk,
   onRetry,
 }: AiAssistantProps) {
+  const auth = useProfile();
+  useEffect(() => { if (status.includes("Sign in to use Chartize AI") || status.includes("Your profile changed")) void auth.refresh(); }, [status, auth.refresh]);
   const copy = contextCopy[context];
   const hasChartSelection = context === "chart" && hasSelection;
   const hasDataSelection = context === "data" && hasSelection;
@@ -201,7 +205,7 @@ export function AiAssistant({
   }, [composerMode]);
 
   const submit = () => {
-    if (busy || !prompt.trim() || !ready) return;
+    if (busy || !prompt.trim() || !ready || !auth.user || !auth.ready) return;
     scrollToLatest("smooth");
     onAsk("generate", prompt);
   };
@@ -240,13 +244,13 @@ export function AiAssistant({
                     title="Redo from the preceding prompt"
                     aria-label="Redo this response from the preceding prompt"
                     onClick={() => onRetry(index)}
-                    disabled={busy}
+                    disabled={busy || !auth.user || !auth.ready}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7H4V3M4.6 7A8 8 0 0 1 18.8 5.2M16 17h4v4m-.6-4A8 8 0 0 1 5.2 18.8" /></svg>
                     redo
                   </button>
                   {message.approval && (
-                    <button className="ai-approve-button" type="button" disabled={busy} onClick={() => onRetry(index, message.approval)}>
+                    <button className="ai-approve-button" type="button" disabled={busy || !auth.user || !auth.ready} onClick={() => onRetry(index, message.approval)}>
                       {message.approval === "local_changes" ? "apply local changes once" : message.approval === "selected_data" ? "share these rows once" : message.approval === "workspace_data" ? "inspect data once" : "search the web once"}
                     </button>
                   )}
@@ -264,7 +268,7 @@ export function AiAssistant({
           )}
           <div ref={conversationEndRef} className="ai-conversation-end" />
         </div>
-        <div className="ai-compose-area">
+        <div className="ai-compose-area" inert={!auth.user}>
           {status && !busy && <p className="ai-status">{status}</p>}
           <div key={contextNote} className="ai-active-context">
             <span className="ai-context-index">01</span>
@@ -310,11 +314,12 @@ export function AiAssistant({
               </div>
               <div className="ai-send-cluster">
                 <AiResponseControls preferences={preferences} onPreferences={onPreferences} />
-                <button className="ai-send-button" type="button" title="Send (Enter) · new line (Shift+Enter)" disabled={busy || !prompt.trim() || !ready} onClick={submit}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
+                <button className="ai-send-button" type="button" title={auth.user ? "Send (Enter) · new line (Shift+Enter)" : "Sign in to chat"} disabled={busy || !prompt.trim() || !ready || !auth.user || !auth.ready} onClick={submit}>send<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11m-4-4 4 4-4 4" /></svg></button>
               </div>
             </div>
           </div>
         </div>
+        {!auth.user && <><div className="ai-login-backdrop" aria-hidden="true" /><AiLogin title={hasChartSelection || hasDataSelection ? "log in to discuss this selection" : copy.loginTitle} /></>}
       </section>
     </div>,
     document.body,

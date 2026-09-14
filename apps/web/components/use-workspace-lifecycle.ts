@@ -13,6 +13,7 @@ import {
   useChartizeWorkspace,
 } from "@/lib/workspace/store";
 import type { PromoteAi } from "./workspace-code-pane";
+import { useProfile } from "./profile-provider";
 
 function decodeShareState(value: string) {
   const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
@@ -21,6 +22,7 @@ function decodeShareState(value: string) {
 }
 
 export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) {
+  const profile = useProfile();
   const firstDraft = useMemo(() => makeInitialWorkspaceDraft(), []);
   const initialized = useRef(false);
   const openedAiFromUrl = useRef(false);
@@ -37,8 +39,9 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
   })));
 
   useEffect(() => {
+    if (!profile.ready) return;
     void state.initializeBrowserEngine(process.env.NEXT_PUBLIC_SPATIALITE_WASM_URL ?? "/wasm/mod_spatialite.wasm").catch(() => undefined);
-  }, [state.initializeBrowserEngine]);
+  }, [state.initializeBrowserEngine, profile.ready]);
 
   useEffect(() => {
     if (state.engineState !== "ready" || !state.catalogLoaded || initialized.current) return;
@@ -59,10 +62,6 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
         state.setQuery(query);
         await state.runQuery(query);
       } else if (search.get("new") === "blank") {
-        // A plain /explore visit restores the most recent workspace. The
-        // explicit homepage intent preserves those session documents without
-        // running the previous chart, appends a fresh document, then leaves a
-        // stable URL so refresh restores it rather than creating another one.
         await state.restoreWorkspaceSession().catch(() => false);
         useChartizeWorkspace.getState().openWorkspace(undefined, { run: false, replacePristineBootstrap: true });
         const cleanUrl = new URL(window.location.href);
@@ -94,7 +93,7 @@ export function useWorkspaceLifecycle(aiViewNote: string, promoteAi: PromoteAi) 
       } else if (await state.restoreWorkspaceSession()) {
         await useChartizeWorkspace.getState().runQuery();
       }
-      if (!cancelled) setSessionReady(true);
+      if (!cancelled) { useChartizeWorkspace.setState({ workspaceSessionReady: true }); setSessionReady(true); }
     };
     void boot().catch((cause) => {
       if (!cancelled) {

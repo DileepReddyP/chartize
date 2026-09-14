@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import { completeWorkerAiTurn } from "@/lib/local/worker-ai";
-import { listLocalDatasets, loadStoredWorkspace, saveStoredWorkspace } from "@/lib/local/worker-database";
+import { listLocalDatasets, loadStoredWorkspace, saveStoredWorkspace, selectWorkerProfile } from "@/lib/local/worker-database";
 import {
   describeWorkerSource,
   loadWorkerCatalog,
@@ -28,6 +28,8 @@ import {
   type LocalWorkerResponse,
 } from "@/lib/local/worker-protocol";
 
+let activeProfile: string | undefined;
+
 function emitProgress(id: string, progress: BrowserEngineProgress) {
   const message: LocalWorkerMessage = { type: "progress", id, progress };
   self.postMessage(message);
@@ -36,6 +38,9 @@ function emitProgress(id: string, progress: BrowserEngineProgress) {
 async function handle(request: LocalWorkerRequest): Promise<unknown> {
   switch (request.type) {
     case "init": {
+      if (activeProfile && activeProfile !== request.profileId) throw new Error("Open a fresh data worker to switch profiles.");
+      activeProfile = request.profileId;
+      selectWorkerProfile(activeProfile);
       setSpatialiteExtensionUrl(request.spatialiteUrl);
       emitProgress(request.id, { phase: "starting", message: "preparing your data…" });
       const [engine, datasets, localDatasets] = await Promise.all([
@@ -76,7 +81,7 @@ async function handle(request: LocalWorkerRequest): Promise<unknown> {
     case "remove-local-source":
       return removeWorkerLocalSource(request.name);
     case "ai":
-      return completeWorkerAiTurn(request.workspaceId, request.request, request.id, emitProgress);
+      return completeWorkerAiTurn(request.workspaceId, request.request, request.id, emitProgress, activeProfile);
     case "prefetch":
       await prefetchWorkerSources(request.workspaceId, request.sources, request.id, emitProgress);
       return { ready: true };

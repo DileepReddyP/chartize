@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { VISUALIZATION_EXAMPLES, type VisualizationExample } from "@/lib/ggsql/examples";
 import { HOME_STORIES, type HomeStoryDefinition } from "@/lib/workspace/home-stories";
+import { ProfileMenu } from "./profile-menu";
 
 const HOME_SECTIONS = [
   { id: "signals", index: "01", eyebrow: "signals in motion" },
@@ -77,7 +78,7 @@ export function HomeGallery() {
             <b>chartize</b>
           </Link>
           <h1 id="home-proposition-heading">turn data into graphs, charts, and maps. then ask what they mean</h1>
-          <a className="home-proposition-action" href="/explore?new=blank">start blank <span aria-hidden="true">→</span></a>
+          <div className="home-proposition-actions"><a className="home-proposition-action" href="/explore?new=blank">start blank <span aria-hidden="true">→</span></a><ProfileMenu /></div>
         </section>
         {HOME_SECTIONS.map((section) => (
           <section key={section.id} className={`home-editorial-section section-${section.id}`} aria-labelledby={`home-${section.id}-heading`}>

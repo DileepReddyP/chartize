@@ -278,10 +278,6 @@ function styleSpecNode(
         ...node,
         encoding: {
           ...encoding,
-          // GGSQL can infer a shared label aesthetic as quantitative when
-          // earlier layers contribute only null labels. Vega then renders
-          // perfectly valid event strings as `NaN`. Text is a display
-          // channel, so keep it nominal regardless of that union inference.
           text: encoding.text && typeof encoding.text === "object" && !Array.isArray(encoding.text)
             ? { ...(encoding.text as Record<string, unknown>), type: "nominal" }
             : encoding.text,

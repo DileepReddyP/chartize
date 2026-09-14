@@ -112,11 +112,7 @@ function transformCoordinates(
   return value.map((child) => transformCoordinates(child, transform));
 }
 
-/**
- * Moves mark geometry while keeping the projection's fit collection fixed.
- * This gives maps predictable pan and zoom without relying on private Vega
- * projection signals, and it works for raw as well as GGSQL-projected data.
- */
+/** Transforms raw or projected mark geometry for pan and zoom with a fixed projection fit. */
 export function applyMapViewport(
   values: Array<Record<string, unknown>>,
   focus: ReturnType<typeof featureCollection>,
@@ -205,12 +201,6 @@ export function robustPlanarGeometryFit(values: Array<Record<string, unknown>>) 
     })
     .slice(0, count);
 
-  // A national dataset can have a few distant but intentional features (for
-  // example Alaska and Hawaii). Excluding them from the projection while their
-  // text marks remain visible makes Vega's responsive layout collapse around
-  // the off-camera labels. Only switch to the dense subset when it removes a
-  // truly extreme amount of empty space; otherwise preserve the complete
-  // analytical extent returned by the query.
   const fullBounds = collectionBounds(featureCollection(entries));
   const selectedBounds = collectionBounds(featureCollection(selected));
   if (!fullBounds || !selectedBounds) return undefined;
@@ -222,13 +212,7 @@ export function robustPlanarGeometryFit(values: Array<Record<string, unknown>>) 
   return featureCollection(selected);
 }
 
-/**
- * Fit a geographic chart to the dense body of returned features. GeoJSON
- * collections often mix a country with a handful of remote territories; using
- * every feature for the projection makes the useful geography postage-stamp
- * sized. The fit subset affects only the camera. Every row remains in the mark
- * data and can still be queried, previewed, or included by a different filter.
- */
+/** Selects the dense geographic extent used to fit a chart's projection. */
 export function robustGeometryFit(values: Array<Record<string, unknown>>) {
   const entries: GeometryCenter[] = values.flatMap((value) => {
     const geometry = value.geometry as GeoGeometry | undefined;

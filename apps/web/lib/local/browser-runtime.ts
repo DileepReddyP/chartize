@@ -3,6 +3,7 @@ import { z } from "zod";
 import { LocalEngineClient } from "./engine-client";
 import {
   BrowserStoredWorkspaceSchema,
+  BrowserProfileIdSchema,
   LocalFormatSchema,
   type BrowserEngineProgress,
   type BrowserStoredWorkspace,
@@ -21,12 +22,16 @@ const SourceFileSchema = z.object({
 let client: LocalEngineClient | null = null;
 let initialization: Promise<Awaited<ReturnType<LocalEngineClient["init"]>>> | null = null;
 let progressHandler: ((progress: BrowserEngineProgress) => void) | undefined;
+let profileId = "anonymous";
 
-/**
- * Homepage previews are disposable work. Keeping them on a separate worker
- * lets route navigation terminate that work immediately instead of placing an
- * Explorer query behind the remaining gallery queue.
- */
+/** Binds the workspace worker to the verified account before initialization. */
+export function configureBrowserProfile(id: string) {
+  const next = BrowserProfileIdSchema.parse(id);
+  if (client && next !== profileId) throw new Error("Reload Chartize to switch profiles.");
+  profileId = next;
+}
+
+/** Creates a dedicated homepage-preview worker that can be terminated on navigation. */
 export function createIsolatedBrowserRuntime() {
   const runtime = new LocalEngineClient();
   let initialization: Promise<Awaited<ReturnType<LocalEngineClient["init"]>>> | null = null;
@@ -80,7 +85,7 @@ export async function initializeBrowserRuntime(workspaceId: string, spatialiteUr
   const parsedWorkspaceId = WorkspaceIdSchema.parse(workspaceId);
   const url = z.string().min(1).max(2000).parse(spatialiteUrl);
   const runtime = ensureClient();
-  if (!initialization) initialization = runtime.init(parsedWorkspaceId, url);
+  if (!initialization) initialization = runtime.init(parsedWorkspaceId, url, profileId);
   try {
     return await initialization;
   } catch (error) {

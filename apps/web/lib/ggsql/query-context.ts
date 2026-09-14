@@ -510,11 +510,7 @@ function scaleState(visual: string, aesthetic: "x" | "y" | "colour") {
   };
 }
 
-/**
- * Reconstruct the visual-builder portion of a draft from authoritative GGSQL.
- * Complex SQL remains authoritative; this parser only mirrors presentation
- * clauses so an AI-authored query immediately remains editable in the UI.
- */
+/** Reconstructs editable visualization layers from GGSQL presentation clauses. */
 export function visualLayersFromQuery(query: string): VisualizationLayer[] {
   const { visual } = splitGgsql(query);
   return visualBlocks(visual).flatMap((block) => {

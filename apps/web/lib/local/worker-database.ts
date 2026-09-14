@@ -3,6 +3,7 @@ import Dexie, { type Table } from "dexie";
 import { z } from "zod";
 import {
   BrowserLocalDatasetSchema,
+  BrowserProfileIdSchema,
   BrowserStoredWorkspaceSchema,
   LocalFormatSchema,
   type BrowserLocalDataset,
@@ -58,8 +59,8 @@ class ChartizeWorkerDatabase extends Dexie {
   localSources!: Table<LocalSourceRecord, string>;
   workspaces!: Table<BrowserStoredWorkspace, string>;
 
-  constructor() {
-    super("chartize-local");
+  constructor(name = "chartize-local") {
+    super(name);
     this.version(1).stores({
       catalog: "id, storedAt",
       artifacts: "key, [slug+version], slug, version, storedAt",
@@ -70,6 +71,16 @@ class ChartizeWorkerDatabase extends Dexie {
 }
 
 export const workerDatabase = new ChartizeWorkerDatabase();
+let profileDatabase = workerDatabase;
+
+/** Selects the profile's private workspace and upload collection. */
+export function selectWorkerProfile(id: string) {
+  const profileId = BrowserProfileIdSchema.parse(id);
+  const name = profileId === "anonymous" ? "chartize-local" : `chartize-profile:${encodeURIComponent(profileId)}`;
+  if (profileDatabase.name === name) return;
+  if (profileDatabase !== workerDatabase) profileDatabase.close();
+  profileDatabase = name === workerDatabase.name ? workerDatabase : new ChartizeWorkerDatabase(name);
+}
 
 export function artifactKey(dataset: Pick<DatasetManifest, "slug" | "version">) {
   return `${dataset.slug}:${dataset.version}`;
@@ -109,28 +120,28 @@ export async function writeLocalSource(record: LocalSourceRecord) {
     format: LocalFormatSchema.parse(record.format),
     dataset: BrowserLocalDatasetSchema.parse(record.dataset),
   };
-  await workerDatabase.localSources.put(parsed);
+  await profileDatabase.localSources.put(parsed);
 }
 
 export async function readLocalSource(tableName: string) {
-  const record = await workerDatabase.localSources.get(tableName);
+  const record = await profileDatabase.localSources.get(tableName);
   return record ? { ...record, dataset: BrowserLocalDatasetSchema.parse(record.dataset) } : undefined;
 }
 
 export function deleteLocalSource(tableName: string) {
-  return workerDatabase.localSources.delete(tableName);
+  return profileDatabase.localSources.delete(tableName);
 }
 
 export async function listLocalDatasets() {
-  const records = await workerDatabase.localSources.orderBy("updatedAt").reverse().toArray();
+  const records = await profileDatabase.localSources.orderBy("updatedAt").reverse().toArray();
   return records.map((record) => BrowserLocalDatasetSchema.parse(record.dataset));
 }
 
 export async function saveStoredWorkspace(workspace: BrowserStoredWorkspace) {
-  await workerDatabase.workspaces.put(BrowserStoredWorkspaceSchema.parse(workspace));
+  await profileDatabase.workspaces.put(BrowserStoredWorkspaceSchema.parse(workspace));
 }
 
 export async function loadStoredWorkspace(id: string) {
-  const workspace = await workerDatabase.workspaces.get(id);
+  const workspace = await profileDatabase.workspaces.get(id);
   return workspace ? BrowserStoredWorkspaceSchema.parse(workspace) : null;
 }

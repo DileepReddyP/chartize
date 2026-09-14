@@ -10,6 +10,7 @@ import {
   readCatalog,
   readLocalSource,
   saveStoredWorkspace,
+  selectWorkerProfile,
   workerDatabase,
   writeArtifact,
   writeCatalog,
@@ -28,6 +29,7 @@ const dataset = DatasetManifestSchema.parse({
 
 describe("worker-owned browser database", () => {
   beforeEach(async () => {
+    selectWorkerProfile("anonymous");
     await workerDatabase.delete();
     await workerDatabase.open();
   });
@@ -77,5 +79,39 @@ describe("worker-owned browser database", () => {
     };
     await saveStoredWorkspace(workspace);
     expect(await loadStoredWorkspace("current")).toEqual(workspace);
+  });
+
+  it("separates anonymous and account sessions and uploads while sharing published artifacts", async () => {
+    const savedAt = new Date().toISOString();
+    const record = (owner: string) => ({ id: "session" as const, payload: JSON.stringify({ owner }), savedAt });
+    const upload = (owner: string) => ({
+      tableName: "private_values", format: "csv" as const,
+      bytes: new TextEncoder().encode(`owner\n${owner}\n`).buffer,
+      dataset: { id: "user:private_values", title: owner, tableName: "private_values", description: owner, spatial: false, fields: [] },
+      updatedAt: new Date().toISOString(),
+    });
+    const accounts = [`did:plc:${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`, `did:plc:${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`];
+    await saveStoredWorkspace(record("anonymous"));
+    await writeLocalSource(upload("anonymous"));
+    await writeArtifact(dataset, new Uint8Array([80, 65, 82, 49]).buffer);
+    for (const account of accounts) {
+      selectWorkerProfile(account);
+      expect(await loadStoredWorkspace("session")).toBeNull();
+      expect(await listLocalDatasets()).toEqual([]);
+      expect(await readLocalSource("private_values")).toBeUndefined();
+      expect((await readArtifact(dataset))?.byteLength).toBe(4);
+      await saveStoredWorkspace(record(account));
+      await writeLocalSource(upload(account));
+    }
+    for (const owner of ["anonymous", ...accounts]) {
+      selectWorkerProfile(owner);
+      expect((await loadStoredWorkspace("session"))).toEqual(record(owner));
+      expect((await listLocalDatasets()).map((item) => item.title)).toEqual([owner]);
+      expect(new TextDecoder().decode((await readLocalSource("private_values"))!.bytes)).toBe(`owner\n${owner}\n`);
+    }
+    selectWorkerProfile(accounts[0]!);
+    await deleteLocalSource("private_values");
+    selectWorkerProfile("anonymous");
+    expect((await readLocalSource("private_values"))?.dataset.title).toBe("anonymous");
   });
 });

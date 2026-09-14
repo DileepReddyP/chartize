@@ -1,79 +1,79 @@
-# VPS preview deployment
+# VPS deployment
 
-This path keeps Nginx and TLS on the host and publishes only Next.js on `127.0.0.1:3000`. The same process serves the application, the fixed catalog/artifact API, and authenticated steward actions. The `data/` directory holds catalog metadata, original source artifacts, and versioned Parquet tables.
+Chartize runs as one Node 24 process under PM2, behind the host's Nginx. Docker is not needed. The studio and dataset catalog are public; only Chartize AI requires ATProto sign-in. Admin imports still require a separate admin token and Nginx Basic Auth.
 
-## 1. Package and copy
+## Build and copy
 
-From the project directory on the development machine:
+Copy the repository without `.git`, `node_modules`, `.next`, macOS metadata or local auth state. Keep the VPS's `.env` and `data/` intact. If using an archive from macOS, set `COPYFILE_DISABLE=1` and exclude `._*` and `.DS_Store`.
 
-```bash
-tar --exclude=.git --exclude=node_modules --exclude='**/target' --exclude='**/.next' --exclude=data \
-  -czf chartize-preview.tgz .
-scp chartize-preview.tgz your-vps:/tmp/
-```
+For a first installation, copy the published DuckDB catalog and Parquet artifacts too; they are not in Git. Do not overwrite the VPS's private `data/auth/` with a developer's local test sessions.
 
-On the VPS:
+A local build is useful for checking the app, but native DuckDB dependencies must match the VPS's OS and architecture. The simplest reproducible production build is on the VPS:
 
 ```bash
-sudo mkdir -p /srv/chartize
-sudo tar -xzf /tmp/chartize-preview.tgz -C /srv/chartize
-cd /srv/chartize
-cp .env.example .env
+cd /home/dialup/chartize
+pnpm install --frozen-lockfile
+pnpm fetch:spatialite
+pnpm --filter @chartize/web build
+cp -R apps/web/public apps/web/.next/standalone/apps/web/public
+cp -R apps/web/.next/static apps/web/.next/standalone/apps/web/.next/static
 ```
 
-Set a long random `ADMIN_TOKEN`, keep `AI_TEXT_MODEL=gpt-5.6-luna`, and add the OpenAI key to `/srv/chartize/.env`. Restrict that file with `chmod 600 .env`.
+Next's standalone directory does not include `public/` or `.next/static/` automatically. Missing these produces the HTML-without-CSS/JavaScript failure seen in earlier deployments.
 
-## 2. Start the private application
+## Environment and PM2
+
+Keep the VPS secrets in `/home/dialup/chartize/.env` (mode 600), with a real `ADMIN_TOKEN`, `OPENAI_API_KEY`, and `AI_TEXT_MODEL=gpt-5.6-luna`. Do not use the example admin-token placeholder.
+
+[The PM2 config](../infra/pm2/chartize.config.cjs) sets the loopback port, public URL and data directory. Adjust its paths and Node interpreter for another VPS. Keep one instance: transient AI continuations, the Wikipedia queue, and active-request limits are process-local; sessions and daily counters are in SQLite.
 
 ```bash
-docker compose up --build -d web
-docker compose ps
-curl --fail http://127.0.0.1:3000/engine/api/health
-curl --fail http://127.0.0.1:3000/explore >/dev/null
+pm2 stop chartize
+pm2 startOrRestart infra/pm2/chartize.config.cjs --update-env
+pm2 save
 ```
 
-Do not start the `caddy` service when host Nginx owns ports 80 and 443.
+This restarts only Chartize, never the VPS or other applications. For a brand-new installation omit `pm2 stop chartize`. Stop the app before replacing an existing standalone directory; start it after the new files and static assets are in place.
 
-## 3. Seed the dataset catalog
-
-The Compose tool profile runs the acquisition manifest inside the same private network:
+Local production testing needs an explicit origin:
 
 ```bash
-docker compose --profile tools run --rm seed
+CHARTIZE_PUBLIC_URL=http://localhost:3000 pnpm --filter @chartize/web start
 ```
 
-This publishes the starter polling, Census population and boundary tables plus CDC PLACES and the two BEA county economic tables. The MIT county election file and ACS profile remain deliberate manual imports because Harvard requires a download-guestbook response and Census requires an API key, respectively.
+## ATProto login
 
-## 4. Put Nginx and Basic Auth in front
+Set `CHARTIZE_PUBLIC_URL` to the site's exact HTTPS origin. The checked-in PM2 configuration uses `https://chartize.dileepreddy.com`. The server generates an ES256 signing key in the private auth database on first use; preserve that database across releases.
 
-```bash
-sudo apt-get update
-sudo apt-get install -y nginx apache2-utils certbot python3-certbot-nginx
-sudo htpasswd -c /etc/nginx/.htpasswd-chartize YOUR_PREVIEW_USERNAME
-sudo cp /srv/chartize/infra/nginx/chartize.conf.example /etc/nginx/sites-available/chartize
-sudo sed -i 's/chartize.example.com/YOUR_CHARTIZE_SUBDOMAIN/' /etc/nginx/sites-available/chartize
-sudo ln -s /etc/nginx/sites-available/chartize /etc/nginx/sites-enabled/chartize
-sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d YOUR_CHARTIZE_SUBDOMAIN
-```
+These discovery endpoints must be publicly readable, without a Basic Auth wall or a Cloudflare bot challenge:
 
-Basic Auth credentials should only be used after HTTPS is active. The ACME challenge path is exempt so certificate renewal remains unattended.
+- `/api/auth/client-metadata.json`
+- `/api/auth/jwks.json`
 
-## 5. Update and back up
+The provider returns to `/api/auth/callback`. Do not cache `/api/auth/*` or `/api/ai/*` in Cloudflare; metadata/JWKS can use their short origin cache headers. Callback query strings contain authorization codes, so the Nginx configuration disables access logging on that route.
 
-Before replacing the application directory, keep `/srv/chartize/data`. To update code, unpack a new archive over `/srv/chartize`, then run:
+Authentication state lives in `data/auth/sessions.sqlite` by default, with a private directory and file permissions. `CHARTIZE_AUTH_DIR` can point elsewhere. Back it up with the catalog while the app is stopped or using a consistent filesystem snapshot. Losing it logs everyone out and changes the signing key.
 
-```bash
-docker compose up --build -d web
-docker image prune -f
-```
+## Replace the old site-wide password wall
 
-Back up Chartize data as one unit while the service is stopped or from a filesystem snapshot:
+**Deploy and check the authenticated app before changing Nginx.** Keep the live site's current wall until the new app rejects signed-out AI calls.
 
-```bash
-docker compose stop web
-sudo tar -C /srv/chartize -czf /var/backups/chartize-data-$(date +%F).tgz data
-docker compose start web
-```
+[The site configuration](../infra/nginx/chartize.dileepreddy.com.conf) now leaves the studio public and retains Basic Auth only for `/admin` and `/engine/api/admin/*`. It also limits AI request size and keeps responses streamed. It retains this VPS's existing Cloudflare/origin TLS setup; other installations should use their own certificate and hostname.
 
-Monitor disk use with `du -sh /srv/chartize/data` and `df -h /srv/chartize`. The importer stages the original, normalized table, and Parquet copy, and refuses an import when its safety reserve cannot be met.
+Before opening the site, verify:
+
+1. Signed-out `POST /api/ai/query` cannot invoke the model (401 for a same-origin request).
+2. Public homepage, explorer, catalog, WASM and Parquet requests load normally.
+3. Metadata/JWKS are reachable from outside the VPS.
+4. A real ATProto login works, a chat completes, and logout blocks the next chat.
+5. Admin imports remain protected; an ATProto login alone grants no admin privileges.
+
+Then install the Nginx configuration, run `nginx -t`, and reload Nginx. Do not reboot the VPS. The existing password file can remain for the admin area.
+
+## Usage controls
+
+Defaults: 50 new turns per account per UTC day, 300 across the site, one active request per account, four globally. A browser-data continuation does not count as another new turn. Automatic repair attempts do count.
+
+Set `CHARTIZE_AI_USER_DAILY_TURNS` and `CHARTIZE_AI_DAILY_TURNS` to change the daily allowances. Zero disables new turns. These limits are not a precise spending cap: thinking level, tool rounds and response length affect token use. Configure an OpenAI project budget too.
+
+Each user turn permits at most one paid web-search call and six Wikipedia tool calls, including its browser-data continuations. Wikipedia requests are queued and spaced apart; article excerpts are bounded. There is no local Wikipedia cache or dump.

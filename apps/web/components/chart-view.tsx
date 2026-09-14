@@ -305,9 +305,6 @@ export const ChartView = forwardRef<ChartViewHandle, ChartViewProps>(function Ch
     if (event.button !== 0 || !spec) return;
     event.currentTarget.focus({ preventScroll: true });
     const { x, y } = point(event);
-    // Pointer capture is unavailable for synthetic events and a few embedded
-    // browser surfaces. Selection still works there as long as the pointer
-    // remains over the chart, so do not let capture support abort the gesture.
     if (mapMode && !event.shiftKey) {
       setInteractionState({ kind: "map", start: { x, y }, current: { x, y } });
       return;

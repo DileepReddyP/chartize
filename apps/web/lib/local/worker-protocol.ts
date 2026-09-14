@@ -95,12 +95,13 @@ export type BrowserAiCompletedResponse = z.infer<typeof BrowserAiCompletedRespon
 export type BrowserEngineProgress = z.infer<typeof BrowserEngineProgressSchema>;
 
 const WorkerRequestBase = { id: z.string().min(1) };
+export const BrowserProfileIdSchema = z.string().max(2048).refine((value) => value === "anonymous" || /^did:[a-z]+:[\w.:%-]+$/.test(value), "Invalid profile");
 const WorkerWorkspaceIdSchema = z.string().min(1).max(200);
 const WorkerSourceNameSchema = z.string().min(1).max(200);
 const WorkerQuerySchema = z.string().max(100_000);
 
 export const LocalWorkerRequestSchema = z.discriminatedUnion("type", [
-  z.object({ ...WorkerRequestBase, type: z.literal("init"), workspaceId: WorkerWorkspaceIdSchema, spatialiteUrl: z.string().min(1).max(2000) }),
+  z.object({ ...WorkerRequestBase, type: z.literal("init"), workspaceId: WorkerWorkspaceIdSchema, spatialiteUrl: z.string().min(1).max(2000), profileId: BrowserProfileIdSchema.default("anonymous") }),
   z.object({
     ...WorkerRequestBase,
     type: z.literal("register"),

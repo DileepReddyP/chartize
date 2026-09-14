@@ -23,17 +23,21 @@ GPT-5.6 therefore appears in two distinct roles: `gpt-5.6-sol` powered the Codex
 
 ## How GPT-5.6 powers Chartize
 
-Chartize uses `gpt-5.6-luna` through the OpenAI Responses API as a workspace agent, not as a detached chat box. Each turn is structured and Zod-validated. A DWIM context resolver runs at send time, so the model receives the live code cursor, chart range, selected marks, table cells, or whole workspace that the user is actually addressing—not a stale note captured when the composer first opened. It also distinguishes edited or failed GGSQL from the last query that successfully produced the visible chart. Selected row values stay in the browser unless **send selected data** is enabled.
+Chartize uses `gpt-5.6-luna` through the OpenAI Responses API as a workspace agent, not as a detached chat box. Each turn is structured and Zod-validated. A DWIM context resolver runs at send time, so the model receives the live code cursor, chart range, selected marks, table cells, or whole workspace that the user is actually addressing—not a stale note captured when the composer first opened. It also distinguishes edited or failed GGSQL from the last query that successfully produced the visible chart. Selected row values initially stay in the browser; the planner sees only column names and a count. When a question needs those values, the browser sends bounded results. Ambiguous requests get a short permission question first.
 
 | Job | GPT-5.6's role | How Chartize keeps it grounded |
 | --- | --- | --- |
 | Discuss data and code | Explain the current query, rendered result, selected marks, table cells, or a proposed analysis while preserving one conversation across every workspace pane | Source IDs, typed schemas, current and last-rendered code, chart metadata, and bounded selection context accompany the turn; earlier user messages retain their former DWIM referent |
-| Answer with exact values | Decide which concrete values are needed and emit one to four bounded data requests | The browser worker executes those requests in the workspace engine; bounded results and encrypted Responses reasoning state return to the same model turn, for at most three data rounds |
+| Answer with exact values | Decide which concrete values are needed and emit one to four bounded data requests | The browser worker executes those requests in the workspace engine; bounded results return to the same model turn while its encrypted Responses reasoning and tool history stay on the server, for at most three data rounds |
 | Enhance a visualization | Return structured, non-mutating GGSQL and an explanation, then perform a presentation-quality pass over color, axes, domains, legends, labels, and uncertainty | A local digest of the official GGSQL 0.4.1 documentation and tested drawing recipes is available as an agent tool; the candidate runs in the browser before it is accepted |
 | Repair generated code | Diagnose the exact engine failure and make the smallest documented correction | Chartize feeds the failed candidate and browser diagnostic back for up to two focused repair attempts |
-| Ground outside claims | Search automatically for explicit research, current information, and causal or historical questions when web access is enabled | The server enforces one focused search pass, retains direct citations, and keeps web evidence distinct from browser-data calculations |
+| Ground outside claims | Use Wikipedia search and article retrieval for established background; use web search for current news, primary sources, or gaps Wikipedia cannot fill | Articles carry source links; one paid web-search pass is allowed per turn, including browser-data continuations |
 
-Direct OpenAI calls use `store: false`, low reasoning effort, and API Fast mode for interactive latency. GPT-5.6 receives one stable developer prefix with an explicit 30-minute cache breakpoint; workspace state, preferences, and permissions follow after that boundary. Tool definitions stay stable while per-turn `allowed_tools` controls whether web search and the local visualization cookbook are callable. Chartize deliberately keeps completed conversation state in the browser instead of creating a provider-hosted conversation. During a single multi-step turn, however, encrypted reasoning items are replayed between browser-data rounds so the model can continue its analysis without discarding its working state. The server never exposes its OpenAI key to the browser and never executes model-authored SQL. Persistent browser-local mutations require an explicit user request and are separated from the visualization query.
+A small Luna determination pass chooses the approach for each question: research, relevant data access, derived-table changes, technical detail, hypotheses, premise-checking, concision, and thinking effort. These are no longer persistent feature checkboxes or keyword rules. Clear requests authorize the relevant work; unclear intent produces a concrete question. The agent can ask the planner to reconsider when evidence exposes a gap.
+
+Thinking defaults to **auto**, with manual **low / medium / high / xhigh / max** choices beside Send. Auto can increase reasoning for harder analysis or code; manual choices stay fixed. API Fast mode stays on for GPT-5.6. Direct OpenAI calls use `store: false`. GPT-5.6 receives one stable developer prefix with an explicit 30-minute cache breakpoint; workspace state, preferences, and permissions follow after that boundary. Tool definitions stay stable while per-turn `allowed_tools` controls which research and workspace tools are callable. Chartize deliberately keeps completed conversation state in the browser instead of creating a provider-hosted conversation. During a single multi-step turn, encrypted reasoning and function-call items are replayed with the official SDK so the model can continue its analysis without discarding its working state. Only an opaque, account-bound continuation ID goes to the browser; suspended turns expire after ten minutes or a server restart. The server never exposes its OpenAI key to the browser and never executes model-authored SQL. Persistent browser-local mutations require an explicit user request and are separated from the visualization query.
+
+Wikipedia is an application tool calling the English MediaWiki API, not OpenAI's paid search tool. It has no OpenAI per-search fee, but retrieved text still contributes input tokens. Requests are queued and rate-limited; there is no local Wikipedia dump or persistent article cache. Paid web search is reserved for questions that need it, not automatically bolted onto every explanation.
 
 ## The workspace
 
@@ -69,14 +73,16 @@ The example menu currently contains 23 browser-tested views: polling lines and u
 - Explicit Next.js Node routes for catalog, exact Parquet delivery, steward imports, and rollback
 - DuckDB Node Neo for server-side ingestion/catalog metadata; normalized published datasets are Parquet
 - OpenAI Responses API with latency-first `gpt-5.6-luna`
-- Docker Compose with Caddy, or host Nginx with Basic Auth, on one VPS
+- Node 24, PM2 and Nginx on one VPS; ATProto OAuth for chat, with private SQLite sessions
+
+`ggsql-wasm` stays pinned to 0.4.1: the 0.5 series replaces Vega-Lite output with a different SVG renderer. Upgrading it requires a separate migration of Chartize's canvas rendering, mark selection, and chart controls.
 
 ## Run locally
 
 Requirements: Node 24+ and pnpm 10+.
 
 ```bash
-cp .env.example apps/web/.env.local
+cp .env.example .env.local
 pnpm install
 pnpm fetch:spatialite
 ADMIN_TOKEN=local-dev-token pnpm dev
@@ -92,39 +98,45 @@ ADMIN_TOKEN=local-dev-token pnpm data:seed
 
 The embedded penguins table is an engine smoke test, not a published dataset. The acquisition list and refresh notes are in [`datasets/README.md`](./datasets/README.md).
 
-For AI, set `OPENAI_API_KEY` in the environment used by Next.js. The key remains server-side. The browser receives only the structured AI result; the AI route receives bounded browser query results only when the enabled data-access option permits them.
+For AI, set `OPENAI_API_KEY` in the environment used by Next.js. The key remains server-side. Open the AI panel and choose **Log in with Bluesky** to continue through ATProto OAuth. The rest of the studio works without signing in. Questions that need row values may send bounded results to the model; uploads themselves are not sent to the VPS.
 
-## VPS preview
+## Chat sign-in and hosting
 
-```bash
-cp .env.example .env
-# Set a long ADMIN_TOKEN, SITE_ADDRESS, and OPENAI_API_KEY.
-docker compose up --build -d
-```
+Chat uses the official ATProto Node OAuth client with the identity-only `atproto` scope. It verifies the account DID and creates a seven-day HttpOnly session; Chartize does not request posting permissions or retain provider tokens after sign-in. The login window leaves your workspace and unsent prompt in the original tab. Signing out does not clear local workspaces.
 
-Set `SITE_ADDRESS=studio.example.com` for Caddy-managed HTTPS. For host Nginx and Basic Auth, follow [`docs/VPS_DEPLOYMENT.md`](./docs/VPS_DEPLOYMENT.md).
+The profile menu in the homepage and explorer header contains sign-in, sign-out and system/light/dark appearance. Each account DID has its own browser-local workspace collection, chat histories, uploaded data and theme preference. Existing work stays in the anonymous profile. Signing in or out saves the outgoing collection and reloads into the destination profile; public Parquet downloads are shared across profiles. A new account starts blank, and returning to a profile restores its previous work. These profiles are local to the browser, with no cloud workspace sync.
+
+Locally, the default origin is `http://localhost:3000`; the provider callback uses `http://127.0.0.1:3000/api/auth/callback`, as required by ATProto loopback OAuth. The original tab completes sign-in using a browser-bound secret, so switching callback hostnames does not move your IndexedDB data.
+
+For the VPS, set `CHARTIZE_PUBLIC_URL=https://chartize.dileepreddy.com` and keep the app on loopback behind Nginx. Public OAuth metadata is served at `/api/auth/client-metadata.json` and `/api/auth/jwks.json`; these URLs must not be blocked by Basic Auth or a Cloudflare challenge. A signing key is generated in the private auth database on first use. No developer-portal registration or manually copied client secret is needed.
+
+The AI endpoint checks the session, same-origin requests, bounded request size and usage limits. Defaults are 50 new turns per account per UTC day, 300 across the site, one active request per account and four across this single app process. Continuations do not spend another daily turn. Set `CHARTIZE_AI_USER_DAILY_TURNS` and `CHARTIZE_AI_DAILY_TURNS` to adjust the daily limits (zero disables new turns). These are practical usage controls, not a dollar-denominated spending cap; also set a budget in your OpenAI project.
+
+Use one PM2 instance. Follow [the VPS notes](./docs/VPS_DEPLOYMENT.md) for standalone files and the switch from the old site-wide Basic Auth wall to public browsing / authenticated chat. The checked-in Nginx configuration retains Basic Auth on the admin area only. **Deploy and verify the authenticated app before applying that Nginx change.**
 
 The storage layout fits a single 70 GB VPS:
 
 ```text
 data/
   chartize.duckdb
+  auth/sessions.sqlite  # private login state, signing key, sessions and usage counters
   datasets/<slug>/<version>/
     <original upload>
     data.parquet
 ```
 
-Back up `data/` as one unit. Imports retain the original, normalize a canonical version to Parquet, profile it, and atomically activate that version. Rollback reactivates the previous version without deleting either copy. These published files are baselines; browser workspaces remain independently mutable.
+Back up `data/` as one unit, keeping the auth directory private. `CHARTIZE_AUTH_DIR` can place authentication state elsewhere. Imports retain the original, normalize a canonical version to Parquet, profile it, and atomically activate that version. Rollback reactivates the previous version without deleting either copy. These published files are baselines; browser workspaces remain independently mutable.
 
 ## Security boundary
 
 - Public browser code can request only a catalog entry or an exact `{slug, version}` Parquet artifact.
-- No server route accepts SQL or GGSQL. The public data routes are fixed catalog and exact-version artifact reads.
+- The server never executes visitor/model SQL or GGSQL. The AI relay sees code as context; data routes accept only fixed catalog and exact-version artifact reads.
 - SQL and GGSQL execute in the browser worker; local derived tables and mutations cannot modify VPS data.
 - Only the worker can access Dexie or request catalog/data artifacts. React and Zustand cannot issue data-service requests.
 - The browser worker has a 100 MB per-file import guard; steward import limits are configured separately.
-- AI calls use `store: false`. Sample rows are omitted unless the user enables them.
-- Steward imports require `x-admin-token`, entered on `/admin` and not persisted by the application.
+- AI calls use `store: false`. Selected samples are omitted until needed for the question or specifically approved; data queries run under the browser engine's read-only guard.
+- Chat alone requires ATProto login. OAuth discovery uses SSRF-protected fetches, and provider/session secrets are never exposed in JSON or local workspace storage.
+- Steward imports require a configured `x-admin-token`, entered on `/admin` and not persisted by the application. An ATProto login does not grant admin access.
 
 ## Verification
 

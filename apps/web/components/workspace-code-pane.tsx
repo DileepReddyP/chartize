@@ -1,6 +1,7 @@
 "use client";
 
-import Editor, { type OnMount } from "@monaco-editor/react";
+import type { OnMount } from "@monaco-editor/react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -13,6 +14,19 @@ import { useChartizeWorkspace, type AiContext } from "@/lib/workspace/store";
 import { useWorkspaceViewModel } from "@/lib/workspace/view-model";
 import { DwimPanel, dwimPanelSize } from "./dwim-panel";
 import { InlineQueryControls, type InlineControlAnchors } from "./inline-query-controls";
+import { useProfile } from "./profile-provider";
+
+const Editor = dynamic(async () => {
+  self.MonacoEnvironment = {
+    getWorker: () => new Worker(new URL("monaco-editor/editor/editor.worker.js", import.meta.url)),
+  };
+  const [{ default: MonacoEditor, loader }, monaco] = await Promise.all([
+    import("@monaco-editor/react"),
+    import("monaco-editor"),
+  ]);
+  loader.config({ monaco });
+  return MonacoEditor;
+}, { ssr: false });
 
 export type PromoteAi = (
   contextNote: string,
@@ -22,6 +36,7 @@ export type PromoteAi = (
 ) => void;
 
 export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
+  const { resolvedTheme } = useProfile();
   const view = useWorkspaceViewModel();
   const state = useChartizeWorkspace(useShallow((workspace) => ({
     activeWorkspaceId: workspace.activeWorkspaceId,
@@ -244,7 +259,7 @@ export function WorkspaceCodePane({ promoteAi }: { promoteAi: PromoteAi }) {
         <Editor
           height="100%"
           defaultLanguage="sql"
-          theme="vs"
+          theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
           value={state.query}
           onMount={handleEditorMount}
           options={{ automaticLayout: true, minimap: { enabled: false }, fontSize: state.editorFontSize, lineHeight: Math.round(state.editorFontSize * 1.6), mouseWheelZoom: false, lineNumbersMinChars: 3, padding: { top: 15, bottom: 15 }, wordWrap: "on", scrollBeyondLastLine: false, folding: false, renderLineHighlight: "line", selectionHighlight: true }}

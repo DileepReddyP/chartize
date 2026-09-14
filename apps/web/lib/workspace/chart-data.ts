@@ -226,16 +226,12 @@ export function visualFieldsFromPreview(
   });
 }
 
+/** Builds a selection table from the first analytical layer's positional Vega fields. */
 export function selectionTableFromSpec(spec: Record<string, unknown> | null): TablePreview | null {
   if (!spec) return null;
   const data = spec.data as { values?: Array<Record<string, unknown>> } | undefined;
   const values = data?.values ?? [];
   if (!values.length) return null;
-  // GGSQL rewrites mapped aesthetics to positional Vega fields. Preserve
-  // those fields for accurate selection counts while hiding bookkeeping.
-  // Layered views repeat the analytical rows once per mark, so choose the
-  // first substantial x/y layer instead of telling AI the chart has N times
-  // as many observations as it actually does.
   const byLayer = new Map<string, Array<Record<string, unknown>>>();
   values.forEach((row) => {
     const source = typeof row.__ggsql_source__ === "string" ? row.__ggsql_source__ : "__chartize_default__";
@@ -297,7 +293,7 @@ function compactExtentValue(value: unknown, temporal: boolean) {
     : Number(numeric.toFixed(2)).toLocaleString("en-US");
 }
 
-/** A small derived summary gives AI the visible chart extent without attaching raw rows. */
+/** Summarizes the visible chart extent for AI context. */
 export function describeChartExtent(
   data: TablePreview,
   xField: string,

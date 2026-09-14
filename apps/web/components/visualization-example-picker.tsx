@@ -1,6 +1,8 @@
 "use client";
 
 import { EXAMPLE_CATEGORIES, VISUALIZATION_EXAMPLES, type VisualizationExample } from "@/lib/ggsql/examples";
+import { HeaderSummary } from "./header-control";
+import { UiIcon } from "./ui-icons";
 
 interface VisualizationExamplePickerProps {
   onSelect: (example: VisualizationExample) => void;
@@ -9,7 +11,7 @@ interface VisualizationExamplePickerProps {
 export function VisualizationExamplePicker({ onSelect }: VisualizationExamplePickerProps) {
   return (
     <details className="example-picker" data-dismiss-on-outside>
-      <summary aria-label="Example visualizations" title="Example visualizations"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="4" height="4" /><rect x="9.5" y="2.5" width="4" height="4" /><rect x="2.5" y="9.5" width="4" height="4" /><rect x="9.5" y="9.5" width="4" height="4" /></svg><span className="topbar-button-label">examples</span></summary>
+      <HeaderSummary label="Examples" aria-label="Example visualizations" title="Example visualizations" icon={<UiIcon name="grid" />} />
       <div>
         <header><strong>example visualizations</strong></header>
         {EXAMPLE_CATEGORIES.map((category, index) => {
