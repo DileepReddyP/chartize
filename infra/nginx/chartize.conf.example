@@ -5,10 +5,21 @@ server {
 
     # Public ACME certificate renewal.
     location ^~ /.well-known/acme-challenge/ {
-        auth_basic off;
         root /var/www/html;
     }
 
+    location / {
+        return 308 https://chartize.example.com$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name chartize.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/chartize.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/chartize.example.com/privkey.pem;
 
     client_max_body_size 525m;
 

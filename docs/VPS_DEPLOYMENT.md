@@ -45,7 +45,7 @@ CHARTIZE_PUBLIC_URL=http://localhost:3000 pnpm --filter @chartize/web start
 
 ## ATProto login
 
-Set `CHARTIZE_PUBLIC_URL` to the site's exact HTTPS origin. The checked-in PM2 configuration uses `https://chartize.dileepreddy.com`. The server generates an ES256 signing key in the private auth database on first use; preserve that database across releases.
+Set `CHARTIZE_PUBLIC_URL` to the site's exact HTTPS origin. The checked-in PM2 configuration uses `https://chartize.dileepreddy.com`. Nginx redirects HTTP to that HTTPS hostname, preserving the path and query string; Cloudflare must use Full or Full (strict) SSL mode for HTTPS connections to the origin. The server generates an ES256 signing key in the private auth database on first use; preserve that database across releases.
 
 These discovery endpoints must be publicly readable, without a Basic Auth wall or a Cloudflare bot challenge:
 
@@ -53,6 +53,8 @@ These discovery endpoints must be publicly readable, without a Basic Auth wall o
 - `/api/auth/jwks.json`
 
 The provider returns to `/api/auth/callback`. Do not cache `/api/auth/*` or `/api/ai/*` in Cloudflare; metadata/JWKS can use their short origin cache headers. Callback query strings contain authorization codes, so the Nginx configuration disables access logging on that route.
+
+After a successful callback, the login window closes and the originating tab completes the session and workspace handoff. If the browser blocks closing the window, a manual return page remains. The originating tab also checks for completion when it regains focus or becomes visible.
 
 Authentication state lives in `data/auth/sessions.sqlite` by default, with a private directory and file permissions. `CHARTIZE_AUTH_DIR` can point elsewhere. Back it up with the catalog while the app is stopped or using a consistent filesystem snapshot. Losing it logs everyone out and changes the signing key.
 
