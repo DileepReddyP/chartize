@@ -218,19 +218,9 @@ export const AiContextReferenceSchema = z.object({
 
 export const AiThinkingLevelSchema = z.enum(["low", "medium", "high", "xhigh", "max"]);
 export const AiApprovalRequestSchema = z.enum(["local_changes", "workspace_data", "selected_data", "web_search"]);
-export const AiTurnPlanSchema = z.object({
-  summary: z.string().max(240),
+export const AiTurnActivitySchema = z.object({
   thinking: AiThinkingLevelSchema,
-  research: z.enum(["none", "wikipedia", "web"]),
-  queryData: z.boolean(),
-  shareSelection: z.boolean(),
-  localChanges: z.boolean(),
-  hypotheses: z.boolean(),
-  technical: z.boolean(),
-  challenge: z.boolean(),
-  concise: z.boolean(),
-  approval: AiApprovalRequestSchema.nullable(),
-  question: z.string().max(800),
+  tools: z.array(z.string().max(80)).max(32),
 });
 
 export const AiWorkspaceActionSchema = z.object({
@@ -276,7 +266,7 @@ export const AiConversationMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string(),
   approval: AiApprovalRequestSchema.optional(),
-  plan: AiTurnPlanSchema.optional(),
+  activity: AiTurnActivitySchema.optional(),
   context: AiContextReferenceSchema.optional(),
 });
 
@@ -346,7 +336,7 @@ export const AiDataRequestResponseSchema = z.object({
   requests: z.array(AiDataRequestSchema).max(4),
   includeSelection: z.boolean(),
   turnId: z.string().uuid(),
-  plan: AiTurnPlanSchema,
+  activity: AiTurnActivitySchema,
   usage: AiUsageSchema,
 });
 
@@ -354,7 +344,7 @@ export const AiExplanationResponseSchema = z.object({
   kind: z.literal("explanation"),
   explanation: z.string(),
   approval: AiApprovalRequestSchema.optional(),
-  plan: AiTurnPlanSchema.optional(),
+  activity: AiTurnActivitySchema.optional(),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
   sources: z.array(AiCitationSchema),
@@ -365,7 +355,7 @@ export const AiExplanationResponseSchema = z.object({
 
 export const AiVisualizationResponseSchema = AiSuggestionSchema.extend({
   kind: z.literal("visualization"),
-  plan: AiTurnPlanSchema.optional(),
+  activity: AiTurnActivitySchema.optional(),
   usage: AiUsageSchema,
 });
 
@@ -409,7 +399,7 @@ export type AiSuggestion = z.infer<typeof AiSuggestionSchema>;
 export type AiCitation = z.infer<typeof AiCitationSchema>;
 export type AiContext = z.infer<typeof AiContextSchema>;
 export type AiContextReference = z.infer<typeof AiContextReferenceSchema>;
-export type AiTurnPlan = z.infer<typeof AiTurnPlanSchema>;
+export type AiTurnActivity = z.infer<typeof AiTurnActivitySchema>;
 export type AiThinkingLevel = z.infer<typeof AiThinkingLevelSchema>;
 export type AiWorkspaceAction = z.infer<typeof AiWorkspaceActionSchema>;
 export type AiUsage = z.infer<typeof AiUsageSchema>;

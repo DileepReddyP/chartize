@@ -7,6 +7,7 @@ import type { AiCitation, AiThinkingLevel, AiUsage } from "@chartize/contracts";
 import type { ParsedResponse, ResponseInput, Tool, ToolChoiceAllowed } from "openai/resources/responses/responses";
 import type { z } from "zod";
 import { createInitialResponseInput } from "./provider-request";
+import { toolProgress } from "./progress";
 
 export interface StructuredFunctionTool {
   name: string;
@@ -19,8 +20,6 @@ export interface ResponsePolicy {
   thinking: AiThinkingLevel;
   functions: string[];
   webSearch: boolean;
-  requiredTool?: string;
-  concise?: boolean;
 }
 
 export const THINKING_OUTPUT_BUDGET: Record<AiThinkingLevel, number> = {
@@ -43,7 +42,7 @@ function clientAndModel() {
   return { client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), model, promptCaching: model.startsWith("gpt-5.6"), fastMode: model.startsWith("gpt-5.6") };
 }
 
-/** Shared transport for the planner and agent. Policy is re-read after each tool. */
+/** Runs the agent with automatic tool selection and parallel read-only function calls. */
 export async function structuredResponse<Schema extends z.ZodType>(options: {
   name: string;
   schema: Schema;
@@ -61,6 +60,7 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
   signal?: AbortSignal | undefined;
   onProgress?: ((message: string) => void) | undefined;
   onWebSearch?: () => void;
+  onToolCall?: (name: string, durationMs: number) => void;
 }): Promise<{ output: z.infer<Schema>; sources: AiCitation[]; researched: boolean; continuationInput: ResponseInput; usage: AiUsage }> {
   const { client, model, promptCaching, fastMode } = clientAndModel();
   const functionTools = options.functionTools ?? [];
@@ -82,31 +82,37 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
       ...policy.functions.map((name) => ({ type: "function" as const, name })),
       ...(policy.webSearch && !researched ? [{ type: "web_search" as const }] : []),
     ];
-    const required = policy.requiredTool === "wikipedia"
-      ? allowed.filter((tool) => "name" in tool && String(tool.name).startsWith("wikipedia_"))
-      : policy.requiredTool === "web_search"
-      ? allowed.filter((tool) => tool.type === "web_search")
-      : allowed.filter((tool) => "name" in tool && tool.name === policy.requiredTool);
     const toolChoice: "none" | ToolChoiceAllowed = round === maxRounds || !allowed.length
       ? "none"
-      : { type: "allowed_tools", mode: required.length ? "required" : "auto", tools: required.length ? required : allowed };
+      : { type: "allowed_tools", mode: "auto", tools: allowed };
     options.onProgress?.(`thinking · ${policy.thinking}…`);
     const stream = client.responses.stream({
       model, store: false, input,
       ...(fastMode ? { service_tier: "priority" as const } : {}),
       reasoning: { effort: policy.thinking },
-      text: { format: zodTextFormat(options.schema, options.name), verbosity: policy.concise ? "low" : "medium" },
+      text: { format: zodTextFormat(options.schema, options.name) },
       max_output_tokens: options.maxOutputTokens ?? THINKING_OUTPUT_BUDGET[policy.thinking],
       max_tool_calls: 1,
       ...(promptCaching ? { prompt_cache_key: options.cacheKey, prompt_cache_options: { mode: "explicit" as const, ttl: "30m" as const } } : {}),
-      ...(tools.length ? { tools, tool_choice: toolChoice, parallel_tool_calls: false } : {}),
+      ...(tools.length ? { tools, tool_choice: toolChoice, parallel_tool_calls: true } : {}),
       include: ["reasoning.encrypted_content", ...(options.policy ? ["web_search_call.action.sources" as const] : [])],
       ...(options.safetyIdentifier ? { safety_identifier: options.safetyIdentifier } : {}),
     }, { signal: options.signal });
     let lastProgress = "";
     for await (const event of stream) {
-      const message = event.type === "response.web_search_call.searching" ? "searching the web…"
+      let message = event.type === "response.web_search_call.searching" ? "searching the web…"
         : event.type === "response.output_text.delta" ? "writing the response…" : "";
+      if ((event.type === "response.output_item.added" || event.type === "response.output_item.done") && event.item.type === "web_search_call") {
+        const action = event.item.action;
+        if (action?.type === "search") {
+          const queries = action.queries?.join(" · ") || action.query;
+          if (queries) message = toolProgress(event.type === "response.output_item.done" ? "searched the web for" : "searching the web for", queries);
+        } else if (action?.type === "open_page" && action.url) {
+          message = toolProgress(event.type === "response.output_item.done" ? "read web page" : "reading web page", action.url);
+        } else if (action?.type === "find_in_page") {
+          message = toolProgress("finding on page", action.pattern);
+        }
+      }
       if (message && message !== lastProgress) { options.onProgress?.(message); lastProgress = message; }
     }
     const response = await stream.finalResponse() as ParsedResponse<z.infer<Schema>>;
@@ -121,17 +127,21 @@ export async function structuredResponse<Schema extends z.ZodType>(options: {
       return { output: options.schema.parse(response.output_parsed), sources: [...sources.values()], researched, continuationInput: input, usage: aggregateAiUsage(...usage) };
     }
     if (round === maxRounds) throw new Error("Chartize AI reached its tool limit for this turn.");
-    for (const call of calls) {
+    const outputs = await Promise.all(calls.map(async (call) => {
       const handler = handlers.get(call.name);
+      const started = performance.now();
       let output: unknown;
       try {
-        if (!handler || !policy.functions.includes(call.name)) throw new Error("This tool is not enabled in the current plan. Reconsider the approach if it is needed.");
+        options.signal?.throwIfAborted();
+        if (!handler || !policy.functions.includes(call.name)) throw new Error("This tool is unavailable or its per-turn budget has been used. Finish with the available evidence.");
         output = { ok: true, result: await handler(JSON.parse(call.arguments)) };
       } catch (error) {
         output = { ok: false, error: error instanceof Error ? error.message : "Tool failed." };
       }
-      input.push({ type: "function_call_output", call_id: call.call_id, output: JSON.stringify(output) });
-    }
+      options.onToolCall?.(call.name, Math.round(performance.now() - started));
+      return { type: "function_call_output" as const, call_id: call.call_id, output: JSON.stringify(output) };
+    }));
+    input.push(...outputs);
   }
   throw new Error("Chartize AI did not finish this turn.");
 }

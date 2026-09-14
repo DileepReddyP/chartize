@@ -1,6 +1,6 @@
 "use client";
 
-import type { AiResponsePreferences, AiTurnPlan } from "@chartize/contracts";
+import type { AiResponsePreferences, AiTurnActivity } from "@chartize/contracts";
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { containFloating } from "@/lib/floating-placement";
 
@@ -64,22 +64,17 @@ export function AiResponseControls({ preferences, onPreferences }: {
   );
 }
 
-export function AiApproach({ plan }: { plan: AiTurnPlan }) {
-  const features = [
-    plan.research === "wikipedia" ? "wikipedia" : plan.research === "web" ? "web research" : null,
-    plan.queryData ? "workspace queries" : null,
-    plan.shareSelection ? "selected rows" : null,
-    plan.localChanges ? "local changes" : null,
-    plan.hypotheses ? "hypotheses" : null,
-    plan.technical ? "technical detail" : null,
-    plan.challenge ? "checking assumptions" : null,
-    plan.concise ? "concise" : null,
-  ].filter(Boolean);
+export function AiActivity({ activity }: { activity: AiTurnActivity }) {
+  const labels: Record<string, string> = {
+    wikipedia_search: "Wikipedia search", wikipedia_article: "Wikipedia article", web_search: "web research",
+    source_schema: "source fields", get_visualization_tips: "GGSQL reference", increase_thinking: "deeper thinking",
+    workspace_queries: "workspace queries", selected_rows: "selected rows", local_changes: "local changes",
+    enable_web_search: "web research requested",
+  };
   return (
     <details className="ai-approach">
-      <summary>{plan.thinking} thinking{plan.research !== "none" ? ` · ${plan.research === "web" ? "web research" : "wikipedia"}` : ""}</summary>
-      <p>{plan.summary}</p>
-      {features.length > 0 && <small>{features.join(" · ")}</small>}
+      <summary>{activity.thinking} thinking{activity.tools.includes("web_search") ? " · web research" : activity.tools.some((name) => name.startsWith("wikipedia_")) ? " · Wikipedia" : ""}</summary>
+      <small>{activity.tools.length ? activity.tools.map((name) => labels[name] ?? name).join(" · ") : "answered directly"}</small>
     </details>
   );
 }

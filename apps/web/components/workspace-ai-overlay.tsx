@@ -28,6 +28,7 @@ export function WorkspaceAiOverlay() {
     aiPrompt: workspace.aiPrompt,
     aiBusy: workspace.aiBusy,
     aiMessage: workspace.aiMessage,
+    aiProgress: workspace.aiProgress,
     aiHistory: workspace.aiHistory,
     aiFocusVersion: workspace.aiFocusVersion,
     aiPreferences: workspace.aiPreferences,
@@ -113,6 +114,7 @@ export function WorkspaceAiOverlay() {
       busy={state.aiBusy}
       ready={state.catalogLoaded}
       status={state.aiMessage}
+      progress={state.aiProgress}
       history={state.aiHistory}
       focusVersion={state.aiFocusVersion}
       preferences={state.aiPreferences}

@@ -5,8 +5,9 @@ import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AiApprovalRequest } from "@chartize/contracts";
-import { AiResponseControls, AiApproach } from "./ai-response-controls";
+import { AiResponseControls, AiActivity } from "./ai-response-controls";
 import { AiLogin } from "./ai-login";
+import { AiThinking } from "./ai-thinking";
 import { useProfile } from "./profile-provider";
 import type { AiContext, AiConversationMessage, AiPlacement, AiResponsePreferences } from "@/lib/workspace/store";
 import { AttachmentIcon, DATA_FILE_ACCEPT, filesFromDrop } from "./data-upload-control";
@@ -23,6 +24,7 @@ interface AiAssistantProps {
   busy: boolean;
   ready: boolean;
   status: string;
+  progress: string[];
   history: AiConversationMessage[];
   focusVersion: number;
   preferences: AiResponsePreferences;
@@ -76,22 +78,6 @@ function MessageBody({ text }: { text: string }) {
   );
 }
 
-function ThinkingElapsed() {
-  const [elapsedMs, setElapsedMs] = useState(0);
-  useEffect(() => {
-    const startedAt = performance.now();
-    const update = () => setElapsedMs(Math.round(performance.now() - startedAt));
-    update();
-    const timer = window.setInterval(update, 31);
-    return () => window.clearInterval(timer);
-  }, []);
-  return (
-    <time className="ai-thinking-elapsed" dateTime={`PT${elapsedMs / 1000}S`} aria-hidden="true">
-      {(elapsedMs / 1000).toFixed(3)} s
-    </time>
-  );
-}
-
 function RoleIcon({ role }: { role: AiConversationMessage["role"] }) {
   return (
     <span className={`ai-role-icon ${role}`} aria-hidden="true">
@@ -113,6 +99,7 @@ export function AiAssistant({
   busy,
   ready,
   status,
+  progress,
   history,
   focusVersion,
   preferences,
@@ -235,7 +222,7 @@ export function AiAssistant({
               <RoleIcon role={message.role} />
               <b>{message.role === "user" ? "you" : "chartize ai"}</b>
               <MessageBody text={message.text} />
-              {message.plan && <AiApproach plan={message.plan} />}
+              {message.activity && <AiActivity activity={message.activity} />}
               {message.role === "assistant" && (
                 <div className="ai-message-actions">
                   <button
@@ -258,14 +245,7 @@ export function AiAssistant({
               )}
             </article>
           ))}
-          {busy && (
-            <div className="ai-thinking" role="status">
-              <RoleIcon role="assistant" />
-              <span className="ai-thinking-dots"><i /><i /><i /></span>
-              <b>{status || "thinking through the request…"}</b>
-              <ThinkingElapsed />
-            </div>
-          )}
+          {busy && <AiThinking status={status} progress={progress} />}
           <div ref={conversationEndRef} className="ai-conversation-end" />
         </div>
         <div className="ai-compose-area" inert={!auth.user}>

@@ -48,7 +48,7 @@ describe("browser AI continuation", () => {
           requests: [{ sql: "SELECT 42 AS value", purpose: "Check the exact value", limit: 10 }],
           turnId: "89e8d452-c4be-4d12-af1c-772230109d04",
           includeSelection: false,
-          plan: { summary: "Inspect the value", thinking: "medium", research: "none", queryData: true, shareSelection: false, localChanges: false, hypotheses: false, technical: false, challenge: false, concise: true, approval: null, question: "" },
+          activity: { thinking: "medium", tools: ["workspace_queries"] },
           usage,
         });
       }
@@ -88,6 +88,7 @@ describe("browser AI continuation", () => {
     expect(result.kind).toBe("explanation");
     expect(result.usage.calls).toBe(2);
     expect(emit).toHaveBeenCalledWith("request-test", { phase: "thinking", message: "a".repeat(240) });
+    expect(emit).toHaveBeenCalledWith("request-test", { phase: "thinking", message: "querying workspace data: Check the exact value" });
     for (const [, request] of fetchMock.mock.calls) expect(request?.headers).toMatchObject({ "x-chartize-profile": profileId });
     expect(bodies[1]).toMatchObject({
       turnId: "89e8d452-c4be-4d12-af1c-772230109d04",

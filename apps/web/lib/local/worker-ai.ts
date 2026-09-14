@@ -14,6 +14,7 @@ import { executeWorkspaceReadOnlySqlRaw, executeWorkspaceSqlRaw } from "./worksp
 import { isResultSqlStatement, sqlStatements } from "../ggsql/query-context";
 import { prepareWorkerQuery, type WorkerProgressEmitter } from "./worker-source-registry";
 import { assertSafeWorkspaceAction } from "./ai-sql-safety";
+import { toolProgress } from "../ai/progress";
 
 const AI_URL = "/api/ai/query";
 const AI_TIMEOUT_MS = 300_000;
@@ -112,6 +113,7 @@ async function executeAiDataRequest(
   id: string,
   emit: WorkerProgressEmitter,
 ) {
+  emit(id, { phase: "thinking", message: toolProgress("querying workspace data", request.purpose) });
   try {
     if (sqlStatements(request.sql).length !== 1 || !isResultSqlStatement(request.sql)
       || /\b(?:PRAGMA|ATTACH|DETACH|load_extension|writefile|readfile)\b/i.test(request.sql)) {
@@ -151,8 +153,8 @@ async function executeWorkspaceActions(
 ) {
   for (const [index, action] of actions.entries()) {
     emit(id, {
-      phase: "querying",
-      message: `applying browser-local data change… ${index + 1}/${actions.length}`,
+      phase: "thinking",
+      message: toolProgress(`applying local change ${index + 1}/${actions.length}`, action.purpose),
     });
     assertSafeWorkspaceAction(action.sql);
     const query = await prepareWorkerQuery(workspaceId, action.sql, id, emit);
@@ -186,15 +188,15 @@ export async function completeWorkerAiTurn(
     const parsed = await requestStreamedAiTurn(payload, id, emit, profileId);
     accumulatedUsage = mergeUsage(accumulatedUsage, parsed.usage);
     if (parsed.kind !== "data_request") {
-      if (parsed.workspaceActions.length && !parsed.plan?.localChanges) throw new Error("The current plan did not authorize local data changes.");
+      if (parsed.workspaceActions.length && input.task === "repair") throw new Error("Repair turns cannot repeat persistent data changes.");
       await executeWorkspaceActions(workspaceId, parsed.workspaceActions, id, emit);
       return { ...parsed, usage: accumulatedUsage };
     }
-    if (parsed.requests.length && !parsed.plan.queryData) throw new Error("The current plan did not authorize workspace queries.");
-    if (parsed.includeSelection && (!parsed.plan.shareSelection || !input.sampleData)) throw new Error("The selected rows are not available for this plan.");
+    if (parsed.includeSelection && !input.sampleData) throw new Error("The selected rows are no longer available.");
     if (workspaceDataRound === 3) throw new Error("Chartize AI reached its browser-data limit.");
     turnId = parsed.turnId;
     includeSelection = parsed.includeSelection;
+    if (includeSelection) emit(id, { phase: "thinking", message: toolProgress("reading selected rows", `${input.sampleData!.rows.length} rows · ${input.sampleData!.columns.join(", ")}`) });
     workspaceData.length = 0;
     // SQLite is shared by this worker; keep these requests in order.
     for (const request of parsed.requests) workspaceData.push(await executeAiDataRequest(workspaceId, request, id, emit));

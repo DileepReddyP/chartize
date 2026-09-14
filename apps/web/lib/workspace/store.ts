@@ -219,6 +219,7 @@ export const WorkspaceSnapshotSchema = z.object({
   aiPrompt: z.string(),
   aiBusy: z.boolean(),
   aiMessage: z.string(),
+  aiProgress: z.array(z.string()).max(6),
   aiHistory: z.array(AiConversationMessageSchema),
   aiUsage: AiUsageSchema.nullable(),
   aiFocusVersion: z.number().int().nonnegative(),
@@ -558,6 +559,7 @@ const initialSnapshot = WorkspaceSnapshotSchema.parse({
   aiPrompt: "",
   aiBusy: false,
   aiMessage: "",
+  aiProgress: [],
   aiHistory: [],
   aiUsage: null,
   aiFocusVersion: 0,
@@ -640,6 +642,7 @@ function activatedWorkspaceState(document: WorkspaceDocument, focusVersion: numb
     aiPrompt: document.aiPrompt,
     aiBusy: false,
     aiMessage: document.aiMessage,
+    aiProgress: [],
     aiHistory: document.aiHistory,
     aiUsage: document.aiUsage,
     aiFocusVersion: focusVersion,
@@ -761,7 +764,11 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     if (get().engineState === "ready" && get().catalogLoaded) return;
     set({ engineState: "loading" });
     setBrowserRuntimeProgressHandler((progress) => {
-      if (progress.phase === "thinking") set({ aiMessage: progress.message });
+      if (progress.phase === "thinking") set((state) => ({
+        aiMessage: progress.message,
+        aiProgress: progress.message.includes(": ") && state.aiProgress.at(-1) !== progress.message
+          ? [...state.aiProgress.slice(-5), progress.message] : state.aiProgress,
+      }));
       else if (get().running || get().engineState === "loading") set({ resultStatus: progress.message });
     });
     try {
@@ -1189,12 +1196,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
   },
   requestAiTurn: async (input) => {
     const request = AiTurnRequestSchema.parse(input);
-    const workspaceId = get().activeWorkspaceId;
-    try {
-      return await requestBrowserAiTurn(workspaceId, request);
-    } finally {
-      if (get().activeWorkspaceId === workspaceId) set({ aiMessage: "" });
-    }
+    return requestBrowserAiTurn(get().activeWorkspaceId, request);
   },
   submitAiTurn: async (input) => {
     const submission = AiSubmissionSchema.parse(input);
@@ -1229,6 +1231,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
     set({
       aiBusy: true,
       aiMessage: "",
+      aiProgress: [],
       aiHistory: [...branchHistory, { role: "user", text: request, context: messageContext }],
       aiPrompt: "",
     });
@@ -1250,6 +1253,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         set((state) => ({ workspaceActions: mergeWorkspaceActions(state.workspaceActions, body.workspaceActions) }));
       }
       if (body.kind === "visualization") {
+        set({ aiMessage: "rendering the updated chart…" });
         get().resetMapViewport();
         let runResult = await get().runQuery(body.query);
         const repairDiagnostics: string[] = [];
@@ -1276,6 +1280,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           usage = mergeAiUsage(usage, repaired.usage);
           if (repaired.kind !== "visualization") break;
           body = repaired;
+          set({ aiMessage: "rendering the repaired chart…" });
           runResult = await get().runQuery(body.query);
         }
         if (get().activeWorkspaceId !== startedWorkspace) return;
@@ -1291,7 +1296,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         body.workspaceActions.length
           ? `**Applied in this browser workspace**\n${body.workspaceActions.map((action) => `- ${action.purpose}`).join("\n")}`
           : "",
-        body.plan?.technical && body.assumptions.length ? `Assumptions: ${body.assumptions.join(" ")}` : "",
+        body.assumptions.length ? `Assumptions: ${body.assumptions.join(" ")}` : "",
         body.warnings.length ? `Check: ${body.warnings.join(" ")}` : "",
         body.sources.length ? `Sources: ${body.sources.map((source) => `[${source.title}](${source.url})`).join(" · ")}` : "",
       ].filter(Boolean).join("\n\n");
@@ -1301,7 +1306,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
           role: "assistant",
           text: reply,
           approval: body.kind === "explanation" ? body.approval : undefined,
-          plan: body.plan,
+          activity: body.activity,
         }],
       }));
     } catch (cause) {
@@ -1317,7 +1322,7 @@ export const useChartizeWorkspace = create<ChartizeWorkspaceState>((set, get) =>
         }));
       }
     } finally {
-      if (get().activeWorkspaceId === startedWorkspace) set({ aiBusy: false });
+      if (get().activeWorkspaceId === startedWorkspace) set({ aiBusy: false, aiMessage: "" });
     }
   },
   persistWorkspaceSession: async () => {

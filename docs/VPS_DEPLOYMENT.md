@@ -83,4 +83,4 @@ Defaults: 50 new turns per account per UTC day, 300 across the site, one active 
 
 Set `CHARTIZE_AI_USER_DAILY_TURNS` and `CHARTIZE_AI_DAILY_TURNS` to change the daily allowances. Zero disables new turns. These limits are not a precise spending cap: thinking level, tool rounds and response length affect token use. Configure an OpenAI project budget too.
 
-Each user turn permits at most one paid web-search call and six Wikipedia tool calls, including its browser-data continuations. Wikipedia requests are queued and spaced apart; article excerpts are bounded. There is no local Wikipedia cache or dump.
+Each user turn permits one web-enabled model response, six Wikipedia calls, ten model responses, and three browser-data continuations. The built-in tool limit is requested as `max_tool_calls: 1`; a web response can still include search and page-open events, so this is not a guarantee of a fixed billed amount. Luna chooses when to enable paid research. Wikipedia searches include the top article's bounded text; request starts are spaced apart and independent reads can overlap. There is no persistent article cache or dump.

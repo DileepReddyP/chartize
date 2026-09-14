@@ -1,17 +1,20 @@
-import { GgsqlDraftSchema } from "@chartize/contracts";
+import { AiApprovalRequestSchema, GgsqlDraftSchema } from "@chartize/contracts";
 import { z } from "zod";
 import { isResultSqlStatement, sourcesFromQuery, splitGgsql, sqlStatements, visualLayersFromQuery, visualPointState, visualScalesFromQuery } from "../ggsql/query-context";
 import { makeBlankDraft } from "../ggsql/serialize";
 
 export const ModelAgentResponseSchema = z.object({
   action: z.enum(["answer", "update_visualization", "request_data"]),
-  query: z.string(),
-  explanation: z.string(),
+  query: z.string().describe("The complete executable GGSQL for update_visualization only. Empty for answers and data requests; never put a prose answer or search query here."),
+  explanation: z.string().describe("The complete user-visible answer, including the requested facts, dates and source links, or a description of the proposed visualization edit."),
+  approval: AiApprovalRequestSchema.nullable().describe("Only when asking the user for permission BEFORE an action. Null for ordinary answers and work the user already requested. This is not a record of tools used."),
+  localChangesAuthorized: z.boolean().describe("True only when the user requested or approved persistent changes to derived browser-local data."),
   assumptions: z.array(z.string()),
   warnings: z.array(z.string()),
   citations: z.array(z.string()).max(8),
-  includeSelection: z.boolean(),
+  includeSelection: z.boolean().describe("For request_data: retrieve the current selected row values. A question about those values authorizes this read."),
   dataRequests: z.array(z.object({
+    scope: z.enum(["rendered", "workspace"]).describe("rendered: query the exact rendered chart rows via the rendered_data table, with existing joins and filters already applied. workspace: query source tables directly."),
     sql: z.string().min(1).max(20_000),
     purpose: z.string().min(1).max(500),
     limit: z.number().int().min(1).max(100),

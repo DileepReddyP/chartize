@@ -38,6 +38,7 @@ export const GGSQL_OFFICIAL_REFERENCE = {
     "Text needs a position and label. Its offset is a scalar or two-number tuple, and every usable data row creates a text mark.",
     "Rules need x or y. Use PLACE rule for a literal threshold/event; use DRAW rule only when rule positions come from query rows.",
     "The Chartize browser SQL dialect is SQLite-like: avoid TRY_CAST and DuckDB-only SQL in workspace queries.",
+    "Compute aggregate metrics in one CTE and rank their aliases in the next. The browser parser rejects aggregate expressions nested inside a window ORDER BY.",
   ],
 } as const;
 
@@ -47,6 +48,7 @@ const VISUALIZATION_TIPS: Record<VisualizationTipTopic, VisualizationTip> = {
     rules: [
       "DRAW text emits one mark for every row with usable position and label values. Never map a full-series x/y column and a constant label when the intent is one endpoint label.",
       "For each series, make endpoint x, endpoint y, and endpoint label nullable together and non-null on exactly one row. A useful verification invariant is COUNT_IF(endpoint_label IS NOT NULL) = 1 per series.",
+      "For exactly N labels, rank distinct eligible series after the chart's joins and filters, using ROW_NUMBER with a stable tie-breaker. Apply that rank only to the nullable label positions/text, preserving all other marks. RANK can include extra ties.",
       "Direct-label each series in its fixed semantic colour and normally omit the redundant legend. Use hjust, vjust, and an absolute offset for spacing; do not falsify the value merely to move the text.",
       "If several endpoints are close, give their text layers different vertical offsets or label a carefully chosen earlier point. Preserve enough right/top scale room to avoid clipping.",
     ],
