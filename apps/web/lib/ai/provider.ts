@@ -38,8 +38,9 @@ function clientAndModel() {
     };
   }
   if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is not configured.");
-  const model = process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
-  return { client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), model, promptCaching: model.startsWith("gpt-5.6"), fastMode: model.startsWith("gpt-5.6") };
+  const model = process.env.AI_TEXT_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-6-luna";
+  const supportsFastModeAndCaching = /^gpt-(?:5\.6|6)(?:-|$)/.test(model);
+  return { client: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), model, promptCaching: supportsFastModeAndCaching, fastMode: supportsFastModeAndCaching };
 }
 
 /** Runs the agent with automatic tool selection and parallel read-only function calls. */

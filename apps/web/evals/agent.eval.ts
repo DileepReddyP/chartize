@@ -20,6 +20,8 @@ import { completeAiTurn } from "../lib/ai/turn";
 import { VISUALIZATION_EXAMPLES } from "../lib/ggsql/examples";
 
 if (!process.env.OPENAI_API_KEY) loadEnvFile("../../.env.local");
+if (process.env.CHARTIZE_EVAL_MODEL) process.env.AI_TEXT_MODEL = process.env.CHARTIZE_EVAL_MODEL;
+const run = process.env.CHARTIZE_EVAL_RUN ?? "manual";
 const example = VISUALIZATION_EXAMPLES.find((item) => item.id === "mta-route-delay-map")!;
 const effort = process.env.CHARTIZE_EVAL_THINKING ?? "auto";
 const scenarios = [
@@ -64,10 +66,10 @@ for (const scenario of scenarios.filter((item) => !process.env.CHARTIZE_EVAL_CAS
         result = await completeAiTurn({ ...body, turnId: result.turnId, sampleData: { columns: ["extra_minutes"], rows: [["1.6456481987379952"], ["1.6951913116225612"]] } }, options);
         usages.push(result.usage);
       }
-      const report = { at: new Date().toISOString(), variant: "agent", case: scenario.id, prompt, ms: Math.round(performance.now() - started), usages, progress, result, modelOutputs, toolCalls };
+      const report = { at: new Date().toISOString(), variant: "agent", run, thinking: effort, case: scenario.id, prompt, ms: Math.round(performance.now() - started), usages, progress, result, modelOutputs, toolCalls };
       mkdirSync("../../data/evals", { recursive: true });
       appendFileSync("../../data/evals/agent.jsonl", `${JSON.stringify(report)}\n`);
-      console.log(JSON.stringify({ ...report, result: { ...result, ...("draft" in result ? { draft: undefined, query: undefined } : {}) } }));
+      console.log(JSON.stringify({ run, case: scenario.id, prompt, ms: report.ms, usages, tools: result.activity?.tools, kind: result.kind, explanation: "explanation" in result ? result.explanation : undefined }));
       expect(result.kind).not.toBe("data_request");
       if (result.kind === "data_request") continue;
       expect(result.explanation).not.toBe("");
@@ -75,8 +77,9 @@ for (const scenario of scenarios.filter((item) => !process.env.CHARTIZE_EVAL_CAS
       if (scenario.id === "selection") expect(result.explanation).toMatch(/\b1\.67/);
       if (scenario.id === "code") {
         expect(result.kind).toBe("visualization");
-        if (result.kind === "visualization") expect(result.query).toContain("Where NYC waits");
+        if (result.kind === "visualization") expect(result.query).toBe(example.query.replace("title => 'Where peak subway trips lose time'", "title => 'Where NYC waits'"));
       }
+      if (scenario.id === "dwim") expect(result.kind).toBe("explanation");
       body.history.push({ role: "user", text: prompt }, { role: "assistant", text: result.explanation });
     }
   });

@@ -38,7 +38,7 @@ export const GGSQL_OFFICIAL_REFERENCE = {
     "Text needs a position and label. Its offset is a scalar or two-number tuple, and every usable data row creates a text mark.",
     "Rules need x or y. Use PLACE rule for a literal threshold/event; use DRAW rule only when rule positions come from query rows.",
     "The Chartize browser SQL dialect is SQLite-like: avoid TRY_CAST and DuckDB-only SQL in workspace queries.",
-    "Compute aggregate metrics in one CTE and rank their aliases in the next. The browser parser rejects aggregate expressions nested inside a window ORDER BY.",
+    "Window PARTITION BY and ORDER BY accept unqualified column names only. Compute aggregates, CAST, CASE and other expressions in a preceding CTE, then rank their plain aliases: ROW_NUMBER() OVER (PARTITION BY route ORDER BY missing_flag, score DESC, row_id). Table-qualified names such as l.route also fail here. Check these clauses when the engine reports 'Parse tree contains errors'.",
   ],
 } as const;
 

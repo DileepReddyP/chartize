@@ -2,7 +2,7 @@
 
 **Turn a question into an inspectable, presentation-ready data story—without sending the working dataset to a server.**
 
-Chartize is a self-hosted, local-first visualization studio for exploring public or private data with GGSQL, browser-local SQL, and GPT-5.6. It keeps code, source rows, rendered charts, selected marks, and AI discussion in one workspace, so every suggestion can be inspected against the data and executed where the data lives: in the browser.
+Chartize is a self-hosted, local-first visualization studio for exploring public or private data with GGSQL, browser-local SQL, and GPT-6 Luna. It keeps code, source rows, rendered charts, selected marks, and AI discussion in one workspace, so every suggestion can be inspected against the data and executed where the data lives: in the browser.
 
 ![Chartize homepage with live polling, transit, world, climate, food, and land-use views](./docs/images/chartize-home.webp)
 
@@ -19,13 +19,13 @@ This was not a one-shot scaffold. The working product emerged through a repeated
 
 The conversation also drove major architectural decisions. Chartize began with a separate Rust data service, but browser testing and a security review exposed a cleaner boundary: GGSQL and SQL should execute inside a Web Worker, Dexie/IndexedDB should own local datasets and workspace isolation, and the server should expose only fixed catalog and exact-version artifact reads. Codex carried that pivot through the application, tests, data artifacts, and documentation. The same process shaped the DWIM-inspired contextual interface, explicit authorization for local AI mutations, one independent AI conversation per workspace, static homepage previews, and the selection model shared by maps and ordinary charts.
 
-GPT-5.6 therefore appears in two distinct roles: `gpt-5.6-sol` powered the Codex agent that developed and verified the project, while the latency-oriented `gpt-5.6-luna` powers the in-product Chartize AI described below.
+The original build used GPT-5.6 in two distinct roles: `gpt-5.6-sol` powered the Codex agent that developed and verified the project, while `gpt-5.6-luna` powered the in-product assistant. Chartize AI now defaults to `gpt-6-luna`.
 
-## How GPT-5.6 powers Chartize
+## How GPT-6 Luna powers Chartize
 
-Chartize uses `gpt-5.6-luna` through the OpenAI Responses API as a workspace agent. Each turn is structured and Zod-validated. A DWIM context resolver runs at send time, so the model receives the live code cursor, chart range, selected marks, table cells, or whole workspace that the user is actually addressing. It distinguishes edited or failed GGSQL from the last query that successfully produced the visible chart. Selected row values initially stay in the browser; the agent sees only column names and a count. When a question needs those values, it requests bounded results. Genuinely ambiguous permission gets a short question first.
+Chartize uses `gpt-6-luna` through the OpenAI Responses API as a workspace agent. Each turn is structured and Zod-validated. A DWIM context resolver runs at send time, so the model receives the live code cursor, chart range, selected marks, table cells, or whole workspace that the user is actually addressing. It distinguishes edited or failed GGSQL from the last query that successfully produced the visible chart. Selected row values initially stay in the browser; the agent sees only column names and a count. When a question needs those values, it requests bounded results. Genuinely ambiguous permission gets a short question first.
 
-| Job | GPT-5.6's role | How Chartize keeps it grounded |
+| Job | Luna's role | How Chartize keeps it grounded |
 | --- | --- | --- |
 | Discuss data and code | Explain the current query, rendered result, selected marks, table cells, or a proposed analysis while preserving one conversation across every workspace pane | Source IDs, typed schemas, current and last-rendered code, chart metadata, and bounded selection context accompany the turn; earlier user messages retain their former DWIM referent |
 | Answer with exact values | Decide which concrete values are needed and emit one to four bounded data requests | Rendered-chart questions can query `rendered_data`, which wraps the exact last-rendered SELECT with its joins and filters. Source-table questions use workspace scope. The browser runs the SQL and returns bounded results to the same Responses conversation, for at most three data rounds |
@@ -35,11 +35,13 @@ Chartize uses `gpt-5.6-luna` through the OpenAI Responses API as a workspace age
 
 The answering model chooses its own tools; there is no separate planning model call, keyword switch, or response-personality checklist. Independent reference calls run in parallel. Wikipedia and the local GGSQL reference are available immediately. When current information, a requested primary document, or a gap in Wikipedia warrants paid web research, Luna enables it itself. The chat streams actual search topics, article titles, data-query purposes and rendering steps into a live activity indicator; the reply's activity details show which tools it used. Browser SQL stays sequential because it operates on a shared workspace engine.
 
-Thinking defaults to **auto**, starting at medium and allowing Luna to increase effort for harder analysis or code. Manual **low / medium / high / xhigh / max** choices beside Send stay fixed. API Fast mode stays on for GPT-5.6. Direct OpenAI calls use `store: false`. GPT-5.6 receives one stable developer prefix with an explicit 30-minute cache breakpoint; workspace state, preferences, and permissions follow after that boundary. Tool definitions stay stable while per-turn `allowed_tools` controls which research and workspace tools are callable. Chartize deliberately keeps completed conversation state in the browser instead of creating a provider-hosted conversation. During a single multi-step turn, encrypted reasoning and function-call items are replayed with the official SDK so the model can continue its analysis without discarding its working state. Only an opaque, account-bound continuation ID goes to the browser; suspended turns expire after ten minutes or a server restart. The server never exposes its OpenAI key to the browser and never executes model-authored SQL. Persistent browser-local mutations require an explicit user request and are separated from the visualization query.
+Thinking defaults to **auto**, starting at medium and allowing Luna to increase effort for harder analysis or code. Manual **low / medium / high / xhigh / max** choices beside Send stay fixed. API Fast mode stays on for GPT-6 and GPT-5.6 model overrides. Direct OpenAI calls use `store: false`. Luna receives one stable developer prefix with an explicit 30-minute cache breakpoint; workspace state, preferences, and permissions follow after that boundary. Tool definitions stay stable while per-turn `allowed_tools` controls which research and workspace tools are callable. Chartize deliberately keeps completed conversation state in the browser instead of creating a provider-hosted conversation. During a single multi-step turn, encrypted reasoning and function-call items are replayed with the official SDK so the model can continue its analysis without discarding its working state. Only an opaque, account-bound continuation ID goes to the browser; suspended turns expire after ten minutes or a server restart. The server never exposes its OpenAI key to the browser and never executes model-authored SQL. Persistent browser-local mutations require an explicit user request and are separated from the visualization query.
 
 Wikipedia calls the English MediaWiki API and has no OpenAI per-search fee; retrieved text still contributes input tokens. Search returns matching titles and a bounded excerpt of the top article together, often avoiding another model round just to open it. Article retrieval provides other pages or later passages. Request starts are rate-limited while independent reads can overlap. There is no persistent article cache.
 
-For opt-in, paid behavior checks, run `pnpm --filter @chartize/web eval:ai evals/agent.eval.ts` with the local app running. Set `CHARTIZE_EVAL_CASE=mta` to run just the subway question and follow-up. `evals/research.eval.ts` compares a prompt-free baseline with source-guidance variants. Reports under ignored `data/evals/` record answers, tool choices, timing, and token use for manual review. These evaluations use real API quota; the normal test suite uses mocks and does not.
+For opt-in, paid behavior checks, run `pnpm --filter @chartize/web eval:ai evals/agent.eval.ts` with the local app running. Set `CHARTIZE_EVAL_CASE=mta` to run just the subway question and follow-up. `CHARTIZE_EVAL_MODEL=gpt-6-luna` selects a model independently of local settings; `CHARTIZE_EVAL_RUN=baseline-1` labels a comparison run. `evals/research.eval.ts` retains the original GPT-5.6 prompt-free baseline and source-guidance variants. Reports under ignored `data/evals/` record answers, tool choices, timing, and token use for manual review. These evaluations use real API quota; the normal test suite uses mocks and does not.
+
+The [GPT-6 Luna evaluation](./docs/GPT6_LUNA_EVALUATION.md) records the model comparison, token-cost estimates, Chrome checks, fixes, and remaining limitations.
 
 ## The workspace
 
@@ -74,7 +76,7 @@ The example menu currently contains 23 browser-tested views: polling lines and u
 - Dexie/IndexedDB, owned only by the worker, for canonical Parquet bytes, local uploads, catalog metadata, and saved workspace documents
 - Explicit Next.js Node routes for catalog, exact Parquet delivery, steward imports, and rollback
 - DuckDB Node Neo for server-side ingestion/catalog metadata; normalized published datasets are Parquet
-- OpenAI Responses API with latency-first `gpt-5.6-luna`
+- OpenAI Responses API with latency-first `gpt-6-luna`
 - Node 24, PM2 and Nginx on one VPS; ATProto OAuth for chat, with private SQLite sessions
 
 `ggsql-wasm` stays pinned to 0.4.1: the 0.5 series replaces Vega-Lite output with a different SVG renderer. Upgrading it requires a separate migration of Chartize's canvas rendering, mark selection, and chart controls.

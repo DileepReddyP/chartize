@@ -13,7 +13,6 @@ export interface TurnState {
   activity: AiTurnActivity;
   input?: ResponseInput;
   sources: Map<string, AiCitation>;
-  articles: Set<string>;
   webUsed: boolean;
   webEnabled: boolean;
   wikiCalls: number;
@@ -36,7 +35,7 @@ export function restoreTurn(body: AiTurnEnvelope, owner: string): TurnState {
     return {
       id: randomUUID(), owner, body,
       activity: { thinking: body.preferences.thinking === "auto" ? "medium" : body.preferences.thinking, tools: [] },
-      sources: new Map(), articles: new Set(), webUsed: false, webEnabled: false, wikiCalls: 0, thinkingBumps: 0,
+      sources: new Map(), webUsed: false, webEnabled: false, wikiCalls: 0, thinkingBumps: 0,
       modelCalls: 0, dataRounds: 0, expires: Date.now() + TURN_TTL,
     };
   }

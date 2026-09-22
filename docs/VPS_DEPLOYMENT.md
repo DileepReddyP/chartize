@@ -25,7 +25,7 @@ The Next config runs Webpack in a separate, memory-optimized build worker and li
 
 ## Environment and PM2
 
-Keep the VPS secrets in `/home/dialup/chartize/.env` (mode 600), with `OPENAI_API_KEY` and `AI_TEXT_MODEL=gpt-5.6-luna`. `ADMIN_TOKEN` is optional for command-line dataset seeding; if enabled, use a real secret rather than the example placeholder. Browser administration uses the signed-in account's role.
+Keep the VPS secrets in `/home/dialup/chartize/.env` (mode 600), with `OPENAI_API_KEY` and `AI_TEXT_MODEL=gpt-6-luna`. Update an existing `AI_TEXT_MODEL` override when upgrading models; it takes precedence over the application default. `ADMIN_TOKEN` is optional for command-line dataset seeding; if enabled, use a real secret rather than the example placeholder. Browser administration uses the signed-in account's role.
 
 [The PM2 config](../infra/pm2/chartize.config.cjs) sets the loopback port, public URL and data directory. Adjust its paths and Node interpreter for another VPS. Keep one instance: transient AI continuations, the Wikipedia queue, and active-request limits are process-local; sessions and daily counters are in SQLite.
 

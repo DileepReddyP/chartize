@@ -17,7 +17,7 @@ const WebResearchSchema = z.object({
 export function createTurnTools(state: TurnState, onProgress?: (message: string) => void, signal?: AbortSignal): StructuredFunctionTool[] {
   return [
     ...createVisualizationFunctionTools(onProgress),
-    ...createWikipediaTools((source) => { state.sources.set(source.url, source); state.articles.add(source.url); }, onProgress, signal).map((tool) => ({
+    ...createWikipediaTools((source) => { state.sources.set(source.url, source); }, onProgress, signal).map((tool) => ({
       ...tool,
       execute: async (args: unknown) => {
         if (state.wikiCalls >= 6) throw new Error("Wikipedia's per-turn limit is reached. Finish from the evidence already gathered.");

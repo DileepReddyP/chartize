@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiTurnEnvelopeSchema } from "@chartize/contracts";
 vi.mock("server-only", () => ({}));
 vi.mock("./provider", async (original) => ({ ...await original<typeof import("./provider")>(), structuredResponse: vi.fn() }));
@@ -16,6 +16,19 @@ describe("AI turn orchestration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(structuredResponse).mockResolvedValue({ ...answer, continuationInput: [] });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([false, true])("includes a retrieved Wikipedia source only when the answer cites it (%s)", async (cited) => {
+    const source = { title: "New York City Subway", url: "https://en.wikipedia.org/wiki/New_York_City_Subway" };
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ query: { pages: [{ title: source.title, extract: "Retrieved article text." }] } })));
+    vi.mocked(structuredResponse).mockImplementationOnce(async (options) => {
+      await options.functionTools?.find((tool) => tool.name === "wikipedia_search")?.execute({ query: "New York City Subway" });
+      return { ...answer, output: { ...answer.output, citations: ["https://unretrieved.example/article", ...(cited ? [`${source.url}#History`] : [])] } };
+    });
+    const result = await completeAiTurn(body, { owner: "citation-test" });
+    expect(result.kind).toBe("explanation");
+    if (result.kind !== "data_request") expect(result.sources).toEqual(cited ? [source] : []);
   });
 
   it("requests only relevant selected rows and consumes an owner-bound continuation once", async () => {

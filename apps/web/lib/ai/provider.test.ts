@@ -9,6 +9,32 @@ import { toolProgress } from "./progress";
 
 beforeEach(() => streamResponse.mockReset());
 
+it.each([undefined, "gpt-5.6-luna", "gpt-6-luna"])("preserves Fast mode, caching and reasoning with model override %s", async (model) => {
+  vi.stubEnv("OPENAI_API_KEY", "unit-test-only");
+  vi.stubEnv("AI_PROVIDER", "openai");
+  vi.stubEnv("AI_TEXT_MODEL", model);
+  vi.stubEnv("OPENAI_MODEL", undefined);
+  streamResponse.mockImplementation(() => ({
+    async *[Symbol.asyncIterator]() {},
+    async finalResponse() { return { output: [], output_parsed: { answer: "done" } }; },
+  }));
+  try {
+    const result = await structuredResponse({
+      name: "test", schema: z.object({ answer: z.string() }), stableInstructions: "stable prefix", turnInstructions: "this turn", input: "question",
+      cacheKey: "test", reasoningEffort: "medium",
+    });
+    const request = streamResponse.mock.calls[0]?.[0];
+    expect(request).toMatchObject({
+      model: model ?? "gpt-6-luna", service_tier: "priority", store: false,
+      reasoning: { effort: "medium" }, max_output_tokens: 10_000,
+      prompt_cache_key: "test", prompt_cache_options: { mode: "explicit", ttl: "30m" },
+      include: ["reasoning.encrypted_content"],
+    });
+    expect(request.input[0].content[0]).toMatchObject({ text: "stable prefix", prompt_cache_breakpoint: { mode: "explicit" } });
+    expect(result.usage.models).toEqual([model ?? "gpt-6-luna"]);
+  } finally { vi.unstubAllEnvs(); }
+});
+
 it("runs independent functions together, returns every call ID, and uses automatic tool choice", async () => {
   vi.stubEnv("OPENAI_API_KEY", "unit-test-only");
   vi.stubEnv("AI_PROVIDER", "openai");

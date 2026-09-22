@@ -5,6 +5,29 @@ import type { Point } from "geojson";
 import { geojsonToParquet, rowsToParquet } from "./parquet";
 
 describe("GGSQL WASM", () => {
+  it("ranks prepared values using the unqualified window aliases in the AI reference", async () => {
+    const bytes = await readFile(new URL("../../node_modules/ggsql-wasm/ggsql_wasm_bg.wasm", import.meta.url));
+    await init({ module_or_path: bytes });
+    const context = new GgsqlContext();
+    try {
+      await context.register_parquet("scores", rowsToParquet([
+        { route: "A", raw: "7", id: 1 }, { route: "A", raw: "12", id: 2 },
+        { route: "B", raw: null, id: 3 }, { route: "B", raw: "20", id: 4 },
+      ]));
+      const sql = `WITH prepared AS (
+  SELECT route, CAST(raw AS DOUBLE) AS score,
+    CASE WHEN raw IS NULL THEN 1 ELSE 0 END AS missing_flag, id AS row_id
+  FROM scores
+)
+SELECT route, row_id, ROW_NUMBER() OVER (
+  PARTITION BY route ORDER BY missing_flag, score DESC, row_id
+) AS rank FROM prepared ORDER BY route, rank`;
+      const spec = JSON.parse(context.execute(`${sql}\nVISUALISE\nDRAW point\nMAPPING route AS x, rank AS y`));
+      expect(spec.$schema).toContain("vega-lite");
+      expect(JSON.parse(context.execute_sql(sql)).rows).toEqual([["A", "2", "1"], ["A", "1", "2"], ["B", "4", "1"], ["B", "3", "2"]]);
+    } finally { context.free(); }
+  });
+
   it("renders the built-in browser sample", async () => {
     const bytes = await readFile(new URL("../../node_modules/ggsql-wasm/ggsql_wasm_bg.wasm", import.meta.url));
     await init({ module_or_path: bytes });

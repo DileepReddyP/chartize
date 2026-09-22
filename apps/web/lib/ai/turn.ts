@@ -23,7 +23,7 @@ export async function completeAiTurn(body: AiTurnEnvelope, options: {
     input: initialTurnInput(state), resumeInput: state.input,
     functionTools: createTurnTools(state, options.onProgress, options.signal),
     policy: () => turnPolicy(state),
-    maxToolRounds: Math.min(6, 9 - state.modelCalls), cacheKey: "chartize:agent:v13",
+    maxToolRounds: Math.min(6, 9 - state.modelCalls), cacheKey: "chartize:agent:v14",
     onWebSearch: () => { state.webUsed = true; recordTool(state, "web_search"); },
     onToolCall: (name) => recordTool(state, name),
     safetyIdentifier: options.owner, signal: options.signal, onProgress: options.onProgress,
@@ -36,7 +36,7 @@ export async function completeAiTurn(body: AiTurnEnvelope, options: {
     explanation: sanitizeModelText(output.explanation),
     assumptions: output.assumptions.map(sanitizeModelText).filter(Boolean),
     warnings: output.warnings.map(sanitizeModelText).filter(Boolean),
-    sources: [...state.sources.values()].filter((source) => state.articles.has(source.url) || output.citations.some((url) => citationKey(url) === citationKey(source.url)) || output.explanation.includes(source.url)).slice(0, 8),
+    sources: [...state.sources.values()].filter((source) => output.citations.some((url) => citationKey(url) === citationKey(source.url)) || output.explanation.includes(source.url)).slice(0, 8),
     researched: state.webUsed || state.sources.size > 0,
     activity: state.activity, usage: result.usage,
   };
