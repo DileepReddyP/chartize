@@ -64,7 +64,7 @@ Authentication state lives in `data/auth/sessions.sqlite` by default, with a pri
 
 [The site configuration](../infra/nginx/chartize.dileepreddy.com.conf) delegates `/admin` and `/engine/api/admin/*` authorization to the app, removing their Basic Auth prompt. It also limits AI request size and keeps responses streamed. It retains this VPS's existing Cloudflare/origin TLS setup; other installations should use their own certificate and hostname.
 
-Once the updated app initializes its auth database, grant the account in the VPS's own database using the [admin-account SQL](../README.md#admin-accounts). Check that the `atproto` row for `did:plc:aaaaaaaaaaaaaaaaaaaaaaaa` exists. Preserve existing sessions, signing keys, quotas and other admin rows; do not copy the local auth database to the VPS.
+Once the updated app initializes its auth database, grant the account in the VPS's own database using the [admin-account SQL](../README.md#admin-accounts). Check that the `atproto` row for your account's verified DID exists. Preserve existing sessions, signing keys, quotas and other admin rows; do not copy the local auth database to the VPS.
 
 Before opening the site, verify:
 

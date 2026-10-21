@@ -122,10 +122,10 @@ Use one PM2 instance. Follow [the VPS notes](./docs/VPS_DEPLOYMENT.md) for stand
 
 The private SQLite database has an `admin_accounts` table keyed by `(provider, subject)`. For ATProto, the subject is the verified DID. The profile menu shows an **admin** button for members; the page, Server Actions, and browser import/rollback requests each check current membership. Changes apply to existing sessions, and handles can change without affecting access.
 
-After the first login initializes the database, grant `admin.example` access with:
+After your first login initializes the database, replace `<YOUR_ATPROTO_DID>` with your account's verified DID to grant admin access:
 
 ```bash
-sqlite3 data/auth/sessions.sqlite "INSERT INTO admin_accounts (provider, subject) VALUES ('atproto', 'did:plc:aaaaaaaaaaaaaaaaaaaaaaaa') ON CONFLICT DO NOTHING;"
+sqlite3 data/auth/sessions.sqlite "INSERT INTO admin_accounts (provider, subject) VALUES ('atproto', '<YOUR_ATPROTO_DID>') ON CONFLICT DO NOTHING;"
 ```
 
 Use the configured auth directory if `CHARTIZE_AUTH_DIR` differs. Additional administrators get their own rows. Delete a row to revoke access; restarting the app does not recreate grants. Keep this table private alongside sessions. A configured `ADMIN_TOKEN` remains an independent credential for command-line dataset seeding, never a profile/admin-page login.
